@@ -1,6 +1,6 @@
 # MangaSensei
 
-[![Version](https://img.shields.io/badge/version-0.1.0-243447)](CHANGELOG.md)
+[![Release](https://img.shields.io/github/v/release/Gyliardson/mangasensei?sort=semver&display_name=tag)](https://github.com/Gyliardson/mangasensei/releases)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-8f1d2c)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-315b7d)](docs/versions.md)
 [![React](https://img.shields.io/badge/React-19-315b7d)](docs/versions.md)
@@ -11,7 +11,8 @@ MangaSensei は、漫画ページの元画像を変更せずに日本語テキ�
 ドキュメント: [English](README.md) | [Português](README.pt-BR.md) |
 [日本語](README.ja.md) | [Español](README.es.md)
 
-> バージョン 0.1.0 はローカル MVP です。OCR モデルの重みと JMdict 由来データはローカルで取得され、Git や配布用コンテナイメージには含まれません。
+現在の開発バージョンは [`VERSION`](VERSION) に記録されています。OCR モデルの重みと
+JMdict 由来データはローカルで取得され、Git や配布用コンテナイメージには含まれません。
 
 ## 機能
 
@@ -93,10 +94,10 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 ## ビジュアル資料
 
-| View | Path |
-| --- | --- |
-| Desktop reader | `docs/assets/reader-desktop-chromium.png` |
-| Mobile reader | `docs/assets/reader-mobile-chromium.png` |
+[![Desktop reader](docs/assets/reader-desktop-chromium.png)](docs/assets/reader-desktop-chromium.png)
+
+- [Desktop reader screenshot](docs/assets/reader-desktop-chromium.png)
+- [Mobile reader screenshot](docs/assets/reader-mobile-chromium.png)
 
 ## ディレクトリ構成
 
@@ -116,4 +117,6 @@ var/          Git で管理しないローカルデータ
 
 ## ライセンス
 
-Copyright (C) 2026 Gyliardson Keitison. MangaSensei のコードは GPL-3.0-only です。JMdict データと第三者コンポーネントは、それぞれのライセンスと `THIRD_PARTY_NOTICES.md` の通知に従います。
+Copyright (C) 2026 Gyliardson Keitison. MangaSensei のコードは GPL-3.0-only です。
+JMdict データと第三者コンポーネントは、それぞれのライセンスと
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) の通知に従います。

@@ -1,6 +1,6 @@
 # MangaSensei
 
-[![Versão](https://img.shields.io/badge/version-0.1.0-243447)](CHANGELOG.md)
+[![Release](https://img.shields.io/github/v/release/Gyliardson/mangasensei?sort=semver&display_name=tag)](https://github.com/Gyliardson/mangasensei/releases)
 [![Licença](https://img.shields.io/badge/license-GPL--3.0--only-8f1d2c)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-315b7d)](docs/versions.md)
 [![React](https://img.shields.io/badge/React-19-315b7d)](docs/versions.md)
@@ -12,7 +12,9 @@ contextuais sem alterar a imagem original.
 Documentação: [English](README.md) | [Português](README.pt-BR.md) |
 [日本語](README.ja.md) | [Español](README.es.md)
 
-> A versão 0.1.0 é um MVP local. Os pesos de OCR e os dados derivados do JMdict são baixados localmente e não fazem parte do Git nem da imagem distribuível.
+A versão atual de desenvolvimento está registrada em [`VERSION`](VERSION). Os pesos
+de OCR e os dados derivados do JMdict são baixados localmente e não fazem parte do
+Git nem da imagem distribuível.
 
 ## Recursos
 
@@ -94,10 +96,10 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 ## Artefatos Visuais
 
-| Tela | Caminho |
-| --- | --- |
-| Leitor desktop | `docs/assets/reader-desktop-chromium.png` |
-| Leitor mobile | `docs/assets/reader-mobile-chromium.png` |
+[![Leitor desktop](docs/assets/reader-desktop-chromium.png)](docs/assets/reader-desktop-chromium.png)
+
+- [Captura do leitor desktop](docs/assets/reader-desktop-chromium.png)
+- [Captura do leitor mobile](docs/assets/reader-mobile-chromium.png)
 
 ## Estrutura
 
@@ -117,4 +119,6 @@ problemas de segurança, use o canal privado descrito em [`SECURITY.md`](SECURIT
 
 ## Licença
 
-Copyright (C) 2026 Gyliardson Keitison. O código do MangaSensei usa GPL-3.0-only. Dados JMdict e componentes de terceiros mantêm suas próprias licenças e avisos em `THIRD_PARTY_NOTICES.md`.
+Copyright (C) 2026 Gyliardson Keitison. O código do MangaSensei usa GPL-3.0-only.
+Dados JMdict e componentes de terceiros mantêm suas próprias licenças e avisos em
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

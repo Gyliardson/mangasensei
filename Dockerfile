@@ -22,8 +22,9 @@ RUN uv sync --frozen --no-dev --extra ocr --no-editable
 
 FROM python:3.11-slim-bookworm@sha256:d29f48a31a8b408ed19272ca1e7b10ebae13b240a27e862d3d4217c528e2e0c3 AS runtime
 
+ARG MANGASENSEI_VERSION=dev
 LABEL org.opencontainers.image.title="MangaSensei" \
-      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.version="${MANGASENSEI_VERSION}" \
       org.opencontainers.image.licenses="GPL-3.0-only"
 
 ENV PATH="/app/.venv/bin:$PATH" \

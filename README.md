@@ -1,6 +1,6 @@
 # MangaSensei
 
-[![Version](https://img.shields.io/badge/version-0.1.0-243447)](CHANGELOG.md)
+[![Release](https://img.shields.io/github/v/release/Gyliardson/mangasensei?sort=semver&display_name=tag)](https://github.com/Gyliardson/mangasensei/releases)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-8f1d2c)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-315b7d)](docs/versions.md)
 [![React](https://img.shields.io/badge/React-19-315b7d)](docs/versions.md)
@@ -13,7 +13,9 @@ adds contextual explanations without altering the original image.
 Documentation languages: [English](README.md) | [Português](README.pt-BR.md) |
 [日本語](README.ja.md) | [Español](README.es.md)
 
-Version 0.1.0 is an MVP for local study and portfolio validation. OCR model weights and JMdict-derived data are downloaded locally and are never committed or included in the distributable image.
+The current development version is recorded in [`VERSION`](VERSION). OCR model
+weights and JMdict-derived data are downloaded locally and are never committed or
+included in the distributable image.
 
 ## Features
 
@@ -87,10 +89,10 @@ flowchart TD
 
 ## Visual Artifacts
 
-| View | Screenshot |
-| --- | --- |
-| Desktop reader | `docs/assets/reader-desktop-chromium.png` |
-| Mobile reader | `docs/assets/reader-mobile-chromium.png` |
+[![Desktop reader](docs/assets/reader-desktop-chromium.png)](docs/assets/reader-desktop-chromium.png)
+
+- [Desktop reader screenshot](docs/assets/reader-desktop-chromium.png)
+- [Mobile reader screenshot](docs/assets/reader-mobile-chromium.png)
 
 ## Local Setup
 
@@ -128,7 +130,9 @@ docker compose up --build
 Run local quality gates:
 
 ```powershell
-.\.venv\Scripts\python.exe -m ruff check backend/src tests
+.\.venv\Scripts\python.exe scripts/version.py check
+.\.venv\Scripts\python.exe scripts/check_markdown_links.py
+.\.venv\Scripts\python.exe -m ruff check backend/src tests scripts
 .\.venv\Scripts\python.exe -m mypy backend/src
 .\.venv\Scripts\python.exe -m pytest --cov
 npm run lint
@@ -158,7 +162,8 @@ For security issues, use the private reporting path in [`SECURITY.md`](SECURITY.
 
 MangaSensei source code is licensed under GPL-3.0-only. JMdict-derived data is generated locally from verified third-party sources and remains subject to EDRDG / CC BY-SA terms. OCR model weights are local artifacts and are not redistributed by this repository.
 
-See `THIRD_PARTY_NOTICES.md` for attribution, checksums and source references.
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for attribution, checksums and
+source references.
 
 ## License
 

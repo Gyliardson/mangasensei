@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  release:
+    name: Validate and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+
+      - name: Validate version mirrors and tag
+        run: |
+          python scripts/version.py check
+          VERSION="$(cat VERSION)"
+          test "${GITHUB_REF_NAME}" = "v${VERSION}"
+          git fetch origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
+
+      - name: Require successful CI for tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SUCCESSFUL_RUNS="$(gh api \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&status=success" \
+            --jq '.total_count')"
+          if [ "${SUCCESSFUL_RUNS}" -lt 1 ]; then
+            echo "No successful CI run exists for tagged commit ${GITHUB_SHA}." >&2
+            exit 1
+          fi
+
+      - name: Require curated changelog entry
+        run: python scripts/version.py release-notes > release-notes.md
+
+      - name: Build release distributions
+        run: uv build
+
+      - name: Build release image
+        run: docker build --build-arg MANGASENSEI_VERSION="$(cat VERSION)" -t "mangasensei:$(cat VERSION)" .
+
+      - name: Verify release image metadata
+        run: |
+          test "$(docker image inspect "mangasensei:$(cat VERSION)" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')" = "$(cat VERSION)"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --verify-tag \
+            --title "MangaSensei ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md
