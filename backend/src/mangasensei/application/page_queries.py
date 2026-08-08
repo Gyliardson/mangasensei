@@ -12,7 +12,6 @@ from mangasensei.infrastructure.database.analysis_models import (
     GeminiAnalysisRecord,
     GeminiGrammarPointRecord,
     GeminiRegionAnalysisRecord,
-    GeminiVocabularyLinkRecord,
     LinguisticMeaningRecord,
     LinguisticTokenRecord,
     OcrRegionRecord,
@@ -135,25 +134,11 @@ class PageQueryService:
                 if analysis_ids
                 else ()
             )
-            links = (
-                tuple(
-                    (
-                        await session.execute(
-                            select(GeminiVocabularyLinkRecord).where(
-                                GeminiVocabularyLinkRecord.region_analysis_id.in_(analysis_ids)
-                            )
-                        )
-                    ).scalars()
-                )
-                if analysis_ids
-                else ()
-            )
 
         meanings_by_token: dict[int, list[str]] = defaultdict(list)
         for meaning in meanings:
             meanings_by_token[meaning.token_id].append(meaning.meaning)
         tokens_by_region: dict[int, list[LinguisticTokenRecord]] = defaultdict(list)
-        token_by_id = {token.id: token for token in tokens}
         for token in tokens:
             tokens_by_region[token.region_id].append(token)
         vertices_by_region: dict[int, list[list[int]]] = defaultdict(list)
@@ -163,9 +148,6 @@ class PageQueryService:
         grammar_by_analysis: dict[int, list[str]] = defaultdict(list)
         for point in grammar:
             grammar_by_analysis[point.region_analysis_id].append(point.label)
-        linked_token_ids: dict[int, set[int]] = defaultdict(set)
-        for link in links:
-            linked_token_ids[link.region_analysis_id].add(link.token_id)
 
         response_regions = []
         for region in regions:
@@ -173,16 +155,14 @@ class PageQueryService:
             region_tokens = tokens_by_region[region.id]
             vocabulary = []
             seen_entries: set[str] = set()
-            if analysis is not None:
-                for token_id in linked_token_ids[analysis.id]:
-                    token = token_by_id[token_id]
-                    if (
-                        token.dictionary_entry_id is None
-                        or token.dictionary_entry_id in seen_entries
-                    ):
-                        continue
-                    seen_entries.add(token.dictionary_entry_id)
-                    vocabulary.append(_vocabulary(token, meanings_by_token[token.id]))
+            for token in region_tokens:
+                if (
+                    token.dictionary_entry_id is None
+                    or token.dictionary_entry_id in seen_entries
+                ):
+                    continue
+                seen_entries.add(token.dictionary_entry_id)
+                vocabulary.append(_vocabulary(token, meanings_by_token[token.id]))
             response_regions.append(
                 {
                     "id": str(region.public_id),
