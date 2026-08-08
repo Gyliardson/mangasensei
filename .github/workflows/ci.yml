@@ -40,6 +40,7 @@ jobs:
         with:
           version: 0.12.3
           python-version: "3.11"
+          prune-cache: true
 
       - name: Install dependencies from lockfile
         run: uv sync --frozen --extra ocr
@@ -77,6 +78,7 @@ jobs:
         with:
           version: 0.12.3
           python-version: "3.11"
+          prune-cache: true
 
       - name: Build wheel and source distribution
         run: uv build
@@ -110,7 +112,7 @@ jobs:
 
       - name: Verify image metadata and package imports
         run: |
-          test "$(docker image inspect mangasensei:ci --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')" = "$(cat VERSION)"
+          test "$(docker image inspect mangasensei:ci --format '{{ index .Config.Labels \"org.opencontainers.image.version\" }}')" = "$(cat VERSION)"
           docker run --rm --entrypoint python mangasensei:ci -c "import mangasensei; import mangasensei.ocr.models.manifest; print(mangasensei.__version__)"
 
   frontend:
