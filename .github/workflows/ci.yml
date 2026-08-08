@@ -171,7 +171,7 @@ jobs:
           --health-retries 20
     env:
       MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55432/mangasensei
-      MANGASENSEI_STORAGE_ROOT: ${{ runner.temp }}/mangasensei-fullstack-storage
+      MANGASENSEI_STORAGE_ROOT: /tmp/mangasensei-fullstack-storage
       MANGASENSEI_FRONTEND_DIST: frontend/dist
       MANGASENSEI_CAPABILITY_PEPPERS: '["fullstack-e2e-capability-pepper-000000000001"]'
     steps:
