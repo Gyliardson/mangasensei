@@ -7,9 +7,15 @@ from pathlib import Path
 import pytest
 from httpx import ASGITransport, AsyncClient
 from PIL import Image
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from mangasensei.api.app import create_app
+from mangasensei.application.uploads import UploadService
 from mangasensei.config import Settings
+from mangasensei.infrastructure.database.storage_models import ImageBlobRecord, PageRecord
+from mangasensei.storage.local import LocalFilesystemStorage
+from mangasensei.workers.retention import RetentionJanitor
 
 
 def page_image(color: tuple[int, int, int] = (240, 235, 225)) -> bytes:
@@ -69,6 +75,57 @@ async def test_upload_is_idempotent_and_original_download_is_byte_exact(
         )
         assert denied.status_code == 404
         assert "detail" not in denied.json()["error"]
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_failed_upload_persistence_is_reconciled_without_storage_orphan(
+    clean_postgres_url: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = page_image((25, 35, 45))
+
+    async def fail_after_rows_are_staged(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise RuntimeError("injected persistence failure")
+
+    monkeypatch.setattr(UploadService, "_issue_capabilities", fail_after_rows_are_staged)
+    app = create_app(make_settings(clean_postgres_url, tmp_path))
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        failed = await client.post(
+            "/api/v1/pages",
+            headers={"Idempotency-Key": "upload-persistence-failure-0001"},
+            files={"image": ("failure.png", original, "image/png")},
+        )
+
+    assert failed.status_code == 500
+
+    storage = LocalFilesystemStorage(tmp_path)
+    pending = await storage.pending_writes()
+    assert len(pending) == 1
+    assert await storage.read(pending[0].storage_key) == original
+
+    database_url = clean_postgres_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    engine = create_async_engine(database_url)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessions() as session:
+        assert (await session.execute(select(ImageBlobRecord))).scalars().all() == []
+        assert (await session.execute(select(PageRecord))).scalars().all() == []
+
+    reconciled = await RetentionJanitor(sessions, storage).run_once(batch_size=10)
+
+    assert reconciled == 0
+    assert await storage.pending_writes() == ()
+    with pytest.raises(FileNotFoundError):
+        await storage.read(pending[0].storage_key)
+    async with sessions() as session:
+        assert (await session.execute(select(ImageBlobRecord))).scalars().all() == []
+        assert (await session.execute(select(PageRecord))).scalars().all() == []
+    await engine.dispose()
 
 
 @pytest.mark.integration
