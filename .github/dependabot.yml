@@ -6,8 +6,12 @@ updates:
       interval: weekly
     groups:
       python-dependencies:
+        applies-to: version-updates
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: npm
     directory: /
@@ -15,8 +19,12 @@ updates:
       interval: weekly
     groups:
       javascript-dependencies:
+        applies-to: version-updates
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
