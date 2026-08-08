@@ -1,6 +1,6 @@
 # MangaSensei
 
-[![Versión](https://img.shields.io/badge/version-0.1.0-243447)](CHANGELOG.md)
+[![Release](https://img.shields.io/github/v/release/Gyliardson/mangasensei?sort=semver&display_name=tag)](https://github.com/Gyliardson/mangasensei/releases)
 [![Licencia](https://img.shields.io/badge/license-GPL--3.0--only-8f1d2c)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-315b7d)](docs/versions.md)
 [![React](https://img.shields.io/badge/React-19-315b7d)](docs/versions.md)
@@ -12,7 +12,9 @@ contextuales sin modificar la imagen original.
 Documentación: [English](README.md) | [Português](README.pt-BR.md) |
 [日本語](README.ja.md) | [Español](README.es.md)
 
-> La versión 0.1.0 es un MVP local. Los pesos OCR y los datos derivados de JMdict se descargan localmente y no se incluyen en Git ni en la imagen distribuible.
+La versión actual de desarrollo está registrada en [`VERSION`](VERSION). Los pesos
+OCR y los datos derivados de JMdict se descargan localmente y no se incluyen en Git
+ni en la imagen distribuible.
 
 ## Funciones
 
@@ -94,10 +96,10 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 ## Artefactos Visuales
 
-| Vista | Ruta |
-| --- | --- |
-| Lector desktop | `docs/assets/reader-desktop-chromium.png` |
-| Lector móvil | `docs/assets/reader-mobile-chromium.png` |
+[![Lector desktop](docs/assets/reader-desktop-chromium.png)](docs/assets/reader-desktop-chromium.png)
+
+- [Captura del lector desktop](docs/assets/reader-desktop-chromium.png)
+- [Captura del lector móvil](docs/assets/reader-mobile-chromium.png)
 
 ## Estructura
 
@@ -117,4 +119,6 @@ Para problemas de seguridad, usa el canal privado descrito en [`SECURITY.md`](SE
 
 ## Licencia
 
-Copyright (C) 2026 Gyliardson Keitison. El código de MangaSensei usa GPL-3.0-only. Los datos JMdict y los componentes de terceros conservan sus licencias y avisos en `THIRD_PARTY_NOTICES.md`.
+Copyright (C) 2026 Gyliardson Keitison. El código de MangaSensei usa GPL-3.0-only.
+Los datos JMdict y los componentes de terceros conservan sus licencias y avisos en
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
