@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -70,6 +71,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 server_header=False,
             )
         elif args.command == "worker":
+            logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
             asyncio.run(run_worker_process(settings, once=args.once))
         elif args.command == "retention":
             asyncio.run(run_retention_process(settings, once=args.once))
