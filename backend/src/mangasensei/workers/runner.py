@@ -6,10 +6,10 @@ import asyncio
 import hashlib
 import json
 import logging
+import pathlib
 from contextlib import suppress
 from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -82,7 +82,7 @@ def _safe_exception_context(exc: BaseException) -> str:
         while traceback_cursor is not None:
             code = traceback_cursor.tb_frame.f_code
             frames.append(
-                f"{Path(code.co_filename).name}:{traceback_cursor.tb_lineno}:{code.co_name}"
+                f"{pathlib.Path(code.co_filename).name}:{traceback_cursor.tb_lineno}:{code.co_name}"
             )
             traceback_cursor = traceback_cursor.tb_next
         locations = ">".join(frames[-_MAX_DIAGNOSTIC_FRAMES:]) or "no-traceback"
