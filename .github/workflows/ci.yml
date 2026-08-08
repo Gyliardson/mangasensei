@@ -115,6 +115,21 @@ jobs:
           test "$(docker image inspect mangasensei:ci --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')" = "$(cat VERSION)"
           docker run --rm --entrypoint python mangasensei:ci -c "import mangasensei; import mangasensei.ocr.models.manifest; print(mangasensei.__version__)"
 
+      - name: Verify blank Gemini configuration stays optional
+        env:
+          POSTGRES_PASSWORD: compose-ci-password
+          MANGASENSEI_CAPABILITY_PEPPERS: '["compose-ci-pepper-value-0000000000000001"]'
+        run: |
+          docker compose config --format json > /tmp/mangasensei-compose.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          compose = json.loads(Path("/tmp/mangasensei-compose.json").read_text(encoding="utf-8"))
+          assert compose["services"]["worker"]["environment"]["GOOGLE_API_KEY"] == ""
+          PY
+          docker run --rm -e GOOGLE_API_KEY= --entrypoint python mangasensei:ci -c "from mangasensei.config import Settings; from mangasensei.runtime import _gemini_adapter; settings = Settings(_env_file=None); assert settings.google_api_key is None; assert _gemini_adapter(settings) is None"
+
   frontend:
     name: Frontend (lint, typecheck, coverage, build, e2e)
     runs-on: ubuntu-latest
