@@ -14,10 +14,12 @@ x-app-environment: &app-environment
   GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
 
 x-app-service: &app-service
-  image: mangasensei:0.1.0
+  image: mangasensei:${MANGASENSEI_VERSION:-dev}
   build:
     context: .
     dockerfile: Dockerfile
+    args:
+      MANGASENSEI_VERSION: ${MANGASENSEI_VERSION:-dev}
   environment: *app-environment
   security_opt:
     - no-new-privileges:true
