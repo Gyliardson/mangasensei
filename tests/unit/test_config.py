@@ -6,6 +6,28 @@ from pydantic import ValidationError
 from mangasensei.config import Settings
 
 
+@pytest.mark.parametrize("value", ["", "   "])
+def test_blank_google_api_key_from_environment_disables_gemini(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("GOOGLE_API_KEY", value)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.google_api_key is None
+
+
+def test_non_blank_google_api_key_from_environment_is_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-gemini-key")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.google_api_key is not None
+    assert settings.google_api_key.get_secret_value() == "test-gemini-key"
+
+
 def test_require_runtime_config_accepts_configured_settings() -> None:
     settings = Settings(
         _env_file=None,
@@ -75,3 +97,4 @@ def test_artifact_only_settings_construct_without_database_credentials() -> None
     assert settings.jmdict_path is not None
     assert settings.database_url is None
     assert settings.capability_peppers is None
+    assert settings.google_api_key is None
