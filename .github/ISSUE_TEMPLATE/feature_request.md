@@ -6,6 +6,8 @@ labels: enhancement
 assignees: ""
 ---
 
+> You may write this request in **English, Português, 日本語 or Español**.
+
 ## Motivation
 
 Describe the problem this feature would solve, or the opportunity it would open.
@@ -21,9 +23,10 @@ Any alternatives you considered, and why they are not sufficient.
 ## Impact
 
 - Who benefits and how?
-- Does it change the API, the data model, or the deployment model?
-- Does it affect privacy, storage, or costs (e.g. Gemini calls)?
+- Does it change the API, data model, storage, deployment or user workflow?
+- Does it affect privacy, local-first behavior, security or costs (for example Gemini calls)?
+- Does it require new dependencies, models or third-party data?
 
 ## Additional context
 
-Anything else that might be relevant, such as references, screenshots, or links.
+Anything else that might be relevant, such as references, screenshots or links.

@@ -1,74 +1,125 @@
+<div align="center">
+
 # MangaSensei
 
+**Lee manga. Entiende japonés. Mantén tus páginas en local.**
+
+Un entorno de estudio centrado en la privacidad para convertir páginas de manga en material interactivo de japonés con OCR local, lingüística determinista y explicaciones opcionales por IA.
+
+[English](README.md) · [Português](README.pt-BR.md) · [日本語](README.ja.md) · [Español](README.es.md)
+
+</div>
+
+[![CI](https://github.com/Gyliardson/mangasensei/actions/workflows/ci.yml/badge.svg)](https://github.com/Gyliardson/mangasensei/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Gyliardson/mangasensei?sort=semver&display_name=tag)](https://github.com/Gyliardson/mangasensei/releases)
 [![Licencia](https://img.shields.io/badge/license-GPL--3.0--only-8f1d2c)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-315b7d)](docs/versions.md)
 [![React](https://img.shields.io/badge/React-19-315b7d)](docs/versions.md)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18.4-315b7d)](docs/versions.md)
 
-MangaSensei es un entorno local de estudio que extrae texto japonés de páginas
-de manga, agrega datos lingüísticos deterministas y genera explicaciones
-contextuales sin modificar la imagen original.
+MangaSensei extrae texto japonés de páginas de manga, enriquece el resultado con datos lingüísticos locales y lo presenta en un lector responsivo sin alterar la imagen original. Los pesos de OCR y los datos derivados de JMdict permanecen en local y no se incluyen en Git ni en la imagen distribuible. Gemini es opcional.
 
-Documentación: [English](README.md) | [Português](README.pt-BR.md) |
-[日本語](README.ja.md) | [Español](README.es.md)
+La versión actual de desarrollo está registrada en [`VERSION`](VERSION).
 
-La versión actual de desarrollo está registrada en [`VERSION`](VERSION). Los pesos
-OCR y los datos derivados de JMdict se descargan localmente y no se incluyen en Git
-ni en la imagen distribuible.
+## ¿Por qué MangaSensei?
+
+| Local-first | Imagen original preservada | Diseñado para estudiar |
+| --- | --- | --- |
+| OCR, modelos y datos del diccionario son locales por defecto. | La página subida se conserva sin modificaciones y las capas de estudio se renderizan por separado. | Furigana, vocabulario, datos lingüísticos y explicaciones contextuales se organizan alrededor de la lectura. |
+
+## Vista previa del lector
+
+<table>
+  <tr>
+    <td width="68%" align="center"><a href="docs/assets/reader-desktop-chromium.png"><img src="docs/assets/reader-desktop-chromium.png" alt="Lector de escritorio de MangaSensei"></a><br><sub>Escritorio</sub></td>
+    <td width="32%" align="center"><a href="docs/assets/reader-mobile-chromium.png"><img src="docs/assets/reader-mobile-chromium.png" alt="Lector móvil de MangaSensei"></a><br><sub>Móvil</sub></td>
+  </tr>
+</table>
 
 ## Funciones
 
 | Área | Capacidad |
 | --- | --- |
-| Carga | Subida segura de imágenes con idempotencia y capacidades HMAC por página |
+| Carga | Subida segura de imágenes con idempotencia y capabilities HMAC por página |
 | OCR | Subconjunto local de Manga Image Translator con modelos verificados por checksum |
-| Lingüística | Sudachi y JMdict normalizado desde una fuente verificada |
-| Gemini | Explicaciones estructuradas opcionales con presupuesto y `store=False` |
-| Lector | SPA React con Blob autenticado, SVG responsivo, furigana y vocabulario |
-| Operación | Cola PostgreSQL, leases, retención, readiness y métricas |
+| Lingüística | Tokenización Sudachi e índice JMdict normalizado generado desde una fuente verificada |
+| Gemini | Explicaciones estructuradas opcionales con control de presupuesto y `store=False` |
+| Lector | SPA React con Blob autenticado, overlays SVG responsivos, furigana y tarjetas de vocabulario |
+| Operación | Cola PostgreSQL, recuperación de leases, retención, readiness y métricas |
 
 ## Arquitectura
 
 ```mermaid
 flowchart TD
     subgraph Cliente["Capa Cliente"]
-        UI["React Reader SPA"]
+        Browser["React Reader SPA"]
     end
     subgraph API["Capa API"]
-        Server["FastAPI"]
-        Caps["Capacidades por Página"]
+        FastAPI["Aplicación FastAPI"]
+        Capabilities["Capabilities por Página"]
+        Static["Assets Estáticos del Frontend"]
     end
     subgraph Worker["Capa Worker"]
         Runner["Worker Runner"]
-        OCR["OCR Local"]
-        Ling["Sudachi + JMdict"]
-        AI["Gemini Opcional"]
+        Queue["Cola PostgreSQL"]
+        OCR["Motor OCR Local"]
+        Linguistics["Sudachi + JMdict"]
+        Gemini["Análisis Gemini Opcional"]
     end
-    subgraph Datos["Capa de Datos"]
-        DB[("PostgreSQL")]
-        Files["Almacenamiento de Imágenes"]
+    subgraph Storage["Capa de Datos"]
+        DB[("PostgreSQL 18.4")]
+        Files["Almacenamiento de Imágenes por Contenido"]
         Models["Modelos OCR Locales"]
-        Dict["JMdict Local"]
+        Dictionary["JMdict JSON Local"]
     end
-    UI --> Server
-    Server --> Caps
-    Server --> DB
-    Server --> Files
+    Browser --> FastAPI
+    FastAPI --> Capabilities
+    FastAPI --> Static
+    FastAPI --> DB
+    FastAPI --> Files
+    Queue --> DB
+    Runner --> Queue
     Runner --> OCR
-    Runner --> Ling
-    Runner --> AI
+    Runner --> Linguistics
+    Runner --> Gemini
     OCR --> Models
-    Ling --> Dict
+    Linguistics --> Dictionary
     Runner --> DB
+    Runner --> Files
     classDef client fill:#2563eb,stroke:#1d4ed8,color:#ffffff;
     classDef service fill:#475569,stroke:#334155,color:#ffffff;
     classDef data fill:#059669,stroke:#047857,color:#ffffff;
-    class UI client;
-    class Server,Caps,Runner,OCR,Ling,AI service;
-    class DB,Files,Models,Dict data;
+    class Browser client;
+    class FastAPI,Capabilities,Static,Runner,Queue,OCR,Linguistics,Gemini service;
+    class DB,Files,Models,Dictionary data;
 ```
 
+## Superficie de la API
+
+| Método | Ruta | Propósito |
+| --- | --- | --- |
+| `POST` | `/api/v1/pages` | Sube una página de manga y crea un job de análisis en cola |
+| `GET` | `/api/v1/pages/{page_id}` | Consulta estado y datos de estudio completados usando el token de página |
+| `GET` | `/api/v1/pages/{page_id}/image` | Devuelve la imagen original mediante una respuesta Blob autenticada |
+| `POST` | `/api/v1/pages/{page_id}/reprocess` | Encola un nuevo análisis usando una capability de reprocesamiento |
+| `GET` | `/health` | Health check del proceso |
+| `GET` | `/ready` | Verificación de base de datos, almacenamiento y schema |
+| `GET` | `/metrics` | Métricas Prometheus |
+
 ## Ejecución Local
+
+Requisitos:
+
+| Herramienta | Versión compatible |
+| --- | --- |
+| Python | `3.11.x` |
+| Node.js | objetivo `24 LTS`; `22.12+` compatible para tooling local |
+| Docker | `28.x` |
+| uv | Necesario para dependencias Python y gestión del lockfile |
+
+Consulta [`docs/versions.md`](docs/versions.md) para la matriz revisada de la stack.
+
+Instala dependencias y prepara los artefactos locales:
 
 ```powershell
 py -3.11 -m uv sync --extra ocr
@@ -76,49 +127,75 @@ npm install
 Copy-Item .env.example .env
 .\.venv\Scripts\mangasensei.exe models download
 .\.venv\Scripts\mangasensei.exe jmdict download
-docker compose up --build
 ```
 
-Genera secretos y configúralos en `.env` antes de ejecutar cualquier cosa que use base de datos, cola o API: sustituye `POSTGRES_PASSWORD`, la contraseña dentro de `MANGASENSEI_DATABASE_URL` y el valor dentro de `MANGASENSEI_CAPABILITY_PEPPERS`:
+Genera secretos y configúralos en `.env` antes de ejecutar cualquier cosa que use base de datos, cola o API. Sustituye `POSTGRES_PASSWORD`, la contraseña dentro de `MANGASENSEI_DATABASE_URL` y el valor de `MANGASENSEI_CAPABILITY_PEPPERS` por valores aleatorios nuevos:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-## Rutas Principales
+Ejecuta con Docker Compose:
 
-| Método | Ruta | Propósito |
-| --- | --- | --- |
-| `POST` | `/api/v1/pages` | Carga una página y crea un job |
-| `GET` | `/api/v1/pages/{page_id}` | Consulta el resultado con token de página |
-| `GET` | `/api/v1/pages/{page_id}/image` | Devuelve la imagen original autenticada |
-| `POST` | `/api/v1/pages/{page_id}/reprocess` | Reprocesa la página con una capacidad dedicada |
+```powershell
+docker compose up --build
+```
 
-## Artefactos Visuales
+Ejecuta los quality gates locales:
 
-[![Lector desktop](docs/assets/reader-desktop-chromium.png)](docs/assets/reader-desktop-chromium.png)
+```powershell
+.\.venv\Scripts\python.exe scripts/version.py check
+.\.venv\Scripts\python.exe scripts/check_markdown_links.py
+.\.venv\Scripts\python.exe -m ruff check backend/src tests scripts
+.\.venv\Scripts\python.exe -m mypy backend/src
+.\.venv\Scripts\python.exe -m pytest --cov
+npm run lint
+npm run typecheck
+npm run test:coverage
+npm run build
+npm run e2e
+```
 
-- [Captura del lector desktop](docs/assets/reader-desktop-chromium.png)
-- [Captura del lector móvil](docs/assets/reader-mobile-chromium.png)
-
-## Estructura
+## Estructura del Repositorio
 
 ```text
 backend/      API Python, worker, migraciones, OCR y lingüística
-frontend/     SPA React y pruebas Playwright
-docs/         Versiones y capturas visuales
+frontend/     SPA React, componentes del lector y pruebas Playwright
+docs/         Notas de versión y artefactos visuales
 tests/        Pruebas unitarias e integración del backend
-var/          Datos locales ignorados por Git
+var/          Datos locales de runtime ignorados por Git
 ```
+
+## Actividad del Proyecto
+
+[![Colaboradores](https://img.shields.io/github/contributors/Gyliardson/mangasensei)](https://github.com/Gyliardson/mangasensei/graphs/contributors)
+[![Actividad de commits](https://img.shields.io/github/commit-activity/m/Gyliardson/mangasensei)](https://github.com/Gyliardson/mangasensei/commits/main)
+[![Issues abiertas](https://img.shields.io/github/issues/Gyliardson/mangasensei)](https://github.com/Gyliardson/mangasensei/issues)
+[![Discussions](https://img.shields.io/github/discussions/Gyliardson/mangasensei)](https://github.com/Gyliardson/mangasensei/discussions)
+
+| Explora | Enlace |
+| --- | --- |
+| Colaboradores | [Personas que construyen MangaSensei](https://github.com/Gyliardson/mangasensei/graphs/contributors) |
+| Historial | [Historial de commits](https://github.com/Gyliardson/mangasensei/commits/main) |
+| Roadmap y bugs | [Issues](https://github.com/Gyliardson/mangasensei/issues) |
+| Ideas y preguntas | [Discussions](https://github.com/Gyliardson/mangasensei/discussions) |
+| Seguridad | [Resumen de seguridad](https://github.com/Gyliardson/mangasensei/security) |
+| Releases | [GitHub Releases](https://github.com/Gyliardson/mangasensei/releases) |
 
 ## Contribución
 
-Las contribuciones son bienvenidas. Lee [`CONTRIBUTING.md`](CONTRIBUTING.md) antes de
-abrir una issue o un pull request y sigue el [`Código de Conducta`](CODE_OF_CONDUCT.md).
-Para problemas de seguridad, usa el canal privado descrito en [`SECURITY.md`](SECURITY.md).
+Las contribuciones son bienvenidas en **English, Português, 日本語 o Español**. Lee la guía en tu idioma preferido:
+
+[English](CONTRIBUTING.md) · [Português](CONTRIBUTING.pt-BR.md) · [日本語](CONTRIBUTING.ja.md) · [Español](CONTRIBUTING.es.md)
+
+Sigue también el [Código de Conducta](CODE_OF_CONDUCT.es.md). Para vulnerabilidades, utiliza el canal privado descrito en la [Política de Seguridad](SECURITY.es.md).
+
+## Datos y Licencias
+
+El código fuente de MangaSensei usa GPL-3.0-only. Los datos derivados de JMdict se generan localmente desde fuentes de terceros verificadas y siguen sujetos a los términos EDRDG / CC BY-SA. Los pesos de los modelos OCR son artefactos locales y este repositorio no los redistribuye.
+
+Consulta [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) para atribuciones, checksums y referencias de origen.
 
 ## Licencia
 
-Copyright (C) 2026 Gyliardson Keitison. El código de MangaSensei usa GPL-3.0-only.
-Los datos JMdict y los componentes de terceros conservan sus licencias y avisos en
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+Copyright (C) 2026 Gyliardson Keitison. MangaSensei está licenciado bajo [GPL-3.0-only](LICENSE). Los componentes de terceros conservan sus respectivos avisos.

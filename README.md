@@ -1,21 +1,40 @@
+<div align="center">
+
 # MangaSensei
 
+**Read manga. Understand Japanese. Keep your pages local.**
+
+A privacy-first study workspace for turning manga pages into interactive Japanese learning material with local OCR, deterministic linguistics, and optional AI explanations.
+
+[English](README.md) · [Português](README.pt-BR.md) · [日本語](README.ja.md) · [Español](README.es.md)
+
+</div>
+
+[![CI](https://github.com/Gyliardson/mangasensei/actions/workflows/ci.yml/badge.svg)](https://github.com/Gyliardson/mangasensei/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Gyliardson/mangasensei?sort=semver&display_name=tag)](https://github.com/Gyliardson/mangasensei/releases)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-8f1d2c)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11-315b7d)](docs/versions.md)
 [![React](https://img.shields.io/badge/React-19-315b7d)](docs/versions.md)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18.4-315b7d)](docs/versions.md)
 
-MangaSensei is a privacy-conscious local study workspace that extracts Japanese
-text from manga pages, enriches it with deterministic linguistic data, and
-adds contextual explanations without altering the original image.
+MangaSensei extracts Japanese text from manga pages, enriches it with local linguistic data, and presents the result in a responsive reader without altering the original image. OCR model weights and JMdict-derived data stay local and are not committed or bundled into the distributable image. Gemini is optional.
 
-Documentation languages: [English](README.md) | [Português](README.pt-BR.md) |
-[日本語](README.ja.md) | [Español](README.es.md)
+The current development version is recorded in [`VERSION`](VERSION).
 
-The current development version is recorded in [`VERSION`](VERSION). OCR model
-weights and JMdict-derived data are downloaded locally and are never committed or
-included in the distributable image.
+## Why MangaSensei?
+
+| Local-first | Original-first | Study-first |
+| --- | --- | --- |
+| OCR, models and dictionary data are local by default. | The uploaded manga image is preserved as-is and rendered separately from study overlays. | Furigana, vocabulary, linguistic data and contextual explanations are organized around reading. |
+
+## Reader Preview
+
+<table>
+  <tr>
+    <td width="68%" align="center"><a href="docs/assets/reader-desktop-chromium.png"><img src="docs/assets/reader-desktop-chromium.png" alt="MangaSensei desktop reader"></a><br><sub>Desktop reader</sub></td>
+    <td width="32%" align="center"><a href="docs/assets/reader-mobile-chromium.png"><img src="docs/assets/reader-mobile-chromium.png" alt="MangaSensei mobile reader"></a><br><sub>Mobile reader</sub></td>
+  </tr>
+</table>
 
 ## Features
 
@@ -25,7 +44,7 @@ included in the distributable image.
 | OCR | Local Manga Image Translator subset with checksum-verified model artifacts |
 | Linguistics | Sudachi tokenization plus a normalized JMdict index generated from verified source data |
 | Gemini | Optional structured study explanations with budget tracking and `store=False` |
-| Reader | React SPA with authenticated Blob rendering, SVG overlays, furigana and vocabulary cards |
+| Reader | React SPA with authenticated Blob rendering, responsive SVG overlays, furigana and vocabulary cards |
 | Operations | PostgreSQL-backed queue, lease recovery, retention jobs, readiness checks and metrics |
 
 ## Architecture
@@ -87,23 +106,18 @@ flowchart TD
 | `GET` | `/ready` | Database, storage and schema readiness check |
 | `GET` | `/metrics` | Prometheus metrics |
 
-## Visual Artifacts
-
-[![Desktop reader](docs/assets/reader-desktop-chromium.png)](docs/assets/reader-desktop-chromium.png)
-
-- [Desktop reader screenshot](docs/assets/reader-desktop-chromium.png)
-- [Mobile reader screenshot](docs/assets/reader-mobile-chromium.png)
-
 ## Local Setup
 
 Prerequisites:
 
-| Tool | Version |
+| Tool | Supported version |
 | --- | --- |
 | Python | `3.11.x` |
-| uv | `0.12.x` |
-| Node.js | `22.12+` |
+| Node.js | `24 LTS` target; `22.12+` supported for local tooling |
 | Docker | `28.x` |
+| uv | Required for Python dependency and lockfile management |
+
+See [`docs/versions.md`](docs/versions.md) for the reviewed stack matrix.
 
 Install dependencies and prepare local artifacts:
 
@@ -115,7 +129,7 @@ Copy-Item .env.example .env
 .\.venv\Scripts\mangasensei.exe jmdict download
 ```
 
-Generate secrets and set them in `.env` before running anything that touches the database, the queue or the API: replace `POSTGRES_PASSWORD`, the password inside `MANGASENSEI_DATABASE_URL` and the value inside `MANGASENSEI_CAPABILITY_PEPPERS` with fresh random values:
+Generate secrets and set them in `.env` before running anything that touches the database, queue or API. Replace `POSTGRES_PASSWORD`, the password inside `MANGASENSEI_DATABASE_URL`, and the value inside `MANGASENSEI_CAPABILITY_PEPPERS` with fresh random values:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(32))"
@@ -147,24 +161,41 @@ npm run e2e
 ```text
 backend/      Python API, worker, migrations, OCR and linguistics modules
 frontend/     React SPA, reader components and Playwright tests
-docs/         Version notes and generated visual artifacts
+docs/         Version notes and visual artifacts
 tests/        Backend unit and integration tests
 var/          Local runtime data ignored by Git
 ```
 
+## Project Activity
+
+[![Contributors](https://img.shields.io/github/contributors/Gyliardson/mangasensei)](https://github.com/Gyliardson/mangasensei/graphs/contributors)
+[![Commit activity](https://img.shields.io/github/commit-activity/m/Gyliardson/mangasensei)](https://github.com/Gyliardson/mangasensei/commits/main)
+[![Open issues](https://img.shields.io/github/issues/Gyliardson/mangasensei)](https://github.com/Gyliardson/mangasensei/issues)
+[![Discussions](https://img.shields.io/github/discussions/Gyliardson/mangasensei)](https://github.com/Gyliardson/mangasensei/discussions)
+
+| Explore | Link |
+| --- | --- |
+| Contributors | [People building MangaSensei](https://github.com/Gyliardson/mangasensei/graphs/contributors) |
+| History | [Commit history](https://github.com/Gyliardson/mangasensei/commits/main) |
+| Roadmap and bugs | [Issues](https://github.com/Gyliardson/mangasensei/issues) |
+| Ideas and questions | [Discussions](https://github.com/Gyliardson/mangasensei/discussions) |
+| Security | [Security overview](https://github.com/Gyliardson/mangasensei/security) |
+| Releases | [GitHub Releases](https://github.com/Gyliardson/mangasensei/releases) |
+
 ## Contributing
 
-Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) before
-opening an issue or a pull request, and follow the [`Code of Conduct`](CODE_OF_CONDUCT.md).
-For security issues, use the private reporting path in [`SECURITY.md`](SECURITY.md).
+Contributions are welcome in **English, Português, 日本語 or Español**. Read the guide in your preferred language:
 
-## Data And Licensing
+[English](CONTRIBUTING.md) · [Português](CONTRIBUTING.pt-BR.md) · [日本語](CONTRIBUTING.ja.md) · [Español](CONTRIBUTING.es.md)
+
+Please also follow the [Code of Conduct](CODE_OF_CONDUCT.md). For vulnerabilities, use the private reporting path described in the [Security Policy](SECURITY.md).
+
+## Data and Licensing
 
 MangaSensei source code is licensed under GPL-3.0-only. JMdict-derived data is generated locally from verified third-party sources and remains subject to EDRDG / CC BY-SA terms. OCR model weights are local artifacts and are not redistributed by this repository.
 
-See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for attribution, checksums and
-source references.
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for attribution, checksums and source references.
 
 ## License
 
-Copyright (C) 2026 Gyliardson Keitison. MangaSensei is licensed under GPL-3.0-only. Third-party components retain their respective notices.
+Copyright (C) 2026 Gyliardson Keitison. MangaSensei is licensed under [GPL-3.0-only](LICENSE). Third-party components retain their respective notices.
