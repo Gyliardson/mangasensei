@@ -54,12 +54,20 @@ class _Dictionary:
         return None
 
 
+class _RecordHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_worker_failure_log_is_useful_and_does_not_expose_sensitive_content(
     clean_postgres_url: str,
     tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     settings = Settings(
         _env_file=None,
@@ -99,8 +107,16 @@ async def test_worker_failure_log_is_useful_and_does_not_expose_sensitive_conten
         lease_seconds=60,
     )
 
-    caplog.set_level(logging.ERROR, logger="mangasensei.workers.runner")
-    assert await worker.run_once()
+    logger = logging.getLogger("mangasensei.workers.runner")
+    handler = _RecordHandler()
+    original_level = logger.level
+    logger.setLevel(logging.ERROR)
+    logger.addHandler(handler)
+    try:
+        assert await worker.run_once()
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(original_level)
 
     async with sessions() as session:
         job = (
@@ -115,7 +131,7 @@ async def test_worker_failure_log_is_useful_and_does_not_expose_sensitive_conten
 
     records = [
         record
-        for record in caplog.records
+        for record in handler.records
         if record.name == "mangasensei.workers.runner"
         and "worker_pipeline_failed" in record.getMessage()
     ]
