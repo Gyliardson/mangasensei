@@ -103,7 +103,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _migrate(settings: Settings, config_path: Path) -> None:
-    database_url, _ = settings.require_runtime_config()
+    database_url = settings.require_database_url()
     config = Config(config_path)
     config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
     alembic_command.upgrade(config, "head")

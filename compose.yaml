@@ -1,18 +1,3 @@
-x-app-environment: &app-environment
-  MANGASENSEI_ENVIRONMENT: production
-  MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/mangasensei
-  MANGASENSEI_STORAGE_ROOT: /app/var/storage
-  MANGASENSEI_MODEL_CACHE: /app/var/models
-  MANGASENSEI_JMDICT_PATH: /app/var/data/jmdict.json
-  MANGASENSEI_FRONTEND_DIST: /app/frontend/dist
-  MANGASENSEI_CAPABILITY_PEPPERS: ${MANGASENSEI_CAPABILITY_PEPPERS:?set MANGASENSEI_CAPABILITY_PEPPERS}
-  MANGASENSEI_RETENTION_HOURS: "24"
-  MANGASENSEI_WORKER_LEASE_SECONDS: "300"
-  MANGASENSEI_GEMINI_MODEL: ${MANGASENSEI_GEMINI_MODEL:-gemini-3.6-flash}
-  MANGASENSEI_GEMINI_DAILY_BUDGET_USD: ${MANGASENSEI_GEMINI_DAILY_BUDGET_USD:-5.00}
-  MANGASENSEI_OCR_DEVICE: ${MANGASENSEI_OCR_DEVICE:-cpu}
-  GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
-
 x-app-service: &app-service
   image: mangasensei:${MANGASENSEI_VERSION:-dev}
   build:
@@ -20,7 +5,6 @@ x-app-service: &app-service
     dockerfile: Dockerfile
     args:
       MANGASENSEI_VERSION: ${MANGASENSEI_VERSION:-dev}
-  environment: *app-environment
   security_opt:
     - no-new-privileges:true
   cap_drop:
@@ -50,6 +34,9 @@ services:
   models:
     <<: *app-service
     command: ["mangasensei", "models", "download"]
+    environment:
+      MANGASENSEI_ENVIRONMENT: production
+      MANGASENSEI_MODEL_CACHE: /app/var/models
     volumes:
       - ocr_models:/app/var/models
     healthcheck:
@@ -58,6 +45,9 @@ services:
   jmdict:
     <<: *app-service
     command: ["mangasensei", "jmdict", "download"]
+    environment:
+      MANGASENSEI_ENVIRONMENT: production
+      MANGASENSEI_JMDICT_PATH: /app/var/data/jmdict.json
     volumes:
       - jmdict_data:/app/var/data
     healthcheck:
@@ -66,6 +56,9 @@ services:
   migrate:
     <<: *app-service
     command: ["mangasensei", "migrate"]
+    environment:
+      MANGASENSEI_ENVIRONMENT: production
+      MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/mangasensei
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,6 +68,13 @@ services:
   api:
     <<: *app-service
     command: ["mangasensei", "api", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      MANGASENSEI_ENVIRONMENT: production
+      MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/mangasensei
+      MANGASENSEI_STORAGE_ROOT: /app/var/storage
+      MANGASENSEI_FRONTEND_DIST: /app/frontend/dist
+      MANGASENSEI_CAPABILITY_PEPPERS: ${MANGASENSEI_CAPABILITY_PEPPERS:?set MANGASENSEI_CAPABILITY_PEPPERS}
+      MANGASENSEI_RETENTION_HOURS: "24"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -87,6 +87,17 @@ services:
   worker:
     <<: *app-service
     command: ["mangasensei", "worker"]
+    environment:
+      MANGASENSEI_ENVIRONMENT: production
+      MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/mangasensei
+      MANGASENSEI_STORAGE_ROOT: /app/var/storage
+      MANGASENSEI_MODEL_CACHE: /app/var/models
+      MANGASENSEI_JMDICT_PATH: /app/var/data/jmdict.json
+      MANGASENSEI_WORKER_LEASE_SECONDS: "300"
+      MANGASENSEI_GEMINI_MODEL: ${MANGASENSEI_GEMINI_MODEL:-gemini-3.6-flash}
+      MANGASENSEI_GEMINI_DAILY_BUDGET_USD: ${MANGASENSEI_GEMINI_DAILY_BUDGET_USD:-5.00}
+      MANGASENSEI_OCR_DEVICE: ${MANGASENSEI_OCR_DEVICE:-cpu}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -115,6 +126,11 @@ services:
   retention:
     <<: *app-service
     command: ["mangasensei", "retention"]
+    environment:
+      MANGASENSEI_ENVIRONMENT: production
+      MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/mangasensei
+      MANGASENSEI_STORAGE_ROOT: /app/var/storage
+      MANGASENSEI_RETENTION_HOURS: "24"
     depends_on:
       migrate:
         condition: service_completed_successfully

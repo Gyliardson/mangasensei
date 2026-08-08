@@ -51,7 +51,7 @@ async def run_retention_loop(
 async def run_worker_process(settings: Settings, *, once: bool = False) -> None:
     verify_models(settings.model_cache)
     dictionary = JsonJmdictDictionary(settings.jmdict_path)
-    database_url, _ = settings.require_runtime_config()
+    database_url = settings.require_database_url()
     engine, sessions = create_database(database_url)
     gemini = _gemini_adapter(settings)
     worker = Worker(
@@ -82,7 +82,7 @@ async def run_worker_process(settings: Settings, *, once: bool = False) -> None:
 
 
 async def run_retention_process(settings: Settings, *, once: bool = False) -> None:
-    database_url, _ = settings.require_runtime_config()
+    database_url = settings.require_database_url()
     engine, sessions = create_database(database_url)
     janitor = RetentionJanitor(sessions, LocalFilesystemStorage(settings.storage_root))
     try:

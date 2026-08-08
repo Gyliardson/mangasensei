@@ -115,7 +115,7 @@ jobs:
           test "$(docker image inspect mangasensei:ci --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')" = "$(cat VERSION)"
           docker run --rm --entrypoint python mangasensei:ci -c "import mangasensei; import mangasensei.ocr.models.manifest; print(mangasensei.__version__)"
 
-      - name: Verify blank Gemini configuration stays optional
+      - name: Verify service-scoped runtime secrets
         env:
           POSTGRES_PASSWORD: compose-ci-password
           MANGASENSEI_CAPABILITY_PEPPERS: '["compose-ci-pepper-value-0000000000000001"]'
@@ -126,7 +126,29 @@ jobs:
           from pathlib import Path
 
           compose = json.loads(Path("/tmp/mangasensei-compose.json").read_text(encoding="utf-8"))
-          assert compose["services"]["worker"]["environment"]["GOOGLE_API_KEY"] == ""
+          services = compose["services"]
+          app_roles = {"models", "jmdict", "migrate", "api", "worker", "retention"}
+          environment_keys = {
+              name: set(services[name].get("environment", {})) for name in app_roles
+          }
+
+          expected_secret_consumers = {
+              "GOOGLE_API_KEY": {"worker"},
+              "MANGASENSEI_CAPABILITY_PEPPERS": {"api"},
+              "MANGASENSEI_DATABASE_URL": {"migrate", "api", "worker", "retention"},
+          }
+          for variable, expected in expected_secret_consumers.items():
+              actual = {name for name, keys in environment_keys.items() if variable in keys}
+              assert actual == expected, (variable, actual)
+
+          unrelated_secrets = {
+              "GOOGLE_API_KEY",
+              "MANGASENSEI_CAPABILITY_PEPPERS",
+              "MANGASENSEI_DATABASE_URL",
+          }
+          assert environment_keys["models"].isdisjoint(unrelated_secrets)
+          assert environment_keys["jmdict"].isdisjoint(unrelated_secrets)
+          assert services["worker"]["environment"]["GOOGLE_API_KEY"] == ""
           PY
           docker run --rm -e GOOGLE_API_KEY= --entrypoint python mangasensei:ci -c "from mangasensei.config import Settings; from mangasensei.runtime import _gemini_adapter; settings = Settings(_env_file=None); assert settings.google_api_key is None; assert _gemini_adapter(settings) is None"
 
