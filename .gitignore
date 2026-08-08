@@ -1,0 +1,59 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+secrets/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+playwright-report/
+test-results/
+
+# Runtime data and OCR models
+var/
+models/
+.model-cache/
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.safetensors
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+tmp/
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Docker local overrides
+compose.override.yaml

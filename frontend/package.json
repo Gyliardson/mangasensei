@@ -1,0 +1,44 @@
+{
+  "name": "@mangasensei/frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-only",
+  "scripts": {
+    "build": "tsc -b && vite build",
+    "dev": "vite",
+    "lint": "oxlint src --deny-warnings",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "clsx": "2.1.1",
+    "lucide-react": "1.30.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwind-merge": "3.6.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@playwright/test": "1.62.1",
+    "@tailwindcss/vite": "4.3.3",
+    "@testing-library/jest-dom": "7.0.0",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.3",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "@vitest/coverage-v8": "4.1.10",
+    "axe-core": "4.13.0",
+    "jsdom": "29.0.0",
+    "oxlint": "1.77.0",
+    "shadcn": "4.16.2",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "vite": "8.2.1",
+    "vitest": "4.1.10"
+  }
+}

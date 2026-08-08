@@ -1,0 +1,16 @@
+{
+  "$schema": "../node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "perf": "warn",
+    "suspicious": "warn"
+  },
+  "plugins": ["react", "react-perf", "typescript", "unicorn"],
+  "rules": {
+    "no-await-in-loop": "off",
+    "react/no-array-index-key": "off",
+    "react/react-in-jsx-scope": "off",
+    "react-perf/jsx-no-new-function-as-prop": "off"
+  },
+  "ignorePatterns": ["dist/**", "coverage/**"]
+}

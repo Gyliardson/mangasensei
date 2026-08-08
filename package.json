@@ -1,0 +1,20 @@
+{
+  "name": "mangasensei-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "packageManager": "npm@10.9.2",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace frontend",
+    "dev": "npm run dev --workspace frontend",
+    "lint": "npm run lint --workspace frontend",
+    "test": "npm run test --workspace frontend",
+    "test:coverage": "npm run test:coverage --workspace frontend",
+    "test:e2e": "npm run test:e2e --workspace frontend",
+    "e2e": "npm run test:e2e --workspace frontend",
+    "typecheck": "npm run typecheck --workspace frontend"
+  }
+}

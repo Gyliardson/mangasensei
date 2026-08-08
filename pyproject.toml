@@ -1,0 +1,125 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mangasensei"
+version = "0.1.0"
+description = "Local Japanese manga study workspace"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+license = "GPL-3.0-only"
+authors = [{ name = "Gyliardson Keitison" }]
+dependencies = [
+  "alembic==1.19.0",
+  "fastapi==0.141.1",
+  "google-genai==2.17.0",
+  "httpx==0.28.1",
+  "pillow==12.3.0",
+  "prometheus-client==0.26.0",
+  "psycopg[binary,pool]==3.3.4",
+  "pydantic==2.13.4",
+  "pydantic-settings==2.15.0",
+  "python-multipart==0.0.32",
+  "sqlalchemy==2.0.51",
+  "sudachidict-core==20260723",
+  "sudachipy==0.6.11",
+  "uvicorn[standard]==0.52.1",
+]
+
+[project.optional-dependencies]
+ocr = [
+  "colorama==0.4.6",
+  "einops==0.8.2",
+  "networkx==3.6.1",
+  "numpy==2.4.6",
+  "opencv-python-headless==4.14.0.94",
+  "py3langid==0.3.0",
+  "pyclipper==1.4.0",
+  "requests==2.34.2",
+  "shapely==2.1.2",
+  "torch==2.13.0",
+  "torchvision==0.28.0",
+  "tqdm==4.70.0",
+]
+
+[dependency-groups]
+dev = [
+  "mypy==2.3.0",
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "pytest-cov==7.1.0",
+  "ruff==0.16.2",
+  "testcontainers[postgres]==4.15.0",
+]
+
+[project.scripts]
+mangasensei = "mangasensei.cli:main"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.setuptools]
+package-dir = { "" = "backend/src" }
+
+[tool.setuptools.packages.find]
+where = ["backend/src"]
+include = ["mangasensei*"]
+
+[tool.setuptools.package-data]
+"mangasensei.ocr.models" = ["manifest.json"]
+"mangasensei.linguistics" = ["jmdict_manifest.json"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+  "integration: requires a real PostgreSQL instance",
+  "ocr_smoke: loads OCR models and may require substantial resources",
+  "gemini_smoke: makes a paid Gemini API request",
+  "e2e: runs the browser-based critical flow",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["mangasensei"]
+omit = [
+  "*/ocr/vendor/*",
+  "*/migrations/*",
+]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["backend/src", "tests"]
+exclude = ["backend/src/mangasensei/ocr/vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "SIM", "PT"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/migrations/**/*.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "backend/src"
+exclude = ["backend/src/mangasensei/ocr/vendor"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["google.genai.*", "numpy.*", "sudachipy.*"]
+ignore_missing_imports = true

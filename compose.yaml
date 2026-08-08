@@ -1,0 +1,138 @@
+x-app-environment: &app-environment
+  MANGASENSEI_ENVIRONMENT: production
+  MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/mangasensei
+  MANGASENSEI_STORAGE_ROOT: /app/var/storage
+  MANGASENSEI_MODEL_CACHE: /app/var/models
+  MANGASENSEI_JMDICT_PATH: /app/var/data/jmdict.json
+  MANGASENSEI_FRONTEND_DIST: /app/frontend/dist
+  MANGASENSEI_CAPABILITY_PEPPERS: ${MANGASENSEI_CAPABILITY_PEPPERS:?set MANGASENSEI_CAPABILITY_PEPPERS}
+  MANGASENSEI_RETENTION_HOURS: "24"
+  MANGASENSEI_WORKER_LEASE_SECONDS: "300"
+  MANGASENSEI_GEMINI_MODEL: ${MANGASENSEI_GEMINI_MODEL:-gemini-3.6-flash}
+  MANGASENSEI_GEMINI_DAILY_BUDGET_USD: ${MANGASENSEI_GEMINI_DAILY_BUDGET_USD:-5.00}
+  MANGASENSEI_OCR_DEVICE: ${MANGASENSEI_OCR_DEVICE:-cpu}
+  GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+
+x-app-service: &app-service
+  image: mangasensei:0.1.0
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment: *app-environment
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  read_only: true
+  tmpfs:
+    - /tmp:size=128m,mode=1777
+
+services:
+  postgres:
+    image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+    environment:
+      POSTGRES_DB: mangasensei
+      POSTGRES_USER: mangasensei
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mangasensei -d mangasensei"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  models:
+    <<: *app-service
+    command: ["mangasensei", "models", "download"]
+    volumes:
+      - ocr_models:/app/var/models
+    healthcheck:
+      disable: true
+
+  jmdict:
+    <<: *app-service
+    command: ["mangasensei", "jmdict", "download"]
+    volumes:
+      - jmdict_data:/app/var/data
+    healthcheck:
+      disable: true
+
+  migrate:
+    <<: *app-service
+    command: ["mangasensei", "migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+  api:
+    <<: *app-service
+    command: ["mangasensei", "api", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${MANGASENSEI_PORT:-8000}:8000"
+    volumes:
+      - app_storage:/app/var/storage
+    restart: unless-stopped
+
+  worker:
+    <<: *app-service
+    command: ["mangasensei", "worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      models:
+        condition: service_completed_successfully
+      jmdict:
+        condition: service_completed_successfully
+    volumes:
+      - app_storage:/app/var/storage
+      - ocr_models:/app/var/models:ro
+      - jmdict_data:/app/var/data:ro
+    shm_size: 1gb
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import sys; cmd=open('/proc/1/cmdline','rb').read(); sys.exit(0 if b'mangasensei' in cmd and b'worker' in cmd else 1)
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
+
+  retention:
+    <<: *app-service
+    command: ["mangasensei", "retention"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - app_storage:/app/var/storage
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import sys; cmd=open('/proc/1/cmdline','rb').read(); sys.exit(0 if b'mangasensei' in cmd and b'retention' in cmd else 1)
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  app_storage:
+  jmdict_data:
+  ocr_models:
+  postgres_data:
