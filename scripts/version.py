@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -111,8 +112,12 @@ def set_version(new_version: str) -> int:
     if not SEMVER.fullmatch(new_version):
         raise ValueError("release version must use stable SemVer X.Y.Z")
 
-    subprocess.run(
-        ["uv", "version", new_version, "--no-sync"],
+    uv = shutil.which("uv")
+    if uv is None:
+        raise RuntimeError("uv executable not found")
+    # new_version is constrained to X.Y.Z above and shell=False; no command injection is possible.
+    subprocess.run(  # noqa: S603
+        [uv, "version", new_version, "--no-sync"],
         cwd=ROOT,
         check=True,
     )
@@ -195,7 +200,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "release-notes":
             return release_notes()
         raise AssertionError(f"unhandled command: {args.command}")
-    except (KeyError, OSError, ValueError, subprocess.CalledProcessError) as exc:
+    except (KeyError, OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
         print(f"version tooling failed: {exc}", file=sys.stderr)
         return 1
 
