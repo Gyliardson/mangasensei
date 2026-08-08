@@ -82,4 +82,43 @@ describe("ReaderWorkspace", () => {
     await user.keyboard(" ");
     expect(second).toHaveAttribute("aria-pressed", "true");
   });
+
+  it("shows local dictionary vocabulary when contextual AI is unavailable", () => {
+    const localOnlyRegion: StudyRegion = {
+      ...region("local", "猫", 0),
+      tokens: [
+        {
+          surface: "猫",
+          lemma: "猫",
+          reading: "ネコ",
+          partOfSpeech: "名詞",
+          dictionaryId: "jmdict-1467640",
+        },
+      ],
+      vocabulary: [
+        {
+          id: "jmdict-1467640",
+          surface: "猫",
+          lemma: "猫",
+          reading: "ネコ",
+          meanings: ["cat"],
+          source: "JMdict",
+          jlpt: { level: "N5", official: false },
+        },
+      ],
+    };
+
+    render(
+      <ReaderWorkspace
+        page={page([localOnlyRegion])}
+        imageUrl="blob:image"
+        onReset={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Análise contextual indisponível.")).toBeVisible();
+    expect(screen.getByText("cat")).toBeVisible();
+    expect(screen.getByText("JMdict · JLPT N5 não oficial")).toBeVisible();
+    expect(screen.queryByText("Nenhuma associação confiável ao dicionário.")).not.toBeInTheDocument();
+  });
 });
