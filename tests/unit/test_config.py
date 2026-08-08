@@ -28,6 +28,23 @@ def test_non_blank_google_api_key_from_environment_is_preserved(
     assert settings.google_api_key.get_secret_value() == "test-gemini-key"
 
 
+def test_require_database_url_accepts_database_without_capability_peppers() -> None:
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql+psycopg://u:p@host/db",
+        capability_peppers=None,
+    )
+
+    assert settings.require_database_url() == "postgresql+psycopg://u:p@host/db"
+
+
+def test_require_database_url_rejects_missing_database_url() -> None:
+    settings = Settings(_env_file=None, database_url=None, capability_peppers=None)
+
+    with pytest.raises(ValueError, match="MANGASENSEI_DATABASE_URL"):
+        settings.require_database_url()
+
+
 def test_require_runtime_config_accepts_configured_settings() -> None:
     settings = Settings(
         _env_file=None,
