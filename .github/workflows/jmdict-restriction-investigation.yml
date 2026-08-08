@@ -1,4 +1,4 @@
-name: JMdict restriction investigation
+name: JMdict v2 metadata investigation
 
 on:
   push:
@@ -9,70 +9,30 @@ permissions:
   contents: read
 
 jobs:
-  inspect:
+  derive:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Verify pinned source and print one restricted entry
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --frozen
+
+      - name: Derive normalized metadata from pinned source
+        run: uv run python scripts/update_jmdict_manifest.py
+
+      - name: Print derived normalized manifest section
         run: |
           python - <<'PY'
-          import hashlib
-          import io
           import json
-          import urllib.request
-          import zipfile
           from pathlib import Path
-
           manifest = json.loads(Path("backend/src/mangasensei/linguistics/jmdict_manifest.json").read_text())
-          source = manifest["source"]
-          with urllib.request.urlopen(source["url"], timeout=120) as response:
-              archive_bytes = response.read(source["size_bytes"] + 1)
-          assert len(archive_bytes) == source["size_bytes"]
-          assert hashlib.sha256(archive_bytes).hexdigest() == source["sha256"]
-          with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
-              names = [name for name in archive.namelist() if not name.endswith("/")]
-              assert len(names) == 1
-              payload = json.loads(archive.read(names[0]))
-
-          candidate = None
-          for word in payload["words"]:
-              explicit_readings = [
-                  kana for kana in word["kana"]
-                  if kana.get("appliesToKanji") not in (["*"], [])
-              ]
-              explicit_senses = [
-                  sense for sense in word["sense"]
-                  if sense.get("appliesToKanji") != ["*"]
-                  or sense.get("appliesToKana") != ["*"]
-              ]
-              english_restricted = [
-                  sense for sense in explicit_senses
-                  if any(gloss.get("lang") == "eng" and gloss.get("text") for gloss in sense.get("gloss", []))
-              ]
-              if len(word["kanji"]) >= 2 and explicit_readings and english_restricted:
-                  candidate = word
-                  break
-          assert candidate is not None
-          print(json.dumps({
-              "id": candidate["id"],
-              "kanji": [item["text"] for item in candidate["kanji"]],
-              "kana": [
-                  {"text": item["text"], "appliesToKanji": item["appliesToKanji"]}
-                  for item in candidate["kana"]
-              ],
-              "senses": [
-                  {
-                      "appliesToKanji": sense["appliesToKanji"],
-                      "appliesToKana": sense["appliesToKana"],
-                      "gloss": [
-                          gloss["text"] for gloss in sense["gloss"]
-                          if gloss.get("lang") == "eng"
-                      ],
-                  }
-                  for sense in candidate["sense"]
-                  if any(gloss.get("lang") == "eng" for gloss in sense.get("gloss", []))
-              ],
-          }, ensure_ascii=False, sort_keys=True))
+          print(json.dumps(manifest["normalized"], sort_keys=True))
           PY
