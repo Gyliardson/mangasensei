@@ -4,7 +4,9 @@ MangaSensei uses separate validation layers so fast deterministic feedback does 
 
 ## Fast deterministic CI
 
-The normal [CI workflow](../.github/workflows/ci.yml) runs on pull requests and `main`. Backend worker integration tests use deterministic OCR fixtures where appropriate, while frontend Playwright tests exercise browser behavior without loading the real OCR checkpoints. These tests remain the fast required gates for ordinary changes.
+The normal [CI workflow](../.github/workflows/ci.yml) runs on pull requests and `main`. Backend worker integration tests use deterministic OCR fixtures where appropriate. The existing Playwright suite remains a fast **mocked browser E2E** layer for desktop/mobile interaction, keyboard behavior and accessibility; it intercepts MangaSensei API requests and therefore does not claim full-stack assurance.
+
+The same required Frontend CI job also runs the separate [full-stack critical-flow suite](../frontend/e2e-fullstack/critical-flow.spec.ts) described below. A failure in either browser layer fails the required Frontend quality check.
 
 ## JMdict data contract
 
@@ -82,4 +84,24 @@ A model-load, vendored API, PyTorch/OpenCV, or inference incompatibility must fa
 
 ## Full-stack critical flow
 
-The real-model smoke is not a browser-to-worker end-to-end test. Full-stack assurance should separately exercise browser -> FastAPI -> PostgreSQL/job queue -> worker -> persisted result -> protected browser read, while keeping the heavyweight OCR boundary deterministic when appropriate. That distinct critical-flow gate is tracked separately so neither test layer overstates what it validates.
+The required Frontend CI job contains a separate **Full-stack critical-flow E2E** step. It runs [Playwright with its own configuration](../frontend/playwright.fullstack.config.ts) against FastAPI serving the production frontend build on `127.0.0.1:8000`; the browser does not intercept or synthesize MangaSensei `/api/v1/**` responses.
+
+The full-stack harness uses:
+
+- the real current Alembic migrations and a real PostgreSQL service;
+- the real FastAPI upload, status, protected-page and protected-image endpoints;
+- capability tokens returned by the real upload response and consumed by the real frontend client;
+- the real queue claim/state-transition and `Worker` implementation;
+- real local filesystem storage, Sudachi tokenization, normalized JMdict loading and linguistic persistence;
+- Gemini disabled, validating the privacy-first local baseline;
+- a deterministic OCR engine double only at the OCR inference boundary, so heavy model loading stays in the separate Real OCR model smoke.
+
+The worker fixture deliberately keeps OCR in progress long enough for browser polling to observe a non-terminal real job state before `completed`. The final browser assertions require persisted `猫です` output, local JMdict vocabulary, the no-Gemini contextual fallback, a successful protected original-image read, and a successful protected page-result read. If migrations, capabilities, queue orchestration, persistence, the API/frontend contract, or worker completion breaks, this required Frontend check fails.
+
+The full-stack Playwright command is:
+
+```sh
+npm run e2e:fullstack
+```
+
+It assumes PostgreSQL has been migrated and the API plus deterministic worker harness are already running; the CI workflow performs that orchestration. This test is intentionally distinct from both the fast mocked browser suite and the heavyweight real-model OCR smoke so each layer states exactly what it validates.
