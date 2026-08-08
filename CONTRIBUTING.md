@@ -6,18 +6,19 @@ you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Code of Conduct
 
-Please read `CODE_OF_CONDUCT.md`. Harassment and excluding behavior are not welcome.
-If you see a violation, contact the maintainers privately (see `SECURITY.md` for
-reporting paths).
+Please read the [Code of Conduct](CODE_OF_CONDUCT.md). Harassment and excluding
+behavior are not welcome. If you see a violation, contact the maintainers privately
+using the reporting paths in the [Security Policy](SECURITY.md).
 
 ## Security
 
 If you find a security vulnerability, do **not** open a public issue. Follow the
-responsible disclosure process in `SECURITY.md`.
+responsible disclosure process in the [Security Policy](SECURITY.md).
 
 ## Getting Started
 
-1. Read the main `README.md` (also available in `pt-BR`, `ja`, `es`).
+1. Read the main [README](README.md), also available in
+   [Português](README.pt-BR.md), [日本語](README.ja.md) and [Español](README.es.md).
 2. Make sure you can run the full local quality gates from the README before changing code.
 3. Check existing issues and pull requests to avoid duplicate work.
 4. For non-trivial changes, open a discussion or issue first to agree on the approach.
@@ -76,15 +77,20 @@ Guidelines:
   coverage, type hints, no mix of old/new framework idioms.
 - Frontend: follow the existing React/TypeScript patterns; keep accessibility in mind.
 - Never commit generated data, model weights, `.env` files, or build artifacts.
-  The `.gitignore` and `.dockerignore` already cover these — please keep them updated.
+  The [`.gitignore`](.gitignore) and [`.dockerignore`](.dockerignore) cover these;
+  keep both updated when runtime artifact locations change.
 
 ## Local Quality Gates
 
 Before pushing, run the same gates that CI runs:
 
 ```powershell
+# repository consistency
+.\.venv\Scripts\python.exe scripts/version.py check
+.\.venv\Scripts\python.exe scripts/check_markdown_links.py
+
 # backend
-.\.venv\Scripts\python.exe -m ruff check backend/src tests
+.\.venv\Scripts\python.exe -m ruff check backend/src tests scripts
 .\.venv\Scripts\python.exe -m mypy backend/src
 $env:MANGASENSEI_TEST_DATABASE_URL='postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55432/mangasensei'
 .\.venv\Scripts\python.exe -m pytest --cov
@@ -104,6 +110,31 @@ Notes:
 - The optional OCR smoke test loads real model weights and is skipped by default:
   set `MANGASENSEI_RUN_OCR_SMOKE=1` and `MANGASENSEI_MODEL_CACHE` to enable it.
 - Frontend end-to-end tests launch a Playwright web server automatically.
+- CI additionally builds the Python distribution, installs the wheel in a clean
+  environment and builds the production Docker image.
+
+## Versioning and Releases
+
+The project uses [Semantic Versioning](https://semver.org/) and keeps curated release
+notes in the [changelog](CHANGELOG.md). The Python project version in
+[`pyproject.toml`](pyproject.toml) is authoritative; the repository mirrors it in
+files needed by packaging and tooling.
+
+Do not edit all version files manually. To prepare a release version, run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/version.py set 0.2.0
+```
+
+The command updates the mechanical version mirrors. It deliberately does **not**
+write release notes. Promote and edit the relevant `[Unreleased]` entries in
+[`CHANGELOG.md`](CHANGELOG.md) manually so the release description remains useful
+for people rather than being generated from commit messages alone.
+
+After the release commit has passed CI and is merged to `main`, pushing a matching
+`vX.Y.Z` tag triggers the [release workflow](.github/workflows/release.yml). The
+workflow validates the version/tag pair, requires a curated changelog section,
+builds release artifacts and creates the GitHub Release.
 
 ## Reporting Issues
 
@@ -128,6 +159,6 @@ Maintainers will review and may request changes. Please be patient and responsiv
 ## License
 
 By contributing you agree that your contributions are licensed under the same terms
-as the project (`GPL-3.0-only`). See `LICENSE`.
+as the project (`GPL-3.0-only`). See the project [license](LICENSE).
 
 [Conventional Commits]: https://www.conventionalcommits.org/en/v1.0.0/
