@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - One-shot Compose services no longer run the API healthcheck.
 - Integration tests truncate the full `mangasensei` schema so they isolate correctly against a shared dev database.
 - The required `mangasensei.ocr.models` package is tracked in Git; root-only runtime model ignores no longer hide Python source files from clean clones.
+- Local-only worker processing no longer fails database offset constraints when Sudachi normalization emits a zero-width morpheme.
 
 ## [0.1.0] - 2026-08-07
 

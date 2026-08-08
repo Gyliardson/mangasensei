@@ -12,12 +12,19 @@ class SudachiTokenizer:
     def tokenize(self, text: str) -> tuple[tuple[str, str, str, str], ...]:
         if not text:
             return ()
-        return tuple(
-            (
-                morpheme.surface(),
-                morpheme.dictionary_form(),
-                morpheme.reading_form(),
-                ",".join(morpheme.part_of_speech()),
+        analyzed: list[tuple[str, str, str, str]] = []
+        for morpheme in self._tokenizer.tokenize(text, tokenizer.Tokenizer.SplitMode.A):
+            surface = morpheme.surface()
+            # Sudachi input normalization can expand one source character into multiple
+            # morphemes, leaving some morphemes with no span in the original text.
+            if not surface:
+                continue
+            analyzed.append(
+                (
+                    surface,
+                    morpheme.dictionary_form(),
+                    morpheme.reading_form(),
+                    ",".join(morpheme.part_of_speech()),
+                )
             )
-            for morpheme in self._tokenizer.tokenize(text, tokenizer.Tokenizer.SplitMode.A)
-        )
+        return tuple(analyzed)

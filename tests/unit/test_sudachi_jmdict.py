@@ -16,6 +16,14 @@ def test_sudachi_uses_dictionary_form_reading_and_split_mode_a() -> None:
     assert "です" in tuple(token[1] for token in tokens)
 
 
+def test_sudachi_drops_zero_width_morphemes_from_input_normalization() -> None:
+    tokens = SudachiTokenizer().tokenize("㈱")
+
+    assert tokens
+    assert all(token[0] for token in tokens)
+    assert "".join(token[0] for token in tokens) == "㈱"
+
+
 def test_jmdict_lookup_requires_unambiguous_lemma_and_reading(tmp_path: Path) -> None:
     dictionary_path = tmp_path / "jmdict.json"
     dictionary_path.write_text(
