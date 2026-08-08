@@ -28,6 +28,7 @@ jobs:
           python scripts/version.py check
           VERSION="$(cat VERSION)"
           test "${GITHUB_REF_NAME}" = "v${VERSION}"
+          git fetch origin main:refs/remotes/origin/main
           git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
 
       - name: Require curated changelog entry
