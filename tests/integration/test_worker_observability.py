@@ -110,6 +110,8 @@ async def test_worker_failure_log_is_useful_and_does_not_expose_sensitive_conten
     logger = logging.getLogger("mangasensei.workers.runner")
     handler = _RecordHandler()
     original_level = logger.level
+    original_disabled = logger.disabled
+    logger.disabled = False
     logger.setLevel(logging.ERROR)
     logger.addHandler(handler)
     try:
@@ -117,6 +119,7 @@ async def test_worker_failure_log_is_useful_and_does_not_expose_sensitive_conten
     finally:
         logger.removeHandler(handler)
         logger.setLevel(original_level)
+        logger.disabled = original_disabled
 
     async with sessions() as session:
         job = (
