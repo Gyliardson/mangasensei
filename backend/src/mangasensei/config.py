@@ -70,12 +70,16 @@ class Settings(BaseSettings):
             )
         return peppers
 
+    def require_database_url(self) -> str:
+        if not self.database_url:
+            raise ValueError("MANGASENSEI_DATABASE_URL is required")
+        return self.database_url
+
     def require_runtime_config(self) -> tuple[str, tuple[str, ...]]:
-        if not self.database_url or not self.capability_peppers:
-            raise ValueError(
-                "MANGASENSEI_DATABASE_URL and MANGASENSEI_CAPABILITY_PEPPERS are required"
-            )
-        return self.database_url, self.capability_peppers
+        database_url = self.require_database_url()
+        if not self.capability_peppers:
+            raise ValueError("MANGASENSEI_CAPABILITY_PEPPERS is required")
+        return database_url, self.capability_peppers
 
     @field_validator("retention_hours")
     @classmethod
