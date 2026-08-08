@@ -49,6 +49,7 @@ test.beforeEach(async ({ page }) => {
       });
       return;
     }
+    const localOnly = new URL(page.url()).searchParams.get("mode") === "local";
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -82,9 +83,9 @@ test.beforeEach(async ({ page }) => {
                   dictionaryId: "jmdict-1467640",
                 },
               ],
-              translation: "É um gato.",
-              explanation: "Frase nominal polida.",
-              grammar: ["です"],
+              translation: localOnly ? null : "É um gato.",
+              explanation: localOnly ? null : "Frase nominal polida.",
+              grammar: localOnly ? [] : ["です"],
               vocabulary: [
                 {
                   id: "jmdict-1467640",
@@ -135,4 +136,22 @@ test("uploads a page and opens its study region by keyboard", async ({ page }, t
     path: `../docs/assets/reader-${testInfo.project.name}.png`,
     fullPage: true,
   });
+});
+
+test("shows local vocabulary when contextual AI is unavailable", async ({ page }) => {
+  await page.goto("/?mode=local");
+  await page.getByLabel("Imagem da página").setInputFiles({
+    name: "pagina.png",
+    mimeType: "image/png",
+    buffer: png,
+  });
+  await page.getByRole("button", { name: "Analisar página" }).click();
+
+  await expect(page.getByText("Análise contextual indisponível.")).toBeVisible();
+  await expect(page.getByText("gato")).toBeVisible();
+  await expect(page.getByText("JMdict · JLPT N5 não oficial")).toBeVisible();
+  await expect(page.getByText("Nenhum ponto gramatical adicional.")).toBeVisible();
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
 });
