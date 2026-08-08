@@ -8,6 +8,7 @@ import json
 import os
 import secrets
 import time
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -16,9 +17,12 @@ from zipfile import BadZipFile, ZipFile
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from mangasensei.linguistics.jmdict import JsonJmdictDictionary
+from mangasensei.linguistics.jmdict import (
+    NORMALIZED_CONVERTER_VERSION,
+    JsonJmdictDictionary,
+)
 
-CONVERTER_VERSION = "mangasensei-jmdict-v1"
+CONVERTER_VERSION = NORMALIZED_CONVERTER_VERSION
 
 
 class JmdictIntegrityError(RuntimeError):
@@ -62,8 +66,37 @@ class JmdictManifest(BaseModel):
         return cls.model_validate_json(path.read_text(encoding="utf-8"))
 
 
+@dataclass(frozen=True, slots=True)
+class _KanaForm:
+    text: str
+    applies_to_kanji: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _Sense:
+    meanings: tuple[str, ...]
+    applies_to_kanji: tuple[str, ...]
+    applies_to_kana: tuple[str, ...]
+
+
 def default_manifest_path() -> Path:
     return Path(__file__).with_name("jmdict_manifest.json")
+
+
+async def build_normalized_jmdict(
+    manifest: JmdictManifest, client: httpx.AsyncClient
+) -> bytes:
+    """Build deterministic normalized bytes from the manifest-pinned source."""
+    source_zip = await _download_source(manifest.source, client)
+    source_payload = _extract_source_payload(source_zip, manifest.source)
+    return convert_simplified_jmdict(
+        source_payload,
+        version=manifest.source.source_version,
+        language=manifest.source.language,
+        source_url=manifest.source.url,
+        license_id=manifest.source.license_id,
+        attribution=manifest.source.attribution,
+    )
 
 
 async def download_jmdict(
@@ -73,6 +106,7 @@ async def download_jmdict(
     client: httpx.AsyncClient | None = None,
 ) -> bool:
     manifest = JmdictManifest.load(manifest_path or default_manifest_path())
+    _require_current_converter(manifest)
     if client is None:
         timeout = httpx.Timeout(300.0, connect=30.0)
         async with httpx.AsyncClient(timeout=timeout) as owned_client:
@@ -92,16 +126,7 @@ async def download_jmdict(
     try:
         if _is_verified(target, manifest):
             return False
-        source_zip = await _download_source(manifest.source, client)
-        source_payload = _extract_source_payload(source_zip, manifest.source)
-        normalized = convert_simplified_jmdict(
-            source_payload,
-            version=manifest.source.source_version,
-            language=manifest.source.language,
-            source_url=manifest.source.url,
-            license_id=manifest.source.license_id,
-            attribution=manifest.source.attribution,
-        )
+        normalized = await build_normalized_jmdict(manifest, client)
         _verify_normalized_bytes(normalized, manifest)
         with part_path.open("xb") as output:
             output.write(normalized)
@@ -122,6 +147,7 @@ def verify_jmdict(
     manifest_path: Path | None = None,
 ) -> Path:
     resolved_manifest = manifest or JmdictManifest.load(manifest_path or default_manifest_path())
+    _require_current_converter(resolved_manifest)
     if not target.is_file() or target.stat().st_size != resolved_manifest.normalized.size_bytes:
         raise JmdictIntegrityError(
             f"dictionary size mismatch: {resolved_manifest.normalized.filename}"
@@ -161,6 +187,7 @@ def convert_simplified_jmdict(
     entries = [entry for word in words if (entry := _convert_word(word, language))]
     entries.sort(key=lambda entry: entry["id"])
     normalized = {
+        "converterVersion": CONVERTER_VERSION,
         "version": version,
         "source": {
             "url": source_url,
@@ -235,16 +262,29 @@ def _convert_word(word: Any, language: str) -> dict[str, Any] | None:
     raw_id = str(word.get("id", "")).strip()
     if not raw_id:
         raise JmdictIntegrityError("jmdict-simplified word is missing id")
-    kanji = _text_items(word.get("kanji"), field="kanji")
-    readings = _text_items(word.get("kana"), field="kana")
-    meanings = _gloss_items(word.get("sense"), language)
-    if not readings or not meanings:
+    kanji = tuple(_text_items(word.get("kanji"), field="kanji"))
+    kana = _kana_items(word.get("kana"), kanji)
+    kana_texts = tuple(item.text for item in kana)
+    senses = _sense_items(word.get("sense"), kanji, kana_texts, language)
+    forms: dict[tuple[str, str], tuple[str, ...]] = {}
+    for kana_form in kana:
+        self_meanings = _meanings_for_form(senses, kanji=None, kana=kana_form.text)
+        if self_meanings:
+            _add_form(forms, kana_form.text, kana_form.text, self_meanings)
+        for spelling in kanji:
+            if not _restriction_applies(kana_form.applies_to_kanji, spelling):
+                continue
+            meanings = _meanings_for_form(senses, kanji=spelling, kana=kana_form.text)
+            if meanings:
+                _add_form(forms, spelling, kana_form.text, meanings)
+    if not forms:
         return None
     return {
         "id": f"jmdict-{raw_id}",
-        "kanji": kanji,
-        "readings": readings,
-        "meanings": meanings,
+        "forms": [
+            {"lemma": lemma, "reading": reading, "meanings": list(meanings)}
+            for (lemma, reading), meanings in sorted(forms.items())
+        ],
     }
 
 
@@ -261,26 +301,134 @@ def _text_items(value: Any, *, field: str) -> list[str]:
     return texts
 
 
-def _gloss_items(value: Any, language: str) -> list[str]:
+def _kana_items(value: Any, kanji: tuple[str, ...]) -> tuple[_KanaForm, ...]:
+    if not isinstance(value, list):
+        raise JmdictIntegrityError("jmdict-simplified kana must be an array")
+    result: list[_KanaForm] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            raise JmdictIntegrityError("jmdict-simplified kana item must be an object")
+        text = str(item.get("text", "")).strip()
+        if not text:
+            continue
+        if text in seen:
+            raise JmdictIntegrityError("jmdict-simplified kana contains a duplicate text")
+        seen.add(text)
+        restrictions = _restriction_items(
+            item.get("appliesToKanji"),
+            field="kana appliesToKanji",
+            valid_values=set(kanji),
+            allow_empty=True,
+        )
+        result.append(_KanaForm(text=text, applies_to_kanji=restrictions))
+    return tuple(result)
+
+
+def _sense_items(
+    value: Any,
+    kanji: tuple[str, ...],
+    kana: tuple[str, ...],
+    language: str,
+) -> tuple[_Sense, ...]:
     if not isinstance(value, list):
         raise JmdictIntegrityError("jmdict-simplified sense must be an array")
-    meanings: list[str] = []
+    result: list[_Sense] = []
     for sense in value:
         if not isinstance(sense, dict):
             raise JmdictIntegrityError("jmdict-simplified sense item must be an object")
+        applies_to_kanji = _restriction_items(
+            sense.get("appliesToKanji"),
+            field="sense appliesToKanji",
+            valid_values=set(kanji),
+            allow_empty=False,
+        )
+        applies_to_kana = _restriction_items(
+            sense.get("appliesToKana"),
+            field="sense appliesToKana",
+            valid_values=set(kana),
+            allow_empty=False,
+        )
         glosses = sense.get("gloss")
         if not isinstance(glosses, list):
             raise JmdictIntegrityError("jmdict-simplified gloss must be an array")
+        meanings: list[str] = []
         for gloss in glosses:
             if not isinstance(gloss, dict):
                 raise JmdictIntegrityError("jmdict-simplified gloss item must be an object")
             text = str(gloss.get("text", "")).strip()
             if gloss.get("lang") == language and text and text not in meanings:
                 meanings.append(text)
-    return meanings
+        result.append(
+            _Sense(
+                meanings=tuple(meanings),
+                applies_to_kanji=applies_to_kanji,
+                applies_to_kana=applies_to_kana,
+            )
+        )
+    return tuple(result)
+
+
+def _restriction_items(
+    value: Any,
+    *,
+    field: str,
+    valid_values: set[str],
+    allow_empty: bool,
+) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise JmdictIntegrityError(f"jmdict-simplified {field} must be an array")
+    items: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item:
+            raise JmdictIntegrityError(f"jmdict-simplified {field} contains an invalid value")
+        if item not in items:
+            items.append(item)
+    if not items and not allow_empty:
+        raise JmdictIntegrityError(f"jmdict-simplified {field} must not be empty")
+    if "*" in items and len(items) != 1:
+        raise JmdictIntegrityError(f"jmdict-simplified {field} mixes wildcard and explicit values")
+    unknown = set(items) - {"*"} - valid_values
+    if unknown:
+        raise JmdictIntegrityError(f"jmdict-simplified {field} references an unknown form")
+    return tuple(items)
+
+
+def _meanings_for_form(
+    senses: tuple[_Sense, ...], *, kanji: str | None, kana: str
+) -> tuple[str, ...]:
+    meanings: list[str] = []
+    for sense in senses:
+        if not _restriction_applies(sense.applies_to_kana, kana):
+            continue
+        if kanji is None:
+            if sense.applies_to_kanji != ("*",):
+                continue
+        elif not _restriction_applies(sense.applies_to_kanji, kanji):
+            continue
+        for meaning in sense.meanings:
+            if meaning not in meanings:
+                meanings.append(meaning)
+    return tuple(meanings)
+
+
+def _restriction_applies(restrictions: tuple[str, ...], value: str) -> bool:
+    return "*" in restrictions or value in restrictions
+
+
+def _add_form(
+    forms: dict[tuple[str, str], tuple[str, ...]],
+    lemma: str,
+    reading: str,
+    meanings: tuple[str, ...],
+) -> None:
+    key = (lemma, reading)
+    existing = forms.get(key, ())
+    forms[key] = tuple(dict.fromkeys((*existing, *meanings)))
 
 
 def _verify_normalized_bytes(content: bytes, manifest: JmdictManifest) -> None:
+    _require_current_converter(manifest)
     if len(content) != manifest.normalized.size_bytes:
         raise JmdictIntegrityError(
             f"dictionary size mismatch: {manifest.normalized.filename}"
@@ -290,7 +438,11 @@ def _verify_normalized_bytes(content: bytes, manifest: JmdictManifest) -> None:
             f"dictionary checksum mismatch: {manifest.normalized.filename}"
         )
     payload = json.loads(content.decode("utf-8"))
-    if not isinstance(payload, dict) or not isinstance(payload.get("entries"), list):
+    if (
+        not isinstance(payload, dict)
+        or payload.get("converterVersion") != CONVERTER_VERSION
+        or not isinstance(payload.get("entries"), list)
+    ):
         raise JmdictIntegrityError("dictionary normalized JSON is invalid")
     if len(payload["entries"]) != manifest.normalized.entry_count:
         raise JmdictIntegrityError(
@@ -298,10 +450,17 @@ def _verify_normalized_bytes(content: bytes, manifest: JmdictManifest) -> None:
         )
 
 
+def _require_current_converter(manifest: JmdictManifest) -> None:
+    if manifest.normalized.converter_version != CONVERTER_VERSION:
+        raise JmdictIntegrityError(
+            f"dictionary converter mismatch: expected {CONVERTER_VERSION}"
+        )
+
+
 def _is_verified(target: Path, manifest: JmdictManifest) -> bool:
     try:
         verify_jmdict(target, manifest=manifest)
-    except (JmdictIntegrityError, OSError):
+    except (JmdictIntegrityError, OSError, ValueError):
         return False
     return True
 
