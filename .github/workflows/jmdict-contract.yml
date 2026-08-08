@@ -1,0 +1,49 @@
+name: JMdict Data Contract
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "backend/src/mangasensei/linguistics/jmdict.py"
+      - "backend/src/mangasensei/linguistics/jmdict_bootstrap.py"
+      - "backend/src/mangasensei/linguistics/jmdict_manifest.json"
+      - "scripts/update_jmdict_manifest.py"
+      - "tests/unit/test_jmdict_bootstrap.py"
+      - ".github/workflows/jmdict-contract.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/src/mangasensei/linguistics/jmdict.py"
+      - "backend/src/mangasensei/linguistics/jmdict_bootstrap.py"
+      - "backend/src/mangasensei/linguistics/jmdict_manifest.json"
+      - "scripts/update_jmdict_manifest.py"
+      - "tests/unit/test_jmdict_bootstrap.py"
+      - ".github/workflows/jmdict-contract.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jmdict-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Pinned source and normalized metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --frozen
+
+      - name: Verify pinned source and normalized metadata
+        run: uv run python scripts/update_jmdict_manifest.py --check
