@@ -1,0 +1,27 @@
+{
+  "version": "2026-08-07",
+  "upstream_commit": "95227a2bb0fd306cd4f0c104d57284026f991b3a",
+  "artifacts": [
+    {
+      "filename": "detect-20241225.ckpt",
+      "url": "https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/detect-20241225.ckpt",
+      "sha256": "67ce1c4ed4793860f038c71189ba9630a7756f7683b1ee5afb69ca0687dc502e",
+      "size_bytes": 308380176,
+      "redistribution_status": "local-use-only-pending-rights-review"
+    },
+    {
+      "filename": "ocr_ar_48px.ckpt",
+      "url": "https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/ocr_ar_48px.ckpt",
+      "sha256": "29daa46d080818bb4ab239a518a88338cbccff8f901bef8c9db191a7cb97671d",
+      "size_bytes": 204290192,
+      "redistribution_status": "local-use-only-pending-rights-review"
+    },
+    {
+      "filename": "alphabet-all-v7.txt",
+      "url": "https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/alphabet-all-v7.txt",
+      "sha256": "f5722368146aa0fbcc9f4726866e4efc3203318ebb66c811d8cbbe915576538a",
+      "size_bytes": 186651,
+      "redistribution_status": "local-use-only-pending-rights-review"
+    }
+  ]
+}

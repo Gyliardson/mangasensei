@@ -32,7 +32,7 @@ test-results/
 
 # Runtime data and OCR models
 var/
-models/
+/models/
 .model-cache/
 *.ckpt
 *.pt

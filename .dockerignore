@@ -11,7 +11,7 @@ htmlcov
 playwright-report
 test-results
 var
-models
+/models
 .model-cache
 *.ckpt
 *.pt
