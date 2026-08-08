@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Local-only worker processing no longer fails database offset constraints when Sudachi normalization emits a zero-width morpheme.
 - Docker runtime roles now receive only their required database, capability and Gemini secrets; DB-only roles no longer require capability peppers.
 - Local JMdict lookup now respects kana-to-kanji and sense-to-form restrictions instead of reconstructing invalid Cartesian-product associations.
+- Reader vocabulary now exposes deterministic local JMdict entries even when Gemini is disabled or omits a vocabulary link; contextual Gemini fields remain optional enrichment.
 
 ## [0.1.0] - 2026-08-07
 
