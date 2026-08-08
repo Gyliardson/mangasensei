@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Version consistency tooling, repository-local Markdown link validation, Dependabot configuration, and tagged GitHub Release automation.
 - Privacy-safe worker failure diagnostics with pipeline stage, retry correlation, exception type and bounded source-location context for operator logs.
 - Reviewed real-OCR smoke automation with checksum-verified model downloads, scheduled/manual validation and a release-publishing gate.
+- Deterministic full-stack browser gate covering the real FastAPI, PostgreSQL, queue/worker, persistence, capability-protected reads and frontend polling path with only OCR inference doubled.
 
 ### Changed
 
@@ -30,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation uses navigable repository links for contributor, visual-artifact and third-party references.
 - Docker/Compose image version metadata is supplied from release tooling instead of a hardcoded application version.
 - Normalized JMdict data now uses the `mangasensei-jmdict-v2` form contract and reproducible manifest metadata derived from the checksum-pinned source artifact.
+- Browser assurance now labels the fast API-mocked Playwright suite separately from the required full-stack critical-flow E2E.
 
 ### Fixed
 
