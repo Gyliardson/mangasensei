@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Brazilian Portuguese, Japanese and Spanish contributor, security and code-of-conduct guides, plus synchronized multilingual README presentation and project activity links.
 - Distribution CI that builds and clean-installs the Python wheel, plus a production Docker build gate.
 - Version consistency tooling, repository-local Markdown link validation, Dependabot configuration, and tagged GitHub Release automation.
+- Privacy-safe worker failure diagnostics with pipeline stage, retry correlation, exception type and bounded source-location context for operator logs.
 
 ### Changed
 
