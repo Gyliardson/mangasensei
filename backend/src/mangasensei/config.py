@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     gemini_max_calls_per_page: int = Field(default=3, ge=1, le=3)
     google_api_key: SecretStr | None = Field(default=None, validation_alias="GOOGLE_API_KEY")
 
+    @field_validator("google_api_key", mode="before")
+    @classmethod
+    def normalize_optional_google_api_key(cls, value: object) -> object:
+        raw_value = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if isinstance(raw_value, str) and not raw_value.strip():
+            return None
+        return value
+
     @field_validator("capability_peppers")
     @classmethod
     def validate_capability_peppers(
