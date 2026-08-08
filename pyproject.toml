@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools==80.9.0"]
+requires = ["setuptools==83.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -33,7 +33,7 @@ ocr = [
   "einops==0.8.2",
   "networkx==3.6.1",
   "numpy==2.4.6",
-  "opencv-python-headless==4.14.0.94",
+  "opencv-python-headless==5.0.0.93",
   "py3langid==0.3.0",
   "pyclipper==1.4.0",
   "requests==2.34.2",
