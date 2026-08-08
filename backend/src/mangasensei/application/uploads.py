@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,7 @@ from mangasensei.application.idempotency import idempotency_digest
 from mangasensei.domain.capabilities import CapabilityScope
 from mangasensei.infrastructure.capabilities import CapabilityService
 from mangasensei.infrastructure.database.job_models import JobRecord
+from mangasensei.infrastructure.database.storage_locks import acquire_image_blob_lock
 from mangasensei.infrastructure.database.storage_models import (
     ImageBlobRecord,
     PageCapabilityRecord,
@@ -84,12 +86,13 @@ class UploadService:
             namespace="job",
             value=idempotency_key,
         )
-        storage_key = await self._storage.store(image)
         request_digest = bytes.fromhex(image.sha256)
         safe_filename = _safe_filename(original_filename)
 
         async with self._sessions.begin() as session:
-            blob = await self._get_or_create_blob(session, image, storage_key)
+            await acquire_image_blob_lock(session, request_digest)
+            pending_write = await self._storage.stage(image)
+            blob = await self._get_or_create_blob(session, image, pending_write.storage_key)
             page, created = await self._get_or_create_page(
                 session,
                 blob_id=blob.id,
@@ -116,7 +119,7 @@ class UploadService:
                 ).scalar_one()
             tokens = await self._issue_capabilities(session, page)
             await session.flush()
-            return UploadResult(
+            result = UploadResult(
                 page_id=page.public_id,
                 job_id=job.public_id,
                 content_sha256=image.sha256,
@@ -127,6 +130,12 @@ class UploadService:
                 capabilities=tokens,
                 created=created,
             )
+
+        # The database commit is authoritative. If marker cleanup itself fails, the
+        # retention janitor will reconcile the marker without deleting a referenced blob.
+        with suppress(OSError):
+            await self._storage.confirm(pending_write)
+        return result
 
     async def _get_or_create_blob(
         self,
@@ -163,7 +172,6 @@ class UploadService:
             existing.height,
             existing.media_type,
             existing.storage_key,
-            existing.state,
         )
         expected_metadata = (
             values["byte_size"],
@@ -171,9 +179,12 @@ class UploadService:
             values["height"],
             values["media_type"],
             values["storage_key"],
-            "ready",
         )
         if immutable_metadata != expected_metadata:
+            raise StorageMetadataConflictError("immutable blob metadata conflict")
+        if existing.state == "deleting":
+            existing.state = "ready"
+        elif existing.state != "ready":
             raise StorageMetadataConflictError("immutable blob metadata conflict")
         return existing
 
