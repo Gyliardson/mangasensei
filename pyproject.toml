@@ -110,6 +110,9 @@ exclude = ["backend/src/mangasensei/ocr/vendor"]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "SIM", "PT"]
 ignore = ["S101"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["mangasensei"]
+
 [tool.ruff.lint.per-file-ignores]
 "backend/migrations/**/*.py" = ["E501"]
 
