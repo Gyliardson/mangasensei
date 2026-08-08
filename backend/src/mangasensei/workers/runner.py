@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 from contextlib import suppress
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -41,6 +43,11 @@ from mangasensei.ocr.contracts import OcrEngine, OcrImage, OcrResult
 from mangasensei.storage.local import LocalFilesystemStorage
 
 
+_LOGGER = logging.getLogger(__name__)
+_MAX_DIAGNOSTIC_CAUSES = 4
+_MAX_DIAGNOSTIC_FRAMES = 8
+
+
 class StaleLeaseError(RuntimeError):
     """The worker no longer owns the claimed job."""
 
@@ -61,6 +68,32 @@ def _public_error_code(exc: BaseException) -> str:
         if isinstance(exc, kind):
             return code
     return "processing_failed"
+
+
+def _safe_exception_context(exc: BaseException) -> str:
+    """Describe exception types and source locations without exception messages or locals."""
+    parts: list[str] = []
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen and len(parts) < _MAX_DIAGNOSTIC_CAUSES:
+        seen.add(id(current))
+        frames: list[str] = []
+        traceback_cursor = current.__traceback__
+        while traceback_cursor is not None:
+            code = traceback_cursor.tb_frame.f_code
+            frames.append(
+                f"{Path(code.co_filename).name}:{traceback_cursor.tb_lineno}:{code.co_name}"
+            )
+            traceback_cursor = traceback_cursor.tb_next
+        locations = ">".join(frames[-_MAX_DIAGNOSTIC_FRAMES:]) or "no-traceback"
+        parts.append(f"{type(current).__name__}@{locations}")
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif not current.__suppress_context__:
+            current = current.__context__
+        else:
+            current = None
+    return " <- ".join(parts)
 
 
 class Worker:
@@ -100,9 +133,12 @@ class Worker:
         if claim is None:
             return False
         heartbeat = asyncio.create_task(self._heartbeat_loop(claim))
+        stage = "claim_transition"
         try:
             await self._transition(claim, "claimed", "processing_ocr")
+            stage = "load_image"
             page, blob, content = await self._load_image(claim)
+            stage = "ocr"
             ocr_result = await self._ocr.analyze(
                 OcrImage(
                     content=content,
@@ -111,18 +147,23 @@ class Worker:
                     dimensions=PageDimensions(width=blob.width, height=blob.height),
                 )
             )
+            stage = "persist_ocr"
             region_ids = await self._persist_ocr(claim, blob, ocr_result)
+            stage = "linguistics"
             linguistic_by_region = {
                 region.id: self._linguistics.analyze(region.id, region.japanese_text)
                 for region in ocr_result.regions
             }
+            stage = "persist_linguistics"
             token_ids = await self._persist_linguistics(
                 claim, ocr_result, region_ids, linguistic_by_region
             )
             if self._gemini is None:
                 await self._complete_without_gemini(claim)
                 return True
+            stage = "reserve_gemini"
             call_id = await self._reserve_gemini_call(claim, page, ocr_result, linguistic_by_region)
+            stage = "mark_gemini_sent"
             await self._mark_call_sent(call_id)
             vocabulary_ids = frozenset(
                 token.dictionary_id
@@ -130,12 +171,14 @@ class Worker:
                 for token in tokens
                 if token.dictionary_id is not None
             )
+            stage = "gemini"
             analysis = await GeminiAnalysisService(
                 self._gemini, prompt_version="page-study-v1"
             ).analyze_page(
                 regions={region.id: region.japanese_text for region in ocr_result.regions},
                 vocabulary_ids=vocabulary_ids,
             )
+            stage = "persist_gemini"
             await self._persist_gemini_and_complete(
                 claim,
                 call_id,
@@ -146,7 +189,19 @@ class Worker:
         except StaleLeaseError:
             return True
         except Exception as exc:
-            await self._mark_retryable_failure(claim, _public_error_code(exc))
+            error_code = _public_error_code(exc)
+            _LOGGER.error(
+                "worker_pipeline_failed stage=%s job_id=%d attempt_no=%d fencing_token=%d "
+                "error_code=%s exception_type=%s traceback=%s",
+                stage,
+                claim.job_id,
+                claim.attempt_no,
+                claim.fencing_token,
+                error_code,
+                type(exc).__name__,
+                _safe_exception_context(exc),
+            )
+            await self._mark_retryable_failure(claim, error_code)
         finally:
             heartbeat.cancel()
             with suppress(asyncio.CancelledError, StaleLeaseError):
