@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Root GPL-3.0-only license file and third-party notices.
 - Expanded multilingual portfolio documentation with architecture, setup and API references.
 - Open-source community files: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue and pull request templates, and a GitHub Actions CI workflow.
+- Brazilian Portuguese, Japanese and Spanish contributor, security and code-of-conduct guides, plus synchronized multilingual README presentation and project activity links.
 - Distribution CI that builds and clean-installs the Python wheel, plus a production Docker build gate.
 - Version consistency tooling, repository-local Markdown link validation, Dependabot configuration, and tagged GitHub Release automation.
 
