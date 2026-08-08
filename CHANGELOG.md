@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Distribution CI that builds and clean-installs the Python wheel, plus a production Docker build gate.
 - Version consistency tooling, repository-local Markdown link validation, Dependabot configuration, and tagged GitHub Release automation.
 - Privacy-safe worker failure diagnostics with pipeline stage, retry correlation, exception type and bounded source-location context for operator logs.
+- Reviewed real-OCR smoke automation with checksum-verified model downloads, scheduled/manual validation and a release-publishing gate.
 
 ### Changed
 
