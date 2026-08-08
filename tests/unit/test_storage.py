@@ -65,6 +65,25 @@ async def test_local_storage_is_atomic_immutable_and_content_deduplicated(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_staged_storage_keeps_recovery_marker_until_confirmed(tmp_path: Path) -> None:
+    original = png_bytes()
+    validated = ImageValidator(max_bytes=1_000_000, max_pixels=10_000, max_side=1000).validate(
+        original, declared_media_type="image/png"
+    )
+    storage = LocalFilesystemStorage(tmp_path)
+
+    pending = await storage.stage(validated)
+
+    assert await storage.pending_writes() == (pending,)
+    assert await storage.read(pending.storage_key) == original
+
+    await storage.confirm(pending)
+
+    assert await storage.pending_writes() == ()
+    assert await storage.read(pending.storage_key) == original
+
+
+@pytest.mark.asyncio
 async def test_storage_rejects_untrusted_keys(tmp_path: Path) -> None:
     storage = LocalFilesystemStorage(tmp_path)
 
