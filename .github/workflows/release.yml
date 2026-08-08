@@ -23,6 +23,7 @@ jobs:
         with:
           version: 0.12.3
           python-version: "3.11"
+          prune-cache: true
 
       - name: Validate version mirrors and tag
         run: |
