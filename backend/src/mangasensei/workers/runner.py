@@ -42,7 +42,6 @@ from mangasensei.linguistics.service import LinguisticService, LinguisticToken
 from mangasensei.ocr.contracts import OcrEngine, OcrImage, OcrResult
 from mangasensei.storage.local import LocalFilesystemStorage
 
-
 _LOGGER = logging.getLogger(__name__)
 _MAX_DIAGNOSTIC_CAUSES = 4
 _MAX_DIAGNOSTIC_FRAMES = 8
