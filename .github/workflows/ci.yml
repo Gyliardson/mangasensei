@@ -41,11 +41,17 @@ jobs:
           version: 0.12.3
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: uv sync --extra ocr
+      - name: Install dependencies from lockfile
+        run: uv sync --frozen --extra ocr
+
+      - name: Check version mirrors
+        run: uv run python scripts/version.py check
+
+      - name: Check local documentation links
+        run: uv run python scripts/check_markdown_links.py
 
       - name: Lint with Ruff
-        run: uv run ruff check backend/src tests
+        run: uv run ruff check backend/src tests scripts
 
       - name: Type check with mypy
         run: uv run mypy backend/src
@@ -59,6 +65,53 @@ jobs:
           name: backend-coverage
           path: htmlcov
           if-no-files-found: ignore
+
+  distribution:
+    name: Distribution (wheel build and clean install)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+
+      - name: Build wheel and source distribution
+        run: uv build
+
+      - name: Create clean smoke environment
+        run: uv venv .package-smoke --python 3.11
+
+      - name: Install built wheel
+        run: uv pip install --python .package-smoke/bin/python dist/*.whl
+
+      - name: Verify installed package and packaged data
+        run: |
+          .package-smoke/bin/python -c "import importlib.resources as r; import mangasensei; import mangasensei.cli; import mangasensei.ocr.models.downloader; import mangasensei.ocr.models.manifest; assert r.files('mangasensei.ocr.models').joinpath('manifest.json').is_file(); print(mangasensei.__version__)"
+          .package-smoke/bin/mangasensei --help
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error
+
+  docker:
+    name: Docker (build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build production image from tracked files
+        run: docker build --build-arg MANGASENSEI_VERSION="$(cat VERSION)" -t mangasensei:ci .
+
+      - name: Verify image metadata and package imports
+        run: |
+          test "$(docker image inspect mangasensei:ci --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')" = "$(cat VERSION)"
+          docker run --rm --entrypoint python mangasensei:ci -c "import mangasensei; import mangasensei.ocr.models.manifest; print(mangasensei.__version__)"
 
   frontend:
     name: Frontend (lint, typecheck, coverage, build, e2e)
