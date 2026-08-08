@@ -4,7 +4,10 @@ import hashlib
 import json
 from pathlib import Path
 
-from mangasensei.linguistics.jmdict import JsonJmdictDictionary
+from mangasensei.linguistics.jmdict import (
+    NORMALIZED_CONVERTER_VERSION,
+    JsonJmdictDictionary,
+)
 from mangasensei.linguistics.sudachi import SudachiTokenizer
 
 
@@ -29,13 +32,18 @@ def test_jmdict_lookup_requires_unambiguous_lemma_and_reading(tmp_path: Path) ->
     dictionary_path.write_text(
         json.dumps(
             {
+                "converterVersion": NORMALIZED_CONVERTER_VERSION,
                 "version": "test",
                 "entries": [
                     {
                         "id": "jmdict-1467640",
-                        "kanji": ["猫"],
-                        "readings": ["ねこ"],
-                        "meanings": ["cat"],
+                        "forms": [
+                            {
+                                "lemma": "猫",
+                                "reading": "ねこ",
+                                "meanings": ["cat"],
+                            }
+                        ],
                         "jlptLevel": "N5",
                     }
                 ],

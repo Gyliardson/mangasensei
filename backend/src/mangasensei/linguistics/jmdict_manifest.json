@@ -14,9 +14,9 @@
   },
   "normalized": {
     "filename": "jmdict.json",
-    "sha256": "86721226be551bce297177fcb5a20518d517ff17c00fbaf24c28661d3760a166",
-    "size_bytes": 31190058,
+    "sha256": "be854bc4fabc48c23afa34c496bb2bc0d9b3fd9c1d2501780c17f7092775faa0",
+    "size_bytes": 67390051,
     "entry_count": 218290,
-    "converter_version": "mangasensei-jmdict-v1"
+    "converter_version": "mangasensei-jmdict-v2"
   }
 }

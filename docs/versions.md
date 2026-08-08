@@ -19,9 +19,14 @@ Verified on 2026-08-08 using official documentation, package registries and revi
 | Components | shadcn CLI | 4.16.2 | Tailwind v4 compatible |
 | Unit tests | Vitest | 4.1.10 | jsdom environment |
 | E2E | Playwright | 1.62.1 | Desktop and mobile projects |
-| Dictionary data | jmdict-simplified | 3.6.2+20260803141815 | Local normalized JMdict bootstrap, English glosses |
+| Dictionary data | jmdict-simplified | 3.6.2+20260803141815 | English source pinned by checksum; normalized with `mangasensei-jmdict-v2` so reading/spelling and sense restrictions remain enforceable |
 | OCR source | manga-image-translator | 95227a2bb0fd306cd4f0c104d57284026f991b3a | Vendored OCR subset |
 
 Python packages are locked by `uv.lock`. JavaScript packages are locked by
 `package-lock.json`. Model artifacts use a separate checksum manifest because
 they cannot be redistributed with the application.
+
+The normalized JMdict artifact is derived locally from the reviewed source ZIP and is not
+hand-edited. When the converter contract changes, refresh its reviewed derived metadata with
+`uv run python scripts/update_jmdict_manifest.py`; use `--check` to verify that the manifest
+matches the current converter and pinned source without modifying it.
