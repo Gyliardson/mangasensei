@@ -135,6 +135,8 @@ Copy-Item .env.example .env
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
+Gemini は任意です。ローカル OCR と言語解析だけで worker を実行する場合は `GOOGLE_API_KEY` を未設定または空のままにし、Gemini の補強を有効にする場合のみ空でないキーを設定してください。
+
 Docker Compose で起動:
 
 ```powershell

@@ -135,6 +135,8 @@ Gere segredos e configure-os no `.env` antes de executar qualquer coisa que use 
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
+Gemini é opcional. Deixe `GOOGLE_API_KEY` ausente ou em branco para executar o worker somente com OCR e linguística locais; configure uma chave não vazia para habilitar o enriquecimento do Gemini.
+
 Execute com Docker Compose:
 
 ```powershell
