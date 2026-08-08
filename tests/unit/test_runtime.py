@@ -8,14 +8,19 @@ import mangasensei.runtime as runtime
 from mangasensei.config import Settings
 
 
-def test_blank_google_api_key_does_not_construct_gemini_adapter(
+@pytest.mark.parametrize("environment_value", [None, ""])
+def test_missing_or_blank_google_api_key_does_not_construct_gemini_adapter(
     monkeypatch: pytest.MonkeyPatch,
+    environment_value: str | None,
 ) -> None:
-    monkeypatch.setenv("GOOGLE_API_KEY", "")
+    if environment_value is None:
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("GOOGLE_API_KEY", environment_value)
 
     def unexpected_adapter(**kwargs: Any) -> None:
         del kwargs
-        raise AssertionError("Gemini adapter must not be constructed for a blank key")
+        raise AssertionError("Gemini adapter must not be constructed without a configured key")
 
     monkeypatch.setattr(runtime, "GoogleGenAiAdapter", unexpected_adapter)
 
