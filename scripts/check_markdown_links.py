@@ -18,7 +18,8 @@ def tracked_markdown_files() -> tuple[Path, ...]:
     git = shutil.which("git")
     if git is None:
         raise RuntimeError("git executable not found")
-    completed = subprocess.run(
+    # The executable is resolved explicitly and every argument is a fixed literal; shell=False.
+    completed = subprocess.run(  # noqa: S603
         [git, "ls-files", "*.md"],
         cwd=ROOT,
         check=True,
