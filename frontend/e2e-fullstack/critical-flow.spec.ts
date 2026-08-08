@@ -39,8 +39,11 @@ test("completes the real local-first page-analysis lifecycle", async ({ page }) 
   await expect(page.getByRole("button", { name: "Região 1: 猫です" })).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByRole("heading", { name: "猫です" })).toBeVisible();
-  await expect(page.locator("rt", { hasText: "ネコ" })).toBeVisible();
+  const studyTitle = page.locator("#study-title");
+  await expect(studyTitle).toBeVisible();
+  await expect(studyTitle.locator("ruby")).toContainText("猫");
+  await expect(studyTitle.locator("rt")).toHaveText("ネコ");
+  await expect(studyTitle).toContainText("です");
   await expect(page.getByText("cat")).toBeVisible();
   await expect(page.getByText("JMdict fullstack-fixture · JLPT N5 não oficial")).toBeVisible();
   await expect(page.getByText("Análise contextual indisponível.")).toBeVisible();
