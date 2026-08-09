@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Licensed real-manga OCR fixture corpus with documented provenance and integrity metadata.
 - Reviewed real-model OCR regressions for known-good short vertical dialogue on licensed manga pages.
 - Layered licensed OCR assurance with manifest integrity checks, repeated short-text inference and a deeper full-corpus catastrophic-output guard.
+- OCR Smoke visual-audit artifacts with numbered boxes and structured OCR sidecars for human source/geometry/text review of licensed fixtures.
 - Verified JMdict bootstrap command and local dictionary manifest.
 - Root GPL-3.0-only license file and third-party notices.
 - Expanded multilingual portfolio documentation with architecture, setup and API references.
@@ -72,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The upload landing page now masks the section index over the card border and anchors the next-step block to the same workspace axis on desktop and mobile layouts.
 - OCR regions now follow deterministic manga page tiers from top to bottom and right to left within each tier instead of globally prioritizing vertical text by X position.
 - 48px OCR recognition no longer depends on unrelated wider crops in the same batch; batch padding now matches the recognizer feature mask, with a licensed page-9 regression protecting the affected two-line region.
+- Detector-complete text lines no longer disappear or truncate a merged dialogue solely because the 48px recognizer crop is too tight after ordinary resampling; recognition gets bounded short-axis source context while detector and final region geometry remain unchanged.
 
 ## [0.1.0] - 2026-08-07
 
