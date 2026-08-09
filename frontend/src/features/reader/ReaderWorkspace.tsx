@@ -12,6 +12,8 @@ import {
   type ReaderViewportMetrics,
   calculateReaderCanvasWidth,
   clampReaderZoom,
+  effectiveReaderFitMode,
+  isMobileReaderViewport,
   isReaderFitMode,
 } from "./readerViewport";
 import {
@@ -34,9 +36,13 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
     loadReaderViewportPreference(),
   );
   const [viewportMetrics, setViewportMetrics] = useState<ReaderViewportMetrics | null>(null);
+  const [hasHorizontalPan, setHasHorizontalPan] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const selected = page.regions.find((region) => region.id === selectedId) ?? page.regions[0];
+  const readerWidth = viewportMetrics?.width ?? window.innerWidth;
+  const mobileViewport = isMobileReaderViewport(readerWidth);
+  const presentedFitMode = effectiveReaderFitMode(viewportPreference.fitMode, readerWidth);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -82,8 +88,12 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
       viewportPreference.fitMode,
       viewportPreference.zoom,
     );
-    viewport.style.maxHeight = `${Math.round(viewportMetrics.height)}px`;
     canvas.style.width = `${Math.round(canvasWidth)}px`;
+    const canPanHorizontally = canvasWidth > viewportMetrics.width + 1;
+    setHasHorizontalPan(canPanHorizontally);
+    if (!canPanHorizontally) {
+      viewport.scrollLeft = 0;
+    }
   }, [page.dimensions, viewportMetrics, viewportPreference.fitMode, viewportPreference.zoom]);
 
   const changeFuriganaMode = (value: string) => {
@@ -117,54 +127,70 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
             <p className="eyebrow">Página processada</p>
             <h1 id="reader-title">Selecione uma região</h1>
           </div>
-          <div className="reader-actions">
-            <label className="reader-preference">
-              <span>Furigana na leitura</span>
-              <select
-                aria-label="Exibição de furigana"
-                value={furiganaMode}
-                onChange={(event) => changeFuriganaMode(event.currentTarget.value)}
-              >
-                <option value="hiragana">Hiragana</option>
-                <option value="katakana">Katakana</option>
-                <option value="hidden">Oculto</option>
-              </select>
-            </label>
-            <label className="reader-preference">
-              <span>Ajuste da página</span>
-              <select
-                aria-label="Ajuste da página"
-                value={viewportPreference.fitMode}
-                onChange={(event) => changeFitMode(event.currentTarget.value)}
-              >
-                <option value="comfortable">Confortável</option>
-                <option value="page">Página inteira</option>
-                <option value="width">Largura</option>
-              </select>
-            </label>
-            <div className="reader-zoom" role="group" aria-label="Zoom da página">
-              <button
-                className="reader-zoom-button"
-                type="button"
-                aria-label="Diminuir zoom"
-                disabled={viewportPreference.zoom <= READER_ZOOM_MIN}
-                onClick={() => changeZoom(-READER_ZOOM_STEP)}
-              >
-                <Minus aria-hidden="true" />
-              </button>
-              <output aria-label="Nível de zoom">{viewportPreference.zoom}%</output>
-              <button
-                className="reader-zoom-button"
-                type="button"
-                aria-label="Aumentar zoom"
-                disabled={viewportPreference.zoom >= READER_ZOOM_MAX}
-                onClick={() => changeZoom(READER_ZOOM_STEP)}
-              >
-                <Plus aria-hidden="true" />
+          <div className="reader-header-actions">
+            <div className="reader-study-actions" role="group" aria-label="Preferências de estudo">
+              <label className="reader-preference">
+                <span>Furigana na leitura</span>
+                <select
+                  aria-label="Exibição de furigana"
+                  value={furiganaMode}
+                  onChange={(event) => changeFuriganaMode(event.currentTarget.value)}
+                >
+                  <option value="hiragana">Hiragana</option>
+                  <option value="katakana">Katakana</option>
+                  <option value="hidden">Oculto</option>
+                </select>
+              </label>
+            </div>
+            <div className="reader-navigation" role="group" aria-label="Navegação">
+              <button className="text-button" type="button" onClick={onReset}>
+                <RotateCcw aria-hidden="true" /> Nova página
               </button>
             </div>
-            <button className="text-button" type="button" onClick={onReset}>
-              <RotateCcw aria-hidden="true" /> Nova página
+          </div>
+        </div>
+
+        <div className="page-presentation-toolbar" role="group" aria-label="Apresentação da página">
+          <label className="reader-preference page-fit-preference">
+            <span>Ajuste da página</span>
+            <select
+              aria-label="Ajuste da página"
+              value={presentedFitMode}
+              onChange={(event) => changeFitMode(event.currentTarget.value)}
+            >
+              {mobileViewport ? (
+                <>
+                  <option value="width">Largura</option>
+                  <option value="page">Página inteira</option>
+                </>
+              ) : (
+                <>
+                  <option value="comfortable">Confortável</option>
+                  <option value="page">Página inteira</option>
+                  <option value="width">Largura</option>
+                </>
+              )}
+            </select>
+          </label>
+          <div className="reader-zoom" role="group" aria-label="Zoom da página">
+            <button
+              className="reader-zoom-button"
+              type="button"
+              aria-label="Diminuir zoom"
+              disabled={viewportPreference.zoom <= READER_ZOOM_MIN}
+              onClick={() => changeZoom(-READER_ZOOM_STEP)}
+            >
+              <Minus aria-hidden="true" />
+            </button>
+            <output aria-label="Nível de zoom">{viewportPreference.zoom}%</output>
+            <button
+              className="reader-zoom-button"
+              type="button"
+              aria-label="Aumentar zoom"
+              disabled={viewportPreference.zoom >= READER_ZOOM_MAX}
+              onClick={() => changeZoom(READER_ZOOM_STEP)}
+            >
+              <Plus aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -172,14 +198,15 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
         <div
           ref={viewportRef}
           className="page-viewport"
-          role="region"
-          aria-label="Visualização da página"
-          tabIndex={0}
+          role={hasHorizontalPan ? "region" : undefined}
+          aria-label={hasHorizontalPan ? "Visualização da página com rolagem horizontal" : undefined}
+          tabIndex={hasHorizontalPan ? 0 : undefined}
+          data-horizontal-pan={hasHorizontalPan}
         >
           <div
             ref={canvasRef}
             className="page-canvas"
-            data-fit-mode={viewportPreference.fitMode}
+            data-fit-mode={presentedFitMode}
             data-zoom={viewportPreference.zoom}
           >
             <img src={imageUrl} alt="Página original enviada para estudo" />

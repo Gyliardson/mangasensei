@@ -5,6 +5,8 @@ import {
   READER_ZOOM_MIN,
   calculateReaderCanvasWidth,
   clampReaderZoom,
+  effectiveReaderFitMode,
+  isMobileReaderViewport,
   isReaderFitMode,
 } from "./readerViewport";
 
@@ -20,7 +22,14 @@ describe("reader viewport sizing", () => {
     expect(width).toBeCloseTo(528, 0);
   });
 
-  it("uses the available reader width as the comfortable mobile baseline", () => {
+  it("normalizes comfortable to the truthful width baseline on mobile without changing desktop semantics", () => {
+    expect(isMobileReaderViewport(390)).toBe(true);
+    expect(isMobileReaderViewport(900)).toBe(false);
+    expect(effectiveReaderFitMode("comfortable", 390)).toBe("width");
+    expect(effectiveReaderFitMode("comfortable", 900)).toBe("comfortable");
+    expect(effectiveReaderFitMode("page", 390)).toBe("page");
+    expect(effectiveReaderFitMode("width", 390)).toBe("width");
+
     expect(
       calculateReaderCanvasWidth(portrait, { width: 390, height: 500 }, "comfortable", 100),
     ).toBe(390);
