@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 
 from mangasensei.ocr.adapter.recognizer_48px import (
-    _RecognitionQuadrilateral,
     _copy_quadrilateral,
     _copy_recognition,
+    _RecognitionQuadrilateral,
 )
 from mangasensei.ocr.vendor.manga_image_translator.manga_translator.utils.generic import (
     Quadrilateral,
@@ -44,7 +44,9 @@ def test_recognizer_crop_clips_detector_points_to_last_valid_pixel() -> None:
     crop = line.get_transformed_region(image, "h", 3)
 
     assert crop.size > 0
-    assert np.all(crop == 255), "clipped image-edge detector geometry introduced a synthetic dark border"
+    assert np.all(crop == 255), (
+        "clipped image-edge detector geometry introduced a synthetic dark border"
+    )
 
 
 def test_crop_safe_copy_preserves_detector_geometry() -> None:
