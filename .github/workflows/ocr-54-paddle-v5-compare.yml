@@ -40,7 +40,7 @@ jobs:
           scripts/ocr_54_summarize_paddle_scale_sweep.py
       - run: uv run mangasensei models download
       - run: uv run mangasensei models verify
-      - name: Prepare reviewed tight/context crops
+      - name: Prepare reviewed crop variants
         run: >-
           uv run python scripts/ocr_54_prepare_paddle_scale_sweep.py
           --output var/ocr-54-paddle-v5/prepared
@@ -55,18 +55,16 @@ jobs:
           uv pip install --python .bench-paddle-v5/bin/python
           --index https://download.pytorch.org/whl/cpu
           "torch==2.13.0" "torchvision==0.28.0"
-      - name: Run PP-OCRv5 mobile on 48px tight/context variants
+      - name: Run PP-OCRv5 mobile over all crop variants
         run: >-
           .bench-paddle-v5/bin/python scripts/ocr_54_run_paddle_corpus_audit.py
           --model-name PP-OCRv5_mobile_rec
-          --id-regex 'h48$'
           --input var/ocr-54-paddle-v5/prepared
           --output var/ocr-54-paddle-v5/mobile
-      - name: Run PP-OCRv5 server on 48px tight/context variants
+      - name: Run PP-OCRv5 server over all crop variants
         run: >-
           .bench-paddle-v5/bin/python scripts/ocr_54_run_paddle_corpus_audit.py
           --model-name PP-OCRv5_server_rec
-          --id-regex 'h48$'
           --input var/ocr-54-paddle-v5/prepared
           --output var/ocr-54-paddle-v5/server
       - name: Summarize PP-OCRv5 mobile
