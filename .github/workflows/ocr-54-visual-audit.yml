@@ -1,4 +1,4 @@
-name: OCR 54 Exact Head Deep Validation
+name: OCR 54 Exact Merge Deep Validation
 
 on:
   push:
@@ -10,26 +10,26 @@ permissions:
   contents: read
 
 concurrency:
-  group: ocr-54-exact-head-deep-${{ github.ref }}
+  group: ocr-54-exact-merge-deep-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   audit:
-    name: Exact PR head deep OCR and visual audit
+    name: Exact #94 merge deep OCR and visual audit
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      EXPECTED_SHA: 258ca0dda056a9d3243a6f74e3b55254a9eda65c
+      EXPECTED_SHA: e3e3a51363c9e2a01d653c9e3d7333fb0dfd036d
       MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
       MANGASENSEI_RUN_OCR_SMOKE: "1"
       MANGASENSEI_OCR_REPEAT_RUNS: "3"
       MANGASENSEI_OCR_FULL_CORPUS: "1"
       MANGASENSEI_OCR_ARTIFACT_DIR: ${{ github.workspace }}/var/ocr-visual-audit
     steps:
-      - name: Check out exact PR head
+      - name: Check out exact merge SHA
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 258ca0dda056a9d3243a6f74e3b55254a9eda65c
+          ref: e3e3a51363c9e2a01d653c9e3d7333fb0dfd036d
 
       - name: Assert exact implementation SHA
         run: test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
@@ -53,11 +53,11 @@ jobs:
       - name: Run deep real OCR assurance
         run: uv run pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv -s --maxfail=1
 
-      - name: Upload exact-head visual audit
+      - name: Upload exact-merge visual audit
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ocr-54-exact-head-visual-audit
+          name: ocr-54-exact-merge-visual-audit
           path: var/ocr-visual-audit
           if-no-files-found: error
           retention-days: 7
