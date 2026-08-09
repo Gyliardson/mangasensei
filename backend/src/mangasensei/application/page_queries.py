@@ -62,7 +62,7 @@ class PageQueryService:
                 dictionary_language = study_result.dictionary_language
             else:
                 # Defensive compatibility for records created by the pre-language schema.
-                run = (
+                legacy_run = (
                     await session.execute(
                         select(OcrRunRecord)
                         .join(JobRecord, JobRecord.id == OcrRunRecord.job_id)
@@ -79,7 +79,7 @@ class PageQueryService:
                         .limit(1)
                     )
                 ).scalar_one_or_none()
-                if run is None:
+                if legacy_run is None:
                     return {
                         "status": latest_job.status,
                         "resultAvailable": False,
@@ -89,6 +89,7 @@ class PageQueryService:
                         "regions": [],
                         "error": _public_error(latest_job),
                     }
+                run = legacy_run
                 linguistic_run = (
                     await session.execute(
                         select(LinguisticRunRecord)
