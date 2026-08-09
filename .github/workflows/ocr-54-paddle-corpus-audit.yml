@@ -1,0 +1,126 @@
+name: OCR 54 Paddle Corpus Audit
+
+on:
+  push:
+    branches: [investigate/54-ocr-ensemble-benchmark]
+    paths:
+      - ".github/workflows/ocr-54-paddle-corpus-audit.yml"
+      - "scripts/ocr_54_prepare_paddle_corpus_audit.py"
+      - "scripts/ocr_54_run_paddle_corpus_audit.py"
+      - "scripts/ocr_54_summarize_paddle_corpus_audit.py"
+      - "backend/src/mangasensei/ocr/**"
+      - "tests/fixtures/ocr/real_manga/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Prepare all licensed detector lines
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - run: uv sync --frozen --extra ocr
+      - name: Lint corpus-audit scripts
+        run: >-
+          uv run ruff check
+          scripts/ocr_54_prepare_paddle_corpus_audit.py
+          scripts/ocr_54_run_paddle_corpus_audit.py
+          scripts/ocr_54_summarize_paddle_corpus_audit.py
+      - run: uv run mangasensei models download
+      - run: uv run mangasensei models verify
+      - name: Prepare every detector line and 48px result
+        run: >-
+          uv run python scripts/ocr_54_prepare_paddle_corpus_audit.py
+          --output var/ocr-54-paddle-corpus/prepared
+          --model-cache "$MANGASENSEI_MODEL_CACHE"
+      - name: Upload licensed prepared corpus audit
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-paddle-corpus-prepared
+          path: var/ocr-54-paddle-corpus/prepared
+          if-no-files-found: error
+          retention-days: 7
+
+  paddle:
+    name: Run PP-OCRv6 on all detector lines
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      HF_HOME: ${{ github.workspace }}/var/hf-paddle-v6-corpus
+      XDG_CACHE_HOME: ${{ github.workspace }}/var/cache-paddle-v6-corpus
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TRANSFORMERS_VERBOSITY: error
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-paddle-corpus-prepared
+          path: var/ocr-54-paddle-corpus/prepared
+      - run: uv venv .bench-paddle-v6-corpus --python 3.11
+      - name: Install pinned PaddleOCR benchmark environment
+        run: >-
+          uv pip install --python .bench-paddle-v6-corpus/bin/python
+          "paddleocr==3.7.0" "transformers==5.14.1"
+      - name: Install project-matched CPU Torch
+        run: >-
+          uv pip install --python .bench-paddle-v6-corpus/bin/python
+          --index https://download.pytorch.org/whl/cpu
+          "torch==2.13.0" "torchvision==0.28.0"
+      - name: Run PP-OCRv6 over all licensed detector lines
+        run: >-
+          .bench-paddle-v6-corpus/bin/python scripts/ocr_54_run_paddle_corpus_audit.py
+          --input var/ocr-54-paddle-corpus/prepared
+          --output var/ocr-54-paddle-corpus/paddle
+      - name: Upload Paddle corpus observations
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-paddle-corpus-observations
+          path: var/ocr-54-paddle-corpus/paddle/paddle-corpus.json
+          if-no-files-found: error
+          retention-days: 7
+
+  summarize:
+    name: Classify recognizer disagreements
+    needs: [prepare, paddle]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-paddle-corpus-prepared
+          path: var/ocr-54-paddle-corpus/prepared
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-paddle-corpus-observations
+          path: var/ocr-54-paddle-corpus/paddle
+      - name: Build transcript disagreement report
+        run: >-
+          python scripts/ocr_54_summarize_paddle_corpus_audit.py
+          --prepared var/ocr-54-paddle-corpus/prepared
+          --paddle var/ocr-54-paddle-corpus/paddle/paddle-corpus.json
+          --output var/ocr-54-paddle-corpus/report
+      - name: Upload corpus disagreement report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-paddle-corpus-report
+          path: var/ocr-54-paddle-corpus/report
+          if-no-files-found: error
+          retention-days: 7
