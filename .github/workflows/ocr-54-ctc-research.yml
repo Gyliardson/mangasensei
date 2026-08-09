@@ -1,0 +1,67 @@
+name: OCR 54 CTC Complement Research
+
+on:
+  push:
+    branches: [investigate/54-warp-boundary]
+    paths:
+      - ".github/workflows/ocr-54-ctc-research.yml"
+      - "scripts/ocr_54_ctc_probe.py"
+
+permissions:
+  contents: read
+
+jobs:
+  ctc:
+    name: Compare AR and CTC recognizers
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      PRODUCT_SHA: d4e28a9876503dddc8ef31932623bea283eed542
+      UPSTREAM_SHA: 95227a2bb0fd306cd4f0c104d57284026f991b3a
+      MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/product/var/models
+      MANGASENSEI_CTC_MODEL_CACHE: ${{ github.workspace }}/product/var/models-ctc
+      MANGASENSEI_OCR_CTC_DIR: ${{ github.workspace }}/var/ocr-54-ctc
+    steps:
+      - name: Check out diagnostic harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact PR 96 implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: d4e28a9876503dddc8ef31932623bea283eed542
+          path: product
+      - name: Check out pinned upstream CTC implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zyddnys/manga-image-translator
+          ref: 95227a2bb0fd306cd4f0c104d57284026f991b3a
+          path: upstream
+      - name: Assert exact source SHAs and stage only the CTC module
+        run: |
+          test "$(git -C product rev-parse HEAD)" = "${PRODUCT_SHA}"
+          test "$(git -C upstream rev-parse HEAD)" = "${UPSTREAM_SHA}"
+          cp upstream/manga_translator/ocr/model_48px_ctc.py \
+            product/backend/src/mangasensei/ocr/vendor/manga_image_translator/manga_translator/ocr/model_48px_ctc.py
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - name: Install exact product OCR environment
+        working-directory: product
+        run: uv sync --frozen --extra ocr
+      - name: Download and verify reviewed MangaSensei models
+        working-directory: product
+        run: |
+          uv run mangasensei models download
+          uv run mangasensei models verify
+      - name: Compare corrected-crop AR and pinned upstream CTC
+        working-directory: product
+        run: uv run python ../scripts/ocr_54_ctc_probe.py
+      - name: Upload CTC comparison
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-ctc-complement-research
+          path: var/ocr-54-ctc
+          if-no-files-found: error
+          retention-days: 7
