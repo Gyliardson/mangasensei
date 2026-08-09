@@ -128,7 +128,7 @@ def settings(database_url: str, root: Path) -> Settings:
         database_url=database_url,
         storage_root=root,
         model_cache=root / "models",
-        capability_peppers=("gemini-completeness-pepper-0001",),
+        capability_peppers=("gemini-completeness-pepper-value-0001",),
     )
 
 
