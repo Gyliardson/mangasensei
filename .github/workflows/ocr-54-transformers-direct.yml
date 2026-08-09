@@ -24,7 +24,7 @@ jobs:
       TOKENIZERS_PARALLELISM: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@c771a70e6277c7a806ffedaca235ff9 # v9.0.0
         with:
           version: 0.12.3
           python-version: "3.11"
@@ -53,13 +53,13 @@ jobs:
           uv pip install --python .bench-transformers-direct/bin/python
           --index https://download.pytorch.org/whl/cpu
           "torch==2.13.0" "torchvision==0.28.0"
-      - name: Run direct PP-OCRv6 and compare all 474 crops
+      - name: Run direct PP-OCRv6 and compare all 474 crops at batch one
         run: >-
           .bench-transformers-direct/bin/python scripts/ocr_54_run_transformers_recognizer.py
           --input var/ocr-54-transformers/prepared
           --reference var/ocr-54-transformers/reference/paddle-corpus.json
           --output var/ocr-54-transformers/output
-          --batch-size 16
+          --batch-size 1
       - name: Upload direct Transformers observations
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
