@@ -103,7 +103,7 @@ describe("App", () => {
   it("restores a valid English preference and sends it explicitly on upload", async () => {
     window.localStorage.setItem(STUDY_LANGUAGE_PREFERENCE_KEY, "en");
     const user = userEvent.setup();
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       Response.json(
         { success: false, data: null, error: { code: "fixture_stop", message: "fixture" } },
         { status: 422 },
