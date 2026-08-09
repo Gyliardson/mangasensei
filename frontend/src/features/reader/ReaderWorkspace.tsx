@@ -35,6 +35,7 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
   );
   const [viewportMetrics, setViewportMetrics] = useState<ReaderViewportMetrics | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const selected = page.regions.find((region) => region.id === selectedId) ?? page.regions[0];
 
   useEffect(() => {
@@ -70,6 +71,21 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
     };
   }, []);
 
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const canvas = canvasRef.current;
+    if (!viewport || !canvas || !viewportMetrics) return;
+
+    const canvasWidth = calculateReaderCanvasWidth(
+      page.dimensions,
+      viewportMetrics,
+      viewportPreference.fitMode,
+      viewportPreference.zoom,
+    );
+    viewport.style.maxHeight = `${Math.round(viewportMetrics.height)}px`;
+    canvas.style.width = `${Math.round(canvasWidth)}px`;
+  }, [page.dimensions, viewportMetrics, viewportPreference.fitMode, viewportPreference.zoom]);
+
   const changeFuriganaMode = (value: string) => {
     if (!isFuriganaMode(value)) return;
     setFuriganaMode(value);
@@ -92,15 +108,6 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
       return next;
     });
   };
-
-  const canvasWidth = viewportMetrics
-    ? calculateReaderCanvasWidth(
-      page.dimensions,
-      viewportMetrics,
-      viewportPreference.fitMode,
-      viewportPreference.zoom,
-    )
-    : null;
 
   return (
     <main id="conteudo" className="reader-layout">
@@ -168,13 +175,12 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
           role="region"
           aria-label="Visualização da página"
           tabIndex={0}
-          style={viewportMetrics ? { maxHeight: `${Math.round(viewportMetrics.height)}px` } : undefined}
         >
           <div
+            ref={canvasRef}
             className="page-canvas"
             data-fit-mode={viewportPreference.fitMode}
             data-zoom={viewportPreference.zoom}
-            style={canvasWidth ? { width: `${Math.round(canvasWidth)}px` } : undefined}
           >
             <img src={imageUrl} alt="Página original enviada para estudo" />
             <svg
