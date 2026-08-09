@@ -19,9 +19,15 @@ jobs:
       repeat_runs: 3
       full_corpus: true
 
+  bootstrap-contract:
+    name: JMdict and clean Compose contract
+    permissions:
+      contents: read
+    uses: ./.github/workflows/jmdict-contract.yml
+
   release:
     name: Validate and publish release
-    needs: ocr-smoke
+    needs: [ocr-smoke, bootstrap-contract]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
