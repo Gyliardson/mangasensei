@@ -203,11 +203,16 @@ def test_probe_artifacts_compare_spatial_stages_and_numeric_arrays(tmp_path: Pat
     comparison = compare_probe_roots(baseline_root, candidate_root)
 
     assert comparison["fixture_count"] == 1
+    assert comparison["recognizer_text_change_count"] == 0
+    assert comparison["merge_text_change_count"] == 0
     assert comparison["semantic_text_change_count"] == 0
     assert comparison["unmatched_detector_candidates"] == 0
     assert comparison["unmatched_final_regions"] == 0
     fixture_comparison = comparison["fixtures"][0]
     assert fixture_comparison["detector"]["matched_count"] == 2
+    assert fixture_comparison["recognizer_accepted"]["matched_count"] == 1
+    assert fixture_comparison["merge"]["matched_count"] == 1
+    assert fixture_comparison["final_regions"]["reading_order_change_count"] == 0
     assert fixture_comparison["arrays"]["detector_db"]["changed_values"] == 1
     assert fixture_comparison["recognizer_crops"][0]["delta"]["changed_values"] == 1
     assert fixture_comparison["recognizer_inputs"][0]["delta"]["changed_values"] == 1
@@ -282,6 +287,22 @@ def _fixture_record(
         "recognizer": {
             "crops": [{"bbox": crop_bbox, "array_key": "recognizer_crop_000"}],
             "inputs": [{"bbox": crop_bbox, "array_key": "recognizer_crop_000"}],
+            "accepted": [
+                {
+                    "bbox": crop_bbox,
+                    "text": final_text,
+                    "confidence": 0.9,
+                }
+            ],
+        },
+        "merge": {
+            "regions": [
+                {
+                    "bbox": crop_bbox,
+                    "text": final_text,
+                    "confidence": 0.9,
+                }
+            ]
         },
         "final_regions": [
             {
