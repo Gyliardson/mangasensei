@@ -16,6 +16,7 @@ from mangasensei.linguistics.jmdict import JsonJmdictDictionary
 from mangasensei.linguistics.jmdict_bootstrap import convert_simplified_jmdict
 from mangasensei.linguistics.service import LinguisticService
 from mangasensei.ocr.contracts import OcrImage, OcrRegionResult, OcrResult
+from mangasensei.ocr.fake import DEFAULT_FAKE_PROVENANCE
 from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.runner import Worker
 
@@ -34,6 +35,7 @@ class RestrictedOcrFixture:
         bbox = BoundingBox(x=10, y=20, width=40, height=60)
         return OcrResult(
             image_sha256=image.sha256,
+            provenance=DEFAULT_FAKE_PROVENANCE,
             regions=(
                 OcrRegionResult(
                     id=REGION_ID,

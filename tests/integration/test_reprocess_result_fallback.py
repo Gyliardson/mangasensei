@@ -18,6 +18,7 @@ from mangasensei.infrastructure.database.job_models import JobRecord
 from mangasensei.infrastructure.database.session import create_database
 from mangasensei.linguistics.service import DictionaryEntry, LinguisticService
 from mangasensei.ocr.contracts import OcrEngine, OcrImage, OcrRegionResult, OcrResult
+from mangasensei.ocr.fake import DEFAULT_FAKE_PROVENANCE
 from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.runner import Worker
 
@@ -39,6 +40,7 @@ class TextOcrFixture:
         bbox = BoundingBox(x=10, y=20, width=40, height=60)
         return OcrResult(
             image_sha256=image.sha256,
+            provenance=DEFAULT_FAKE_PROVENANCE,
             regions=(
                 OcrRegionResult(
                     id=REGION_ID,

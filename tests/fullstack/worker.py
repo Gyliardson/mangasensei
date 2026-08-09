@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from pathlib import Path
 
 from mangasensei.config import Settings
@@ -11,12 +12,20 @@ from mangasensei.infrastructure.database.session import create_database
 from mangasensei.linguistics.jmdict import JsonJmdictDictionary
 from mangasensei.linguistics.service import LinguisticService
 from mangasensei.linguistics.sudachi import SudachiTokenizer
-from mangasensei.ocr.contracts import OcrImage, OcrRegionResult, OcrResult
+from mangasensei.ocr.contracts import OcrImage, OcrProvenance, OcrRegionResult, OcrResult
 from mangasensei.runtime import run_worker_loop
 from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.runner import Worker
 
 REGION_ID = "5ca22b32-6834-59db-a183-428a557a22e8"
+FULLSTACK_PROVENANCE = OcrProvenance(
+    detector="fullstack-fixture",
+    recognizer="fullstack-fixture",
+    model_manifest_version="fullstack-v1",
+    config_digest=hashlib.sha256(b"fullstack-deterministic-ocr-v1").digest(),
+    upstream_repository="https://example.invalid/mangasensei/fullstack-ocr",
+    upstream_commit="fullstack-ocr-v1",
+)
 
 
 class DeterministicFullStackOcr:
@@ -28,6 +37,7 @@ class DeterministicFullStackOcr:
         bbox = BoundingBox(x=10, y=20, width=40, height=60)
         return OcrResult(
             image_sha256=image.sha256,
+            provenance=FULLSTACK_PROVENANCE,
             regions=(
                 OcrRegionResult(
                     id=REGION_ID,
@@ -41,7 +51,7 @@ class DeterministicFullStackOcr:
                     reading_order=0,
                     detector="fullstack-fixture",
                     recognizer="fullstack-fixture",
-                    upstream_commit="95227a2bb0fd306cd4f0c104d57284026f991b3a",
+                    upstream_commit="fullstack-ocr-v1",
                 ),
             ),
         )

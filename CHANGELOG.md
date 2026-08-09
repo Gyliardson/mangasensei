@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gemini enrichment now receives and validates minimal region-scoped local vocabulary candidates instead of a page-global list of opaque JMdict identifiers.
 - Gemini-enabled jobs now require exactly one structured analysis per non-empty OCR region; incomplete or duplicate responses retry without partial Gemini persistence, while zero-region OCR completes without an external call.
 - CodeQL pull-request analysis no longer relies on default-setup configuration matching that could skip Dependabot heads or produce neutral missing-configuration summaries.
+- OCR runs now persist provenance supplied by the engine from the verified model manifest and effective configuration instead of worker-side literals or zero-region fallbacks.
 
 ## [0.1.0] - 2026-08-07
 

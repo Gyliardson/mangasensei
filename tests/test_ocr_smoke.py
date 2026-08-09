@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw
 from mangasensei.domain.models import PageDimensions
 from mangasensei.ocr.adapter.manga_image_translator import MangaImageTranslatorEngine
 from mangasensei.ocr.contracts import OcrImage
+from mangasensei.ocr.models.manifest import ModelManifest
 
 pytestmark = [
     pytest.mark.ocr_smoke,
@@ -32,6 +33,15 @@ async def test_real_models_load_and_complete_cpu_inference() -> None:
     image.save(output, format="PNG")
     content = output.getvalue()
     digest = hashlib.sha256(content).hexdigest()
+    manifest = ModelManifest.load(
+        Path(__file__).parents[1]
+        / "backend"
+        / "src"
+        / "mangasensei"
+        / "ocr"
+        / "models"
+        / "manifest.json"
+    )
 
     result = await MangaImageTranslatorEngine(
         model_cache=Path(os.environ.get("MANGASENSEI_MODEL_CACHE", "var/models")),
@@ -47,4 +57,7 @@ async def test_real_models_load_and_complete_cpu_inference() -> None:
     )
 
     assert result.image_sha256 == digest
+    assert result.provenance.model_manifest_version == manifest.version
+    assert result.provenance.upstream_commit == manifest.upstream_commit
+    assert len(result.provenance.config_digest) == 32
     assert isinstance(result.regions, tuple)
