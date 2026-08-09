@@ -50,7 +50,8 @@ class FakeProviderFailureInteractions:
 
 
 @pytest.mark.asyncio
-async def test_interactions_adapter_disables_storage_and_uses_provider_compatibility_schema() -> None:
+async def test_interactions_adapter_disables_storage_and_uses_provider_compatibility_schema(
+) -> None:
     interactions = FakeInteractions()
     client = SimpleNamespace(aio=SimpleNamespace(interactions=interactions))
     adapter = GoogleGenAiAdapter(client=client, model="gemini-test", timeout_seconds=15)
