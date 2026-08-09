@@ -41,6 +41,8 @@ jobs:
           test "$(git -C upstream rev-parse HEAD)" = "${UPSTREAM_SHA}"
           cp upstream/manga_translator/ocr/model_48px_ctc.py \
             product/backend/src/mangasensei/ocr/vendor/manga_image_translator/manga_translator/ocr/model_48px_ctc.py
+          sed -i 's/from manga_translator.config import OcrConfig/from ..config import OcrConfig/' \
+            product/backend/src/mangasensei/ocr/vendor/manga_image_translator/manga_translator/ocr/model_48px_ctc.py
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: 0.12.3
