@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Licensed real-manga OCR fixture corpus with documented provenance and integrity metadata.
+- Reviewed real-model OCR regressions for known-good short vertical dialogue on licensed manga pages.
 - Verified JMdict bootstrap command and local dictionary manifest.
 - Root GPL-3.0-only license file and third-party notices.
 - Expanded multilingual portfolio documentation with architecture, setup and API references.
