@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Mapping, Protocol, Sequence
+from typing import Protocol
 
 from mangasensei.gemini.contracts import GeminiPageAnalysis
 from mangasensei.linguistics.service import LinguisticToken
