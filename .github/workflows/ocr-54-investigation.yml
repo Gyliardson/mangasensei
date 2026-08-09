@@ -1,0 +1,101 @@
+name: OCR 54 Investigation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ocr-54-investigation.yml"
+      - "scripts/ocr_54_page9_diagnostic.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ocr-54-investigation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reproduce:
+    name: Licensed page 9 stage trace (CPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
+      SOURCE_ARCHIVE_SHA256: ec7bbb4ce4f719536a2d58f29eb2c665d19b0769303efe009b4d98cccad699e1
+      SOURCE_PDF_SHA256: a2ad133db82a21cefce1acccb5548de10d2d74118c1519d86ede8566b02ca8b4
+      PAGE9_SHA256: 072e3d9c2b54628a6de0c18a0ebe078817f30de545259ab3bcd0eb16974210dd
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download and verify licensed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ocr54/source/unpacked .ocr54/source/page9 .ocr54/artifact
+          curl --proto '=https' --tlsv1.2 --fail --location --retry 3 \
+            --output .ocr54/source/001bj.zip \
+            https://densho810.com/free/dl/001bj.zip
+          echo "${SOURCE_ARCHIVE_SHA256}  .ocr54/source/001bj.zip" | sha256sum --check --strict
+          unzip -q .ocr54/source/001bj.zip -d .ocr54/source/unpacked
+          mapfile -t pdfs < <(find .ocr54/source/unpacked -type f -name '001bj.pdf' -print)
+          if [[ ${#pdfs[@]} -ne 1 ]]; then
+            printf 'expected exactly one 001bj.pdf, found %s\n' "${#pdfs[@]}" >&2
+            exit 1
+          fi
+          echo "${SOURCE_PDF_SHA256}  ${pdfs[0]}" | sha256sum --check --strict
+          printf '%s\n' "${pdfs[0]}" > .ocr54/source/pdf-path.txt
+
+      - name: Extract exact embedded page 9 JPEG
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v pdfimages >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y poppler-utils
+          fi
+          pdf_path=$(cat .ocr54/source/pdf-path.txt)
+          pdfimages -f 9 -l 9 -j "${pdf_path}" .ocr54/source/page9/extract
+          matches=()
+          while IFS= read -r -d '' candidate; do
+            digest=$(sha256sum "${candidate}" | cut -d' ' -f1)
+            if [[ "${digest}" == "${PAGE9_SHA256}" ]]; then
+              matches+=("${candidate}")
+            fi
+          done < <(find .ocr54/source/page9 -type f -name '*.jpg' -print0)
+          if [[ ${#matches[@]} -ne 1 ]]; then
+            printf 'expected exactly one checksum-matching page 9 JPEG, found %s\n' "${#matches[@]}" >&2
+            find .ocr54/source/page9 -maxdepth 1 -type f -print -exec sha256sum {} \;
+            exit 1
+          fi
+          cp "${matches[0]}" .ocr54/artifact/source_page9.jpg
+          echo "${PAGE9_SHA256}  .ocr54/artifact/source_page9.jpg" | sha256sum --check --strict
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install locked OCR dependencies
+        run: uv sync --frozen --extra ocr
+
+      - name: Download and verify reviewed OCR models
+        run: |
+          uv run mangasensei models download
+          uv run mangasensei models verify
+
+      - name: Trace page 9 across OCR stages and controlled canvas heights
+        run: |
+          uv run python scripts/ocr_54_page9_diagnostic.py \
+            --page9 .ocr54/artifact/source_page9.jpg \
+            --model-cache "${MANGASENSEI_MODEL_CACHE}" \
+            --output .ocr54/artifact/trace
+
+      - name: Upload investigation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-page9-stage-trace
+          path: .ocr54/artifact/
+          if-no-files-found: error
+          retention-days: 3
