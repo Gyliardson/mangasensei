@@ -8,6 +8,16 @@ The normal [CI workflow](../.github/workflows/ci.yml) runs on pull requests and 
 
 The same required Frontend CI job also runs the separate [full-stack critical-flow suite](../frontend/e2e-fullstack/critical-flow.spec.ts) described below. A failure in either browser layer fails the required Frontend quality check.
 
+## CodeQL security analysis
+
+The repository uses the explicit [CodeQL workflow](../.github/workflows/codeql.yml) rather than GitHub CodeQL default setup. It analyzes `actions`, `javascript-typescript` and `python` independently on pull requests targeting `main`, pushes to `main`, and a weekly schedule. Each language has a stable `/language:<identifier>` category so pull-request results can be matched to the same configuration on the default branch.
+
+The advanced workflow is intentional for Dependabot coverage. GitHub gives Dependabot-triggered workflows restricted permissions, but code scanning permits result uploads when the analysis is triggered by the `pull_request` event. The workflow therefore uses `pull_request` for proposed changes and `push` only for `main`; it does not use `pull_request_target`, repository secrets, or elevated write permissions unrelated to code scanning.
+
+The CodeQL action and checkout action are pinned to reviewed commit SHAs. The job grants only `actions: read`, `contents: read`, `packages: read`, and `security-events: write`; GitHub applies its stricter Dependabot token policy when applicable. All three `Analyze (...)` jobs must complete successfully for the exact pull-request head before a change is considered security-validated. A neutral comparison summary is not a substitute for the language analysis jobs themselves.
+
+When changing the CodeQL workflow or action pin, validate the workflow on GitHub. A future Dependabot pull request must also show the three advanced CodeQL language jobs; if one is absent or cannot upload results, treat #19's security assurance as regressed rather than bypassing the check.
+
 ## JMdict data contract
 
 The [JMdict Data Contract workflow](../.github/workflows/jmdict-contract.yml) protects the deterministic dictionary boundary when its converter, loader, manifest or updater changes. It downloads the exact source ZIP pinned by the [JMdict manifest](../backend/src/mangasensei/linguistics/jmdict_manifest.json), verifies the reviewed size and SHA-256, regenerates the normalized representation, and requires the derived SHA-256, byte size, entry count and converter version to match the committed manifest metadata.
