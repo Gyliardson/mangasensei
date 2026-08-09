@@ -19,7 +19,11 @@ from mangasensei.domain.models import BoundingBox, PageDimensions
 from mangasensei.ocr.contracts import OcrImage, OcrProvenance, OcrRegionResult, OcrResult
 from mangasensei.ocr.models.manifest import ModelManifest, verify_model
 
-from .recognizer_contract import RECOGNITION_SHORT_AXIS_PADDING, RECOGNITION_WARP_VERSION
+from .recognizer_contract import (
+    RECOGNITION_SHORT_AXIS_CONTEXT,
+    RECOGNITION_SHORT_EDGE_PAD_RATIO,
+    RECOGNITION_WARP_VERSION,
+)
 
 DETECTOR_NAME = "default"
 RECOGNIZER_NAME = "48px"
@@ -178,7 +182,7 @@ class MangaImageTranslatorEngine:
             "detector_flags": _DETECTOR_FLAGS,
             "recognizer_flag": _RECOGNIZER_FLAG,
             "recognition_warp": RECOGNITION_WARP_VERSION,
-            "recognition_short_axis_padding": RECOGNITION_SHORT_AXIS_PADDING,
+            "recognition_short_edge_pad_ratio": RECOGNITION_SHORT_EDGE_PAD_RATIO,
             "reading_order": _READING_ORDER_VERSION,
         }
         canonical_config = json.dumps(config, sort_keys=True, separators=(",", ":"))
@@ -207,7 +211,9 @@ class MangaImageTranslatorEngine:
             await self._detector.load(self._device)
         if self._recognizer is None:
             MangaSenseiModel48pxOCR._MODEL_DIR = str(self._model_cache)
-            self._recognizer = MangaSenseiModel48pxOCR()
+            self._recognizer = MangaSenseiModel48pxOCR(
+                short_axis_context=RECOGNITION_SHORT_AXIS_CONTEXT
+            )
             await self._recognizer.load(self._device)
         return self._detector, self._recognizer, dispatch, manifest
 
