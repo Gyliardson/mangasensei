@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -51,6 +51,22 @@ function fixturePage(): StudyPage {
 describe("ReaderWorkspace viewport controls", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1024 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 768 });
+  });
+
+  it("separates study, navigation and page-presentation responsibilities", () => {
+    render(<ReaderWorkspace page={fixturePage()} imageUrl="fixture-image" onReset={vi.fn()} />);
+
+    const studyControls = screen.getByRole("group", { name: "Preferências de estudo" });
+    expect(within(studyControls).getByRole("combobox", { name: "Exibição de furigana" })).toBeVisible();
+
+    const navigation = screen.getByRole("group", { name: "Navegação" });
+    expect(within(navigation).getByRole("button", { name: "Nova página" })).toBeVisible();
+
+    const presentation = screen.getByRole("group", { name: "Apresentação da página" });
+    expect(within(presentation).getByRole("combobox", { name: "Ajuste da página" })).toBeVisible();
+    expect(within(presentation).getByRole("group", { name: "Zoom da página" })).toBeVisible();
   });
 
   it("switches fit mode, adjusts zoom and restores the local presentation preference", async () => {
@@ -81,20 +97,44 @@ describe("ReaderWorkspace viewport controls", () => {
     expect(screen.getByLabelText("Nível de zoom")).toHaveTextContent("125%");
   });
 
-  it("exposes keyboard-focusable fit, zoom and scroll controls", async () => {
+  it("only exposes the manga viewport as a focusable scroll region when horizontal pan is needed", async () => {
     const user = userEvent.setup();
     render(<ReaderWorkspace page={fixturePage()} imageUrl="fixture-image" onReset={vi.fn()} />);
 
+    const viewport = document.querySelector<HTMLElement>(".page-viewport");
+    expect(viewport).not.toBeNull();
+    await waitFor(() => expect(viewport).toHaveAttribute("data-horizontal-pan", "false"));
+    expect(viewport).not.toHaveAttribute("tabindex");
+    expect(screen.queryByRole("region", { name: /Visualização da página/ })).not.toBeInTheDocument();
+
     const fitMode = screen.getByRole("combobox", { name: "Ajuste da página" });
-    fitMode.focus();
-    expect(fitMode).toHaveFocus();
+    await user.selectOptions(fitMode, "width");
+    await user.click(screen.getByRole("button", { name: "Aumentar zoom" }));
 
-    await user.tab();
-    expect(screen.getByRole("button", { name: "Diminuir zoom" })).toHaveFocus();
-    await user.tab();
-    expect(screen.getByRole("button", { name: "Aumentar zoom" })).toHaveFocus();
+    await waitFor(() => expect(viewport).toHaveAttribute("data-horizontal-pan", "true"));
+    const scrollRegion = screen.getByRole("region", { name: "Visualização da página com rolagem horizontal" });
+    expect(scrollRegion).toHaveAttribute("tabindex", "0");
+    scrollRegion.focus();
+    expect(scrollRegion).toHaveFocus();
+  });
 
-    screen.getByRole("region", { name: "Visualização da página" }).focus();
-    expect(screen.getByRole("region", { name: "Visualização da página" })).toHaveFocus();
+  it("presents a stored comfortable preference as width on mobile without rewriting storage", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 390 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 844 });
+    window.localStorage.setItem(
+      READER_VIEWPORT_PREFERENCE_KEY,
+      JSON.stringify({ fitMode: "comfortable", zoom: 100 }),
+    );
+
+    render(<ReaderWorkspace page={fixturePage()} imageUrl="fixture-image" onReset={vi.fn()} />);
+
+    const fitMode = screen.getByRole("combobox", { name: "Ajuste da página" });
+    await waitFor(() => expect(fitMode).toHaveValue("width"));
+    expect(within(fitMode).queryByRole("option", { name: "Confortável" })).not.toBeInTheDocument();
+    expect(within(fitMode).getByRole("option", { name: "Largura" })).toBeVisible();
+    expect(within(fitMode).getByRole("option", { name: "Página inteira" })).toBeVisible();
+    expect(window.localStorage.getItem(READER_VIEWPORT_PREFERENCE_KEY)).toBe(
+      JSON.stringify({ fitMode: "comfortable", zoom: 100 }),
+    );
   });
 });
