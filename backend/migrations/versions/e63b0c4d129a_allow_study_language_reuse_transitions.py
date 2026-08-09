@@ -29,18 +29,16 @@ BEGIN
   IF NOT (
     (OLD.status = 'pending' AND NEW.status IN ('claimed','expired')) OR
     (OLD.status = 'retryable_failure' AND NEW.status IN ('claimed','failed','expired')) OR
-    (OLD.status = 'claimed' AND NEW.status IN (
-      'processing_ocr','processing_gemini','completed','retryable_failure','failed','expired'
-    )) OR
-    (OLD.status = 'processing_ocr' AND NEW.status IN (
-      'processing_linguistics','retryable_failure','failed','expired'
-    )) OR
-    (OLD.status = 'processing_linguistics' AND NEW.status IN (
-      'processing_gemini','completed','retryable_failure','failed','expired'
-    )) OR
-    (OLD.status = 'processing_gemini' AND NEW.status IN (
-      'completed','retryable_failure','failed','expired'
-    )) OR
+    (OLD.status = 'claimed' AND NEW.status IN ('processing_ocr','retryable_failure','failed','expired')) OR
+    (
+      OLD.status = 'claimed' AND
+      OLD.job_kind = 'study_language_reprocess' AND
+      NEW.job_kind = OLD.job_kind AND
+      NEW.status IN ('processing_gemini','completed')
+    ) OR
+    (OLD.status = 'processing_ocr' AND NEW.status IN ('processing_linguistics','retryable_failure','failed','expired')) OR
+    (OLD.status = 'processing_linguistics' AND NEW.status IN ('processing_gemini','completed','retryable_failure','failed','expired')) OR
+    (OLD.status = 'processing_gemini' AND NEW.status IN ('completed','retryable_failure','failed','expired')) OR
     (OLD.status IN ('completed','failed') AND NEW.status = 'expired')
   ) THEN
     RAISE EXCEPTION 'invalid job transition: % -> %', OLD.status, NEW.status;
