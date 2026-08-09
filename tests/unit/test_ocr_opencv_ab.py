@@ -7,9 +7,11 @@ import pytest
 
 from mangasensei.ocr.diagnostics.opencv_ab import (
     array_delta,
+    array_descriptor,
     array_fingerprint,
     compare_probe_roots,
     safe_comparison_summary,
+    source_zone_statistics,
     spatially_match,
     validate_artifact_root,
     write_fixture_artifact,
@@ -69,6 +71,42 @@ def test_array_fingerprint_includes_shape_and_dtype() -> None:
 
     assert array_fingerprint(flat) != array_fingerprint(matrix)
     assert array_fingerprint(flat) != array_fingerprint(wider_type)
+
+
+def test_array_descriptor_records_stable_aggregate_evidence() -> None:
+    values = np.asarray([[1, 2], [3, 4]], dtype=np.uint8)
+
+    descriptor = array_descriptor(values)
+
+    assert descriptor == {
+        "shape": [2, 2],
+        "dtype": "|u1",
+        "fingerprint": array_fingerprint(values),
+        "minimum": 1.0,
+        "maximum": 4.0,
+        "mean": 2.5,
+    }
+
+
+def test_source_zone_statistics_maps_source_pixels_into_raw_detector_map() -> None:
+    probability_map = np.arange(64 * 32, dtype=np.float32).reshape(1, 1, 64, 32)
+
+    statistics = source_zone_statistics(
+        probability_map,
+        source_width=100,
+        source_height=200,
+        resize_ratio=0.5,
+        detector_input_width=64,
+        detector_input_height=128,
+        source_zone=(20, 40, 40, 80),
+    )
+
+    expected = probability_map[0, 0, 10:20, 5:10]
+    assert statistics["map_bounds"] == [5, 10, 10, 20]
+    assert statistics["value_count"] == 50
+    assert statistics["minimum"] == pytest.approx(float(expected.min()))
+    assert statistics["maximum"] == pytest.approx(float(expected.max()))
+    assert statistics["mean"] == pytest.approx(float(expected.mean()))
 
 
 def test_artifact_root_must_stay_under_ignored_diagnostic_directory(tmp_path: Path) -> None:
