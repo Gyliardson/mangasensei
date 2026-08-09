@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { ReaderWorkspace } from "./features/reader/ReaderWorkspace";
 import { ApiError, type JobStatus, type StudyPage, fetchProtectedImage, uploadPage, waitForPage } from "./lib/api";
+import { APPLICATION_VERSION, versionLabel } from "./version";
 
 const acceptedTypes = ".jpg,.jpeg,.png,.webp";
 
@@ -163,7 +164,7 @@ function Header() {
 function Footer() {
   return (
     <footer>
-      <span>Versão 0.1.0</span>
+      <span>{versionLabel(APPLICATION_VERSION)}</span>
       <span>GPL-3.0-only</span>
       <span>Copyright (C) 2026 Gyliardson Keitison</span>
     </footer>

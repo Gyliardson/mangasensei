@@ -30,3 +30,13 @@ The normalized JMdict artifact is derived locally from the reviewed source ZIP a
 hand-edited. When the converter contract changes, refresh its reviewed derived metadata with
 `uv run python scripts/update_jmdict_manifest.py`; use `--check` to verify that the manifest
 matches the current converter and pinned source without modifying it.
+
+## Application release version
+
+`pyproject.toml` remains the authoritative application release version. The supported
+`scripts/version.py set X.Y.Z` command updates the tracked Python and npm mirrors, including
+`mangasensei.__version__` and `frontend/package.json`. FastAPI/OpenAPI metadata and `/health`
+derive from `mangasensei.__version__`; the browser footer derives from the frontend package
+version. They are therefore runtime/build-time consumers of synchronized mirrors rather than
+additional literals that must be edited separately. `scripts/version.py check` continues to
+validate the tracked mirrors before CI and release workflows proceed.
