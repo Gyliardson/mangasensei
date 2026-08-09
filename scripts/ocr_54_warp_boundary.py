@@ -139,7 +139,15 @@ async def _observe(
         for index, (line, direction) in enumerate(generated):
             crop = line.get_transformed_region(pixels, direction, 48)
             cv2.imwrite(str(OUT / f"{label}-{index}.png"), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
-            edge = np.concatenate((crop[:, :1], crop[:, -1:], crop[:1, :], crop[-1:, :]), axis=0)
+            edge = np.concatenate(
+                [
+                    crop[:, :1].reshape(-1, 3),
+                    crop[:, -1:].reshape(-1, 3),
+                    crop[:1, :].reshape(-1, 3),
+                    crop[-1:, :].reshape(-1, 3),
+                ],
+                axis=0,
+            )
             crop_records.append(
                 {
                     "index": index,
