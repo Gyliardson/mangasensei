@@ -1,24 +1,33 @@
-name: OCR 54 Warp Boundary Investigation
+name: OCR 54 Exact PR96 Deep Validation
 
 on:
   push:
     branches: [investigate/54-warp-boundary]
     paths:
       - ".github/workflows/ocr-54-warp-boundary.yml"
-      - "scripts/ocr_54_warp_boundary.py"
 
 permissions:
   contents: read
 
 jobs:
-  investigate:
+  deep:
+    name: Exact PR96 head deep OCR and visual audit
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
+      EXPECTED_SHA: a7055d0e015a579474df2ee29d97a05ff02da302
       MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
-      MANGASENSEI_OCR_WARP_ARTIFACT_DIR: ${{ github.workspace }}/var/ocr-54-warp-boundary
+      MANGASENSEI_RUN_OCR_SMOKE: "1"
+      MANGASENSEI_OCR_REPEAT_RUNS: "3"
+      MANGASENSEI_OCR_FULL_CORPUS: "1"
+      MANGASENSEI_OCR_ARTIFACT_DIR: ${{ github.workspace }}/var/ocr-visual-audit
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: a7055d0e015a579474df2ee29d97a05ff02da302
+      - name: Assert exact implementation SHA
+        run: test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: 0.12.3
@@ -27,13 +36,13 @@ jobs:
       - run: uv sync --frozen --extra ocr
       - run: uv run mangasensei models download
       - run: uv run mangasensei models verify
-      - name: Compare recognizer warp boundaries
-        run: uv run python scripts/ocr_54_warp_boundary.py
-      - name: Upload diagnostic crops
+      - name: Run deep real OCR assurance
+        run: uv run pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv -s --maxfail=1
+      - name: Upload exact-head visual audit
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ocr-54-warp-boundary
-          path: var/ocr-54-warp-boundary
+          name: ocr-54-pr96-exact-head-visual-audit
+          path: var/ocr-visual-audit
           if-no-files-found: error
           retention-days: 7
