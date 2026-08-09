@@ -1,0 +1,43 @@
+name: OCR 54 Low Confidence Isolation Audit
+
+on:
+  push:
+    branches: [investigate/54-ocr-ensemble-benchmark]
+    paths:
+      - ".github/workflows/ocr-54-low-confidence-isolation.yml"
+      - "scripts/ocr_54_low_confidence_isolation_audit.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Compare low-confidence batch and isolated recognizer outputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - run: uv sync --frozen --extra ocr
+      - run: uv run ruff check scripts/ocr_54_low_confidence_isolation_audit.py
+      - run: uv run mangasensei models download
+      - run: uv run mangasensei models verify
+      - name: Audit full licensed corpus low-confidence outputs
+        run: >-
+          uv run python scripts/ocr_54_low_confidence_isolation_audit.py
+          --model-cache "$MANGASENSEI_MODEL_CACHE"
+          --output var/ocr-54-low-confidence
+      - name: Upload audit
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-low-confidence-isolation
+          path: var/ocr-54-low-confidence/low-confidence-isolation.json
+          if-no-files-found: error
+          retention-days: 7
