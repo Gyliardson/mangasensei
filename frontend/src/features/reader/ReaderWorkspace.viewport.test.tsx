@@ -39,6 +39,9 @@ function fixturePage(): StudyPage {
     pageId: "page-viewport",
     status: "completed",
     resultAvailable: true,
+    contentLanguage: "ja",
+    studyLanguage: "pt-BR",
+    dictionaryLanguage: "en",
     expiresAt: "2026-08-09T00:00:00Z",
     imageUrl: "/image",
     dimensions: { width: 1600, height: 2400 },
@@ -46,6 +49,21 @@ function fixturePage(): StudyPage {
     error: null,
     ocr: { detector: "fixture", recognizer: "fixture", upstreamCommit: "commit" },
   };
+}
+
+function renderReader() {
+  const studyPage = fixturePage();
+  return render(
+    <ReaderWorkspace
+      page={studyPage}
+      imageUrl="fixture-image"
+      preferredStudyLanguage={studyPage.studyLanguage}
+      studyLanguageUpdating={false}
+      studyLanguageError={null}
+      onStudyLanguageChange={vi.fn()}
+      onReset={vi.fn()}
+    />,
+  );
 }
 
 describe("ReaderWorkspace viewport controls", () => {
@@ -56,24 +74,25 @@ describe("ReaderWorkspace viewport controls", () => {
   });
 
   it("separates study, navigation and page-presentation responsibilities", () => {
-    render(<ReaderWorkspace page={fixturePage()} imageUrl="fixture-image" onReset={vi.fn()} />);
+    renderReader();
 
     const studyControls = screen.getByRole("group", { name: "Preferências de estudo" });
+    expect(within(studyControls).getByRole("combobox", { name: "Idioma de estudo" })).toBeVisible();
     expect(within(studyControls).getByRole("combobox", { name: "Exibição de furigana" })).toBeVisible();
 
     const navigation = screen.getByRole("group", { name: "Navegação" });
     expect(within(navigation).getByRole("button", { name: "Nova página" })).toBeVisible();
+    expect(within(navigation).queryByRole("combobox")).not.toBeInTheDocument();
 
     const presentation = screen.getByRole("group", { name: "Apresentação da página" });
     expect(within(presentation).getByRole("combobox", { name: "Ajuste da página" })).toBeVisible();
     expect(within(presentation).getByRole("group", { name: "Zoom da página" })).toBeVisible();
+    expect(within(presentation).queryByRole("combobox", { name: "Idioma de estudo" })).not.toBeInTheDocument();
   });
 
   it("switches fit mode, adjusts zoom and restores the local presentation preference", async () => {
     const user = userEvent.setup();
-    const first = render(
-      <ReaderWorkspace page={fixturePage()} imageUrl="fixture-image" onReset={vi.fn()} />,
-    );
+    const first = renderReader();
 
     const fitMode = screen.getByRole("combobox", { name: "Ajuste da página" });
     expect(fitMode).toHaveValue("comfortable");
@@ -91,7 +110,7 @@ describe("ReaderWorkspace viewport controls", () => {
     });
 
     first.unmount();
-    render(<ReaderWorkspace page={fixturePage()} imageUrl="fixture-image" onReset={vi.fn()} />);
+    renderReader();
 
     expect(screen.getByRole("combobox", { name: "Ajuste da página" })).toHaveValue("width");
     expect(screen.getByLabelText("Nível de zoom")).toHaveTextContent("125%");
@@ -99,7 +118,7 @@ describe("ReaderWorkspace viewport controls", () => {
 
   it("only exposes the manga viewport as a focusable scroll region when horizontal pan is needed", async () => {
     const user = userEvent.setup();
-    render(<ReaderWorkspace page={fixturePage()} imageUrl="fixture-image" onReset={vi.fn()} />);
+    renderReader();
 
     const viewport = document.querySelector<HTMLElement>(".page-viewport");
     expect(viewport).not.toBeNull();
@@ -126,7 +145,7 @@ describe("ReaderWorkspace viewport controls", () => {
       JSON.stringify({ fitMode: "comfortable", zoom: 100 }),
     );
 
-    render(<ReaderWorkspace page={fixturePage()} imageUrl="fixture-image" onReset={vi.fn()} />);
+    renderReader();
 
     const fitMode = screen.getByRole("combobox", { name: "Ajuste da página" });
     await waitFor(() => expect(fitMode).toHaveValue("width"));

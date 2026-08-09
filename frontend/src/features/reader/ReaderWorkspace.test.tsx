@@ -34,11 +34,14 @@ function region(id: string, text: string, order: number): StudyRegion {
   };
 }
 
-function page(regions: readonly StudyRegion[]): StudyPage {
+function page(regions: readonly StudyRegion[], studyLanguage: StudyPage["studyLanguage"] = "pt-BR"): StudyPage {
   return {
     pageId: "page-001",
     status: "completed",
     resultAvailable: true,
+    contentLanguage: "ja",
+    studyLanguage,
+    dictionaryLanguage: "en",
     expiresAt: "2026-08-09T00:00:00Z",
     imageUrl: "/image",
     dimensions: { width: 100, height: 100 },
@@ -46,6 +49,29 @@ function page(regions: readonly StudyRegion[]): StudyPage {
     error: null,
     ocr: { detector: "fixture", recognizer: "fixture", upstreamCommit: "commit" },
   };
+}
+
+function renderWorkspace(
+  studyPage: StudyPage,
+  options: {
+    readonly preferredStudyLanguage?: StudyPage["studyLanguage"];
+    readonly studyLanguageUpdating?: boolean;
+    readonly studyLanguageError?: string | null;
+    readonly onStudyLanguageChange?: (language: StudyPage["studyLanguage"]) => void;
+    readonly onReset?: () => void;
+  } = {},
+) {
+  return render(
+    <ReaderWorkspace
+      page={studyPage}
+      imageUrl="fixture-image"
+      preferredStudyLanguage={options.preferredStudyLanguage ?? studyPage.studyLanguage}
+      studyLanguageUpdating={options.studyLanguageUpdating ?? false}
+      studyLanguageError={options.studyLanguageError ?? null}
+      onStudyLanguageChange={options.onStudyLanguageChange ?? vi.fn()}
+      onReset={options.onReset ?? vi.fn()}
+    />,
+  );
 }
 
 describe("ReaderWorkspace", () => {
@@ -56,7 +82,7 @@ describe("ReaderWorkspace", () => {
   it("shows an explicit empty state and resets to a new page", async () => {
     const onReset = vi.fn();
     const user = userEvent.setup();
-    render(<ReaderWorkspace page={page([])} imageUrl="fixture-image" onReset={onReset} />);
+    renderWorkspace(page([]), { onReset });
 
     expect(screen.getByText("Nenhuma região de texto foi reconhecida nesta página.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Nova página" }));
@@ -65,13 +91,7 @@ describe("ReaderWorkspace", () => {
 
   it("changes regions by keyboard and renders fallback study content", async () => {
     const user = userEvent.setup();
-    render(
-      <ReaderWorkspace
-        page={page([region("first", "猫", 0), region("second", "犬", 1)])}
-        imageUrl="fixture-image"
-        onReset={vi.fn()}
-      />,
-    );
+    renderWorkspace(page([region("first", "猫", 0), region("second", "犬", 1)]));
 
     expect(screen.getByRole("heading", { name: "猫" })).toBeVisible();
     const second = screen.getByRole("button", { name: "Região 2: 犬" });
@@ -91,16 +111,12 @@ describe("ReaderWorkspace", () => {
 
   it("uses API reading order for overlay numbers, initial selection and keyboard sequence", async () => {
     const user = userEvent.setup();
-    render(
-      <ReaderWorkspace
-        page={page([
-          region("top-right", "上右", 0),
-          region("top-left", "上左", 1),
-          region("lower-right", "下右", 2),
-        ])}
-        imageUrl="fixture-image"
-        onReset={vi.fn()}
-      />,
+    renderWorkspace(
+      page([
+        region("top-right", "上右", 0),
+        region("top-left", "上左", 1),
+        region("lower-right", "下右", 2),
+      ]),
     );
 
     expect(screen.getByRole("heading", { name: "上右" })).toBeVisible();
@@ -134,13 +150,7 @@ describe("ReaderWorkspace", () => {
       ],
     };
 
-    render(
-      <ReaderWorkspace
-        page={page([kanaRegion])}
-        imageUrl="fixture-image"
-        onReset={vi.fn()}
-      />,
-    );
+    renderWorkspace(page([kanaRegion]));
 
     expect(screen.getByRole("heading", { name: "です" })).toBeVisible();
     expect(document.querySelector("rt")).not.toBeInTheDocument();
@@ -175,13 +185,7 @@ describe("ReaderWorkspace", () => {
       ],
     };
 
-    const first = render(
-      <ReaderWorkspace
-        page={page([preferenceRegion])}
-        imageUrl="fixture-image"
-        onReset={vi.fn()}
-      />,
-    );
+    const first = renderWorkspace(page([preferenceRegion]));
     const select = screen.getByRole("combobox", { name: "Exibição de furigana" });
 
     expect(select).toHaveValue("hiragana");
@@ -196,13 +200,7 @@ describe("ReaderWorkspace", () => {
     expect(window.localStorage.getItem(FURIGANA_PREFERENCE_KEY)).toBe("katakana");
 
     first.unmount();
-    render(
-      <ReaderWorkspace
-        page={page([preferenceRegion])}
-        imageUrl="fixture-image"
-        onReset={vi.fn()}
-      />,
-    );
+    renderWorkspace(page([preferenceRegion]));
     const restored = screen.getByRole("combobox", { name: "Exibição de furigana" });
     expect(restored).toHaveValue("katakana");
     expect(screen.getByText("ネコ", { selector: "rt" })).toBeVisible();
@@ -228,19 +226,13 @@ describe("ReaderWorkspace", () => {
       ],
     };
 
-    render(
-      <ReaderWorkspace
-        page={page([localOnlyRegion])}
-        imageUrl="fixture-image"
-        onReset={vi.fn()}
-      />,
-    );
+    renderWorkspace(page([localOnlyRegion]));
 
     expect(screen.getByRole("combobox", { name: "Exibição de furigana" })).toHaveValue("hiragana");
     expect(screen.getByText("ねこ", { selector: "rt" })).toBeVisible();
   });
 
-  it("shows local dictionary vocabulary when contextual AI is unavailable", () => {
+  it("shows local English dictionary meanings independently from contextual study language", () => {
     const localOnlyRegion: StudyRegion = {
       ...region("local", "猫", 0),
       tokens: [
@@ -252,6 +244,8 @@ describe("ReaderWorkspace", () => {
           dictionaryId: "jmdict-1467640",
         },
       ],
+      translation: "É um gato.",
+      explanation: "Frase nominal polida.",
       vocabulary: [
         {
           id: "jmdict-1467640",
@@ -265,18 +259,43 @@ describe("ReaderWorkspace", () => {
       ],
     };
 
-    render(
+    renderWorkspace(page([localOnlyRegion]));
+
+    expect(screen.getByText("É um gato.")).toHaveAttribute("lang", "pt-BR");
+    expect(screen.getByText("Frase nominal polida.")).toHaveAttribute("lang", "pt-BR");
+    expect(screen.getByText("cat")).toHaveAttribute("lang", "en");
+    expect(screen.getByText("significados locais em inglês")).toBeVisible();
+    expect(screen.getByText("JMdict · JLPT N5 não oficial")).toBeVisible();
+  });
+
+  it("requests a new study language without reinterpreting the current result", async () => {
+    const user = userEvent.setup();
+    const onStudyLanguageChange = vi.fn();
+    const studyPage = page([region("language", "猫", 0)]);
+    const rendered = renderWorkspace(studyPage, { onStudyLanguageChange });
+
+    const select = screen.getByRole("combobox", { name: "Idioma de estudo" });
+    expect(select).toHaveValue("pt-BR");
+    await user.selectOptions(select, "en");
+    expect(onStudyLanguageChange).toHaveBeenCalledWith("en");
+
+    rendered.rerender(
       <ReaderWorkspace
-        page={page([localOnlyRegion])}
+        page={studyPage}
         imageUrl="fixture-image"
+        preferredStudyLanguage="en"
+        studyLanguageUpdating
+        studyLanguageError={null}
+        onStudyLanguageChange={onStudyLanguageChange}
         onReset={vi.fn()}
       />,
     );
 
-    expect(screen.getByText("ねこ", { selector: "rt" })).toBeVisible();
-    expect(screen.getByText("Análise contextual indisponível.")).toBeVisible();
-    expect(screen.getByText("cat")).toBeVisible();
-    expect(screen.getByText("JMdict · JLPT N5 não oficial")).toBeVisible();
-    expect(screen.queryByText("Nenhuma associação confiável ao dicionário.")).not.toBeInTheDocument();
+    expect(select).toHaveValue("en");
+    expect(select).toBeDisabled();
+    expect(
+      screen.getByText(/O resultado exibido continua em Português \(Brasil\)/),
+    ).toBeVisible();
+    expect(screen.getByText(/estudo Português \(Brasil\)/)).toBeVisible();
   });
 });

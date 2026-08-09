@@ -4,6 +4,7 @@ import {
   ApiError,
   type UploadData,
   fetchProtectedImage,
+  reprocessStudyLanguage,
   uploadPage,
   waitForPage,
 } from "./api";
@@ -16,6 +17,7 @@ const upload: UploadData = {
   height: 120,
   mediaType: "image/png",
   expiresAt: "2026-08-09T00:00:00Z",
+  studyLanguage: "pt-BR",
   capabilities: {
     readPage: "read-page-token",
     readImage: "read-image-token",
@@ -33,7 +35,7 @@ describe("API client", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uploads a validated image with an idempotency key", async () => {
+  it("uploads a validated image with explicit study language and an idempotency key", async () => {
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) => envelope(upload, 202),
     );
@@ -44,13 +46,51 @@ describe("API client", () => {
     });
     const file = new File(["image"], "page.png", { type: "image/png" });
 
-    await expect(uploadPage(file, new AbortController().signal)).resolves.toEqual(upload);
+    await expect(
+      uploadPage(file, "pt-BR", new AbortController().signal),
+    ).resolves.toEqual(upload);
 
     const options = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(options.headers).toEqual({
       "Idempotency-Key": "upload-00000000-0000-4000-8000-000000000001",
     });
     expect(options.body).toBeInstanceOf(FormData);
+    const form = options.body as FormData;
+    expect(form.get("image")).toBe(file);
+    expect(form.get("studyLanguage")).toBe("pt-BR");
+  });
+
+  it("reprocesses study language with the page capability and a distinct idempotency key", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      envelope(
+        {
+          jobId: "job-002",
+          status: "pending",
+          studyLanguage: "en",
+          created: true,
+        },
+        202,
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", {
+      randomUUID: vi.fn(() => "00000000-0000-4000-8000-000000000002"),
+      getRandomValues: vi.fn(),
+    });
+
+    await expect(
+      reprocessStudyLanguage(upload, "en", new AbortController().signal),
+    ).resolves.toMatchObject({ studyLanguage: "en", created: true });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/v1/pages/page-001/reprocess");
+    const options = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(options.method).toBe("POST");
+    expect(options.headers).toEqual({
+      "Content-Type": "application/json",
+      "Idempotency-Key": "reprocess-00000000-0000-4000-8000-000000000002",
+      "X-Page-Token": "reprocess-token",
+    });
+    expect(options.body).toBe(JSON.stringify({ studyLanguage: "en" }));
   });
 
   it("uses cryptographic bytes when randomUUID is unavailable", async () => {
@@ -67,11 +107,13 @@ describe("API client", () => {
 
     await uploadPage(
       new File(["image"], "page.webp", { type: "image/webp" }),
+      "en",
       new AbortController().signal,
     );
 
     const options = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(options.headers).toEqual({ "Idempotency-Key": `upload-${"0f".repeat(16)}` });
+    expect((options.body as FormData).get("studyLanguage")).toBe("en");
   });
 
   it("rejects unsupported and oversized files before fetching", async () => {
@@ -80,11 +122,12 @@ describe("API client", () => {
     const signal = new AbortController().signal;
 
     await expect(
-      uploadPage(new File(["text"], "page.txt", { type: "text/plain" }), signal),
+      uploadPage(new File(["text"], "page.txt", { type: "text/plain" }), "pt-BR", signal),
     ).rejects.toMatchObject({ code: "invalid_image" });
     await expect(
       uploadPage(
         new File([new Uint8Array(12 * 1024 * 1024 + 1)], "large.png", { type: "image/png" }),
+        "pt-BR",
         signal,
       ),
     ).rejects.toMatchObject({ code: "image_too_large" });
@@ -109,6 +152,7 @@ describe("API client", () => {
     await expect(
       uploadPage(
         new File(["image"], "page.png", { type: "image/png" }),
+        "pt-BR",
         new AbortController().signal,
       ),
     ).rejects.toEqual(new ApiError("invalid_request", "Requisição inválida."));
@@ -136,6 +180,10 @@ describe("API client", () => {
     const studyPage = {
       pageId: "page-001",
       status: "completed",
+      resultAvailable: true,
+      contentLanguage: "ja",
+      studyLanguage: "pt-BR",
+      dictionaryLanguage: "en",
       expiresAt: upload.expiresAt,
       imageUrl: "/image",
       dimensions: { width: 80, height: 120 },
@@ -147,8 +195,8 @@ describe("API client", () => {
       "fetch",
       vi
         .fn()
-        .mockResolvedValueOnce(envelope({ status: "processing_ocr", error: null }))
-        .mockResolvedValueOnce(envelope({ status: "completed", error: null }))
+        .mockResolvedValueOnce(envelope({ status: "processing_ocr", resultAvailable: false, error: null }))
+        .mockResolvedValueOnce(envelope({ status: "completed", resultAvailable: true, error: null }))
         .mockResolvedValueOnce(envelope(studyPage)),
     );
 
@@ -165,7 +213,11 @@ describe("API client", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
-        envelope({ status: "failed", error: { code: "ocr_failed", message: "OCR falhou." } }),
+        envelope({
+          status: "failed",
+          resultAvailable: false,
+          error: { code: "ocr_failed", message: "OCR falhou." },
+        }),
       ),
     );
     await expect(
@@ -175,7 +227,7 @@ describe("API client", () => {
     const controller = new AbortController();
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => envelope({ status: "pending", error: null })),
+      vi.fn(async () => envelope({ status: "pending", resultAvailable: false, error: null })),
     );
     const pending = waitForPage(upload, controller.signal, vi.fn());
     await Promise.resolve();

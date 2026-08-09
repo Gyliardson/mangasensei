@@ -1,0 +1,30 @@
+.upload-study-language {
+  margin-top: 1.25rem;
+  display: grid;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.upload-study-language select {
+  min-height: 44px;
+  width: 100%;
+  max-width: 18rem;
+  padding: 0.6rem 2rem 0.6rem 0.75rem;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+}
+
+.upload-study-language select:focus-visible {
+  outline: 3px solid var(--red);
+  outline-offset: 3px;
+}
+
+.upload-study-language small {
+  max-width: 28rem;
+  font-weight: 500;
+  line-height: 1.45;
+}

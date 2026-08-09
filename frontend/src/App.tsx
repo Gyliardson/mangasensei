@@ -2,7 +2,22 @@ import { BookOpenText, FileImage, LoaderCircle, LockKeyhole, ScanText, X } from 
 import { useEffect, useRef, useState } from "react";
 
 import { ReaderWorkspace } from "./features/reader/ReaderWorkspace";
-import { ApiError, type JobStatus, type StudyPage, fetchProtectedImage, uploadPage, waitForPage } from "./lib/api";
+import {
+  ApiError,
+  type JobStatus,
+  type StudyPage,
+  type UploadData,
+  fetchProtectedImage,
+  reprocessStudyLanguage,
+  uploadPage,
+  waitForPage,
+} from "./lib/api";
+import {
+  type StudyLanguage,
+  isStudyLanguage,
+  loadStudyLanguagePreference,
+  saveStudyLanguagePreference,
+} from "./lib/studyLanguage";
 import { APPLICATION_VERSION, versionLabel } from "./version";
 
 const acceptedTypes = ".jpg,.jpeg,.png,.webp";
@@ -12,8 +27,14 @@ export function App() {
   const [phase, setPhase] = useState<"idle" | "uploading" | "processing" | "complete" | "error">("idle");
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [page, setPage] = useState<StudyPage | null>(null);
+  const [pageAccess, setPageAccess] = useState<UploadData | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [preferredStudyLanguage, setPreferredStudyLanguage] = useState<StudyLanguage>(() =>
+    loadStudyLanguagePreference(),
+  );
+  const [studyLanguageUpdating, setStudyLanguageUpdating] = useState(false);
+  const [studyLanguageError, setStudyLanguageError] = useState<string | null>(null);
   const operation = useRef<AbortController | null>(null);
 
   useEffect(() => () => operation.current?.abort(), []);
@@ -30,8 +51,17 @@ export function App() {
     setPhase("idle");
     setJobStatus(null);
     setPage(null);
+    setPageAccess(null);
     setImageUrl(null);
     setError(null);
+    setStudyLanguageUpdating(false);
+    setStudyLanguageError(null);
+  };
+
+  const changePreferredStudyLanguage = (value: string) => {
+    if (!isStudyLanguage(value)) return;
+    setPreferredStudyLanguage(value);
+    saveStudyLanguagePreference(value);
   };
 
   const selectFile = (candidate: File | null) => {
@@ -65,7 +95,8 @@ export function App() {
     setError(null);
     setPhase("uploading");
     try {
-      const upload = await uploadPage(file, controller.signal);
+      const upload = await uploadPage(file, preferredStudyLanguage, controller.signal);
+      setPageAccess(upload);
       setPhase("processing");
       setJobStatus("pending");
       const protectedImage = await fetchProtectedImage(
@@ -76,11 +107,47 @@ export function App() {
       setImageUrl(protectedImage);
       const result = await waitForPage(upload, controller.signal, setJobStatus);
       setPage(result);
+      setPreferredStudyLanguage(result.studyLanguage);
+      saveStudyLanguagePreference(result.studyLanguage);
       setPhase("complete");
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
+      setPageAccess(null);
       setError(caught instanceof ApiError ? caught.message : "O processamento não pôde ser concluído.");
       setPhase("error");
+    }
+  };
+
+  const changeStudyLanguage = async (target: StudyLanguage) => {
+    if (!page || !pageAccess || studyLanguageUpdating) return;
+    setPreferredStudyLanguage(target);
+    saveStudyLanguagePreference(target);
+    setStudyLanguageError(null);
+    if (target === page.studyLanguage) return;
+
+    const previousLanguage = page.studyLanguage;
+    const controller = new AbortController();
+    operation.current?.abort();
+    operation.current = controller;
+    setStudyLanguageUpdating(true);
+    try {
+      await reprocessStudyLanguage(pageAccess, target, controller.signal);
+      const result = await waitForPage(pageAccess, controller.signal, setJobStatus);
+      setPage(result);
+      setPreferredStudyLanguage(result.studyLanguage);
+      saveStudyLanguagePreference(result.studyLanguage);
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
+      setPreferredStudyLanguage(previousLanguage);
+      saveStudyLanguagePreference(previousLanguage);
+      setStudyLanguageError(
+        caught instanceof ApiError
+          ? caught.message
+          : "Não foi possível atualizar o idioma de estudo.",
+      );
+    } finally {
+      if (operation.current === controller) operation.current = null;
+      setStudyLanguageUpdating(false);
     }
   };
 
@@ -88,7 +155,15 @@ export function App() {
     return (
       <div className="app-shell">
         <Header />
-        <ReaderWorkspace page={page} imageUrl={imageUrl} onReset={reset} />
+        <ReaderWorkspace
+          page={page}
+          imageUrl={imageUrl}
+          preferredStudyLanguage={preferredStudyLanguage}
+          studyLanguageUpdating={studyLanguageUpdating}
+          studyLanguageError={studyLanguageError}
+          onStudyLanguageChange={changeStudyLanguage}
+          onReset={reset}
+        />
         <Footer />
       </div>
     );
@@ -115,6 +190,18 @@ export function App() {
               <h2 id="upload-title">Escolha uma página</h2>
             </div>
             <p>JPEG, PNG ou WebP. Até 12 MiB e 25 megapixels.</p>
+            <label className="upload-study-language">
+              <span>Idioma de estudo</span>
+              <select
+                aria-label="Idioma de estudo"
+                value={preferredStudyLanguage}
+                onChange={(event) => changePreferredStudyLanguage(event.currentTarget.value)}
+              >
+                <option value="pt-BR">Português (Brasil)</option>
+                <option value="en">Inglês</option>
+              </select>
+              <small>Define explicações contextuais; o conteúdo analisado continua japonês.</small>
+            </label>
           </div>
 
           <label
