@@ -257,7 +257,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Parar de acompanhar" })).toBeVisible();
     expect(
       screen.getByText(
-        "Isso interrompe apenas a espera nesta tela; a análise continuará e seguirá a exclusão automática de 24 horas.",
+        "Parar de acompanhar interrompe apenas a espera nesta tela; a análise pode continuar. Originais e resultados são excluídos automaticamente após 24 horas.",
       ),
     ).toBeVisible();
     expect(screen.queryByRole("button", { name: "Cancelar" })).not.toBeInTheDocument();
