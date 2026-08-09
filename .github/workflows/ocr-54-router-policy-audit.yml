@@ -1,0 +1,133 @@
+name: OCR 54 Router Policy Audit
+
+on:
+  push:
+    branches: [investigate/54-ocr-ensemble-benchmark]
+    paths:
+      - ".github/workflows/ocr-54-router-policy-audit.yml"
+      - "scripts/ocr_54_prepare_router_corpus.py"
+      - "scripts/ocr_54_run_paddle_corpus_audit.py"
+      - "scripts/ocr_54_router_policy_audit.py"
+      - "backend/src/mangasensei/ocr/**"
+      - "tests/fixtures/ocr/real_manga/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Prepare production primary and secondary views
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - run: uv sync --frozen --extra ocr
+      - name: Lint router-audit scripts
+        run: >-
+          uv run ruff check
+          scripts/ocr_54_prepare_router_corpus.py
+          scripts/ocr_54_run_paddle_corpus_audit.py
+          scripts/ocr_54_router_policy_audit.py
+      - run: uv run mangasensei models download
+      - run: uv run mangasensei models verify
+      - name: Prepare production 48px primary and dual Paddle views
+        run: >-
+          uv run python scripts/ocr_54_prepare_router_corpus.py
+          --output var/ocr-54-router/prepared
+          --model-cache "$MANGASENSEI_MODEL_CACHE"
+      - name: Upload prepared licensed router corpus
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-router-prepared
+          path: var/ocr-54-router/prepared
+          if-no-files-found: error
+          retention-days: 7
+
+  paddle:
+    name: Run PP-OCRv6 secondary views
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      HF_HOME: ${{ github.workspace }}/var/hf-paddle-router
+      XDG_CACHE_HOME: ${{ github.workspace }}/var/cache-paddle-router
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TRANSFORMERS_VERBOSITY: error
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-router-prepared
+          path: var/ocr-54-router/prepared
+      - run: uv venv .bench-paddle-router --python 3.11
+      - name: Install pinned PaddleOCR benchmark environment
+        run: >-
+          uv pip install --python .bench-paddle-router/bin/python
+          "paddleocr==3.7.0" "transformers==5.14.1"
+      - name: Install project-matched CPU Torch
+        run: >-
+          uv pip install --python .bench-paddle-router/bin/python
+          --index https://download.pytorch.org/whl/cpu
+          "torch==2.13.0" "torchvision==0.28.0"
+      - name: Run PP-OCRv6 over tight and context views
+        run: >-
+          .bench-paddle-router/bin/python scripts/ocr_54_run_paddle_corpus_audit.py
+          --model-name PP-OCRv6_medium_rec
+          --input var/ocr-54-router/prepared
+          --output var/ocr-54-router/paddle
+      - name: Upload secondary observations only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-router-paddle
+          path: var/ocr-54-router/paddle/paddle-corpus.json
+          if-no-files-found: error
+          retention-days: 7
+
+  route:
+    name: Evaluate conservative routing policy
+    needs: [prepare, paddle]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - run: uv sync --frozen
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-router-prepared
+          path: var/ocr-54-router/prepared
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-router-paddle
+          path: var/ocr-54-router/paddle
+      - name: Evaluate reviewed cases and corpus routing changes
+        run: >-
+          uv run python scripts/ocr_54_router_policy_audit.py
+          --prepared var/ocr-54-router/prepared
+          --paddle var/ocr-54-router/paddle/paddle-corpus.json
+          --output var/ocr-54-router/report
+      - name: Upload routing audit
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-router-policy
+          path: var/ocr-54-router/report
+          if-no-files-found: error
+          retention-days: 7
