@@ -104,6 +104,10 @@ def _edit_distance(left: str, right: str) -> int:
     return previous[-1]
 
 
+def _semantic_distance(left: str, right: str) -> int:
+    return _edit_distance(_semantic_core(left), _semantic_core(right))
+
+
 def _lexical_score(text: str, sudachi: Any) -> tuple[float, int, int]:
     morphemes = list(sudachi.tokenize(text, tokenizer.Tokenizer.SplitMode.A))
     known_chars = 0
@@ -146,13 +150,14 @@ def _route(
     right = _normalize(secondary_text)
 
     if not left:
+        japanese_chars = _japanese_char_count(right)
         if (
             right
-            and secondary_conf >= 0.8
-            and _japanese_char_count(right) >= 2
-            and _japanese_char_count(right) / max(len(right), 1) >= 0.5
+            and secondary_conf >= 0.99
+            and japanese_chars >= 4
+            and japanese_chars / max(len(right), 1) >= 0.7
         ):
-            return secondary_text, "secondary-only-japanese"
+            return secondary_text, "secondary-only-high-confidence-japanese"
         return "", "primary-empty-reject-secondary"
     if not right:
         return primary_text, "secondary-empty"
@@ -171,13 +176,19 @@ def _route(
         return primary_text, "small-kana-keep-primary"
 
     if (
-        left_core in right_core
+        secondary_conf >= 0.95
+        and left_core in right_core
         and 1 <= len(right_core) - len(left_core) <= 8
         and _japanese_char_count(right_core) >= 2
     ):
-        return secondary_text, "stable-japanese-extension"
+        return secondary_text, "high-confidence-japanese-extension"
 
-    if len(left_core) == len(right_core) and _edit_distance(left_core, right_core) == 1:
+    if (
+        primary_conf < 0.85
+        and secondary_conf >= 0.95
+        and len(left_core) == len(right_core)
+        and _edit_distance(left_core, right_core) == 1
+    ):
         left_score = _lexical_score(left_core, sudachi)
         right_score = _lexical_score(right_core, sudachi)
         if left_score != right_score:
@@ -188,10 +199,10 @@ def _route(
     if (
         len(left_core) <= 10
         and primary_conf < 0.6
-        and secondary_conf >= 0.85
+        and secondary_conf >= 0.9
         and _japanese_char_count(right_core) >= 2
     ):
-        return secondary_text, "short-low-primary-confidence"
+        return secondary_text, "short-low-primary-high-secondary-confidence"
 
     return primary_text, "conservative-primary"
 
@@ -221,16 +232,27 @@ def main() -> None:
             }
 
     reviewed = []
-    passes = 0
+    baseline_passes = 0
+    chosen_passes = 0
+    improved = 0
+    regressed = 0
     for case in REVIEWED_CASES:
         line = line_map[(case.page, case.line_index)]
         primary = line.get("primary_48px")
+        primary_text = str(primary.get("text", "")) if isinstance(primary, dict) else ""
         secondary = _secondary_view(line, paddle)
         chosen, reason = _route(primary, secondary, sudachi=sudachi)
         expected_core = _semantic_core(case.expected)
+        primary_core = _semantic_core(primary_text)
         chosen_core = _semantic_core(chosen)
-        passed = chosen_core == expected_core
-        passes += int(passed)
+        baseline_passed = primary_core == expected_core
+        chosen_passed = chosen_core == expected_core
+        baseline_distance = _semantic_distance(primary_text, case.expected)
+        chosen_distance = _semantic_distance(chosen, case.expected)
+        baseline_passes += int(baseline_passed)
+        chosen_passes += int(chosen_passed)
+        improved += int(chosen_distance < baseline_distance)
+        regressed += int(chosen_distance > baseline_distance)
         reviewed.append(
             {
                 "page": case.page,
@@ -245,7 +267,10 @@ def main() -> None:
                 },
                 "chosen": chosen,
                 "reason": reason,
-                "passed": passed,
+                "baseline_passed": baseline_passed,
+                "chosen_passed": chosen_passed,
+                "baseline_distance": baseline_distance,
+                "chosen_distance": chosen_distance,
             }
         )
 
@@ -259,7 +284,7 @@ def main() -> None:
         primary_text = str(primary.get("text", "")) if isinstance(primary, dict) else ""
         if _normalize(chosen) != _normalize(primary_text):
             changed += 1
-        if reason == "secondary-only-japanese":
+        if reason == "secondary-only-high-confidence-japanese":
             secondary_only += 1
         all_routes.append(
             {
@@ -273,13 +298,18 @@ def main() -> None:
             }
         )
 
+    unresolved = len(REVIEWED_CASES) - chosen_passes
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "implementation_head": corpus.get("implementation_head"),
         "reviewed": {
-            "passes": passes,
+            "baseline_passes": baseline_passes,
+            "chosen_passes": chosen_passes,
             "cases": len(REVIEWED_CASES),
-            "all_pass": passes == len(REVIEWED_CASES),
+            "improved": improved,
+            "regressed": regressed,
+            "unresolved": unresolved,
+            "no_regressions": regressed == 0,
             "results": reviewed,
         },
         "corpus_router": {
@@ -294,9 +324,12 @@ def main() -> None:
     )
     print(
         "OCR_ROUTER_POLICY "
-        f"reviewed={passes}/{len(REVIEWED_CASES)} corpus_lines={len(all_routes)} "
-        f"changed={changed} secondary_only={secondary_only}"
+        f"reviewed={chosen_passes}/{len(REVIEWED_CASES)} baseline={baseline_passes} "
+        f"improved={improved} regressed={regressed} unresolved={unresolved} "
+        f"corpus_lines={len(all_routes)} changed={changed} secondary_only={secondary_only}"
     )
+    if regressed:
+        raise AssertionError(f"router regressed {regressed} reviewed licensed cases")
 
 
 if __name__ == "__main__":
