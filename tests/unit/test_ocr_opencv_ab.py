@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import runpy
 from pathlib import Path
 
 import numpy as np
@@ -252,6 +253,17 @@ def test_generated_fixture_notice_preserves_terms_and_artifact_warning(tmp_path:
     assert "https://example.test/fixture-terms" in notice
     assert "must not be committed" in notice
     assert "source-derived" in notice
+
+
+def test_opencv_ab_cli_exposes_separate_probe_and_compare_commands() -> None:
+    script = Path(__file__).parents[2] / "scripts" / "ocr_opencv_ab.py"
+
+    namespace = runpy.run_path(str(script), run_name="ocr_opencv_ab_test")
+    parser = namespace["build_parser"]()
+    help_text = parser.format_help()
+
+    assert "probe" in help_text
+    assert "compare" in help_text
 
 
 def _fixture_record(
