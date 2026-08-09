@@ -185,17 +185,23 @@
 
   .reader-study-actions {
     flex: 1 1 100%;
-    flex-direction: column;
-    align-items: stretch;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+    gap: 0.5rem;
   }
 
   .reader-study-actions .reader-preference {
-    width: 100%;
-    justify-content: space-between;
+    min-width: 0;
+    width: auto;
+    display: grid;
+    align-items: stretch;
+    gap: 0.25rem;
   }
 
   .reader-study-actions .reader-preference select {
-    max-width: 58%;
+    width: 100%;
+    max-width: none;
   }
 
   .reader-navigation {
