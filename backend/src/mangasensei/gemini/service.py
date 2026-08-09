@@ -129,7 +129,7 @@ class GeminiAnalysisService:
         for region_id in returned_region_ids:
             if region_id not in known_regions:
                 raise UnknownRegionError(region_id)
-        if Counter(returned_region_ids) != Counter(regions):
+        if Counter(returned_region_ids) != Counter(regions.keys()):
             raise RegionCompletenessError(
                 "Gemini response must contain exactly one analysis per requested region"
             )
