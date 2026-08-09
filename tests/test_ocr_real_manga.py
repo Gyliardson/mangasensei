@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from mangasensei.domain.models import PageDimensions
 from mangasensei.ocr.adapter.manga_image_translator import (
@@ -47,8 +47,16 @@ SHORT_TEXT_CASES = (
         (1030, 1210, 160, 480),
     ),
 )
+CONTEXT_RECALL_CASES = (
+    (
+        "v01/black_jack_v01_pdf171.jpg",
+        "※ステント＝心臓の血管",
+        (80, 220, 650, 1800),
+    ),
+)
 SHORT_TEXT_PATHS = {case[0] for case in SHORT_TEXT_CASES}
-REVIEWED_TARGET_PATHS = SHORT_TEXT_PATHS | {PAGE9_PATH}
+CONTEXT_RECALL_PATHS = {case[0] for case in CONTEXT_RECALL_CASES}
+REVIEWED_TARGET_PATHS = SHORT_TEXT_PATHS | CONTEXT_RECALL_PATHS | {PAGE9_PATH}
 
 
 @pytest.mark.asyncio
@@ -83,6 +91,29 @@ async def test_licensed_manga_short_vertical_text_recall_is_repeatable() -> None
         print(
             "OCR_REPEATABILITY "
             f"fixture={relative_path} runs={repeat_runs} observations={observations!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_licensed_manga_recognizer_context_preserves_detector_complete_text() -> None:
+    """Protect a second real page from the same crop-edge recognition failure class."""
+    engine = _real_engine()
+
+    for relative_path, expected_text, expected_center_zone in CONTEXT_RECALL_CASES:
+        result = await _analyze_fixture(engine, relative_path)
+        matches = [
+            region
+            for region in result.regions
+            if expected_text in region.japanese_text
+            and _center_in_zone(region, expected_center_zone)
+        ]
+
+        assert matches, (
+            f"reviewed detector-complete text was lost in {relative_path}; "
+            f"region_count={len(result.regions)}"
+        )
+        assert 4 <= len(result.regions) <= 32, (
+            f"unexpected region-count shift for {relative_path}: {len(result.regions)}"
         )
 
 
@@ -214,6 +245,7 @@ async def test_licensed_page9_three_column_dialogue_survives_resampling() -> Non
             dimensions=PageDimensions(width=width, height=height),
         )
     )
+    _write_visual_audit("black_jack_v01_pdf009-scale-090", content, result)
     target_regions = [
         region for region in result.regions if _center_in_zone(region, scaled_zone)
     ]
@@ -263,13 +295,64 @@ async def _analyze_fixture(
     with Image.open(image_path) as source:
         dimensions = PageDimensions(width=source.width, height=source.height)
 
-    return await engine.analyze(
+    result = await engine.analyze(
         OcrImage(
             content=content,
             sha256=hashlib.sha256(content).hexdigest(),
             media_type="image/jpeg",
             dimensions=dimensions,
         )
+    )
+    _write_visual_audit(Path(relative_path).stem, content, result)
+    return result
+
+
+def _write_visual_audit(label: str, content: bytes, result: OcrResult) -> None:
+    root_value = os.environ.get("MANGASENSEI_OCR_ARTIFACT_DIR")
+    if not root_value:
+        return
+
+    root = Path(root_value)
+    root.mkdir(parents=True, exist_ok=True)
+    with Image.open(io.BytesIO(content)) as source:
+        rendered = source.convert("RGB")
+    draw = ImageDraw.Draw(rendered)
+    line_width = max(2, round(max(rendered.size) / 700))
+
+    regions: list[dict[str, Any]] = []
+    for index, region in enumerate(result.regions):
+        x1 = region.bbox.x
+        y1 = region.bbox.y
+        x2 = x1 + region.bbox.width
+        y2 = y1 + region.bbox.height
+        draw.rectangle((x1, y1, x2, y2), outline=(210, 25, 55), width=line_width)
+        label_x = max(0, min(x1, rendered.width - 22))
+        label_y = max(0, y1 - 15)
+        draw.rectangle((label_x, label_y, label_x + 22, label_y + 15), fill=(255, 255, 255))
+        draw.text((label_x + 3, label_y + 1), str(index), fill=(0, 0, 0))
+        regions.append(
+            {
+                "index": index,
+                "reading_order": region.reading_order,
+                "bbox": region.bbox.model_dump(),
+                "normalized_bbox": region.normalized_bbox.model_dump(),
+                "polygon": region.polygon,
+                "confidence": region.confidence,
+                "japanese_text": region.japanese_text,
+            }
+        )
+
+    rendered.save(root / f"{label}.jpg", format="JPEG", quality=92)
+    payload = {
+        "label": label,
+        "image_sha256": result.image_sha256,
+        "dimensions": result.regions[0].dimensions.model_dump() if result.regions else None,
+        "region_count": len(result.regions),
+        "regions": regions,
+    }
+    (root / f"{label}.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
 
 
