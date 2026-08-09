@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
@@ -35,6 +36,10 @@ class UnknownRegionError(ValueError):
 
 class UnknownVocabularyError(ValueError):
     """Gemini associated vocabulary that deterministic analysis did not emit."""
+
+
+class RegionCompletenessError(ValueError):
+    """Gemini did not return exactly one analysis for every requested region."""
 
 
 def build_vocabulary_candidates_by_region(
@@ -79,8 +84,8 @@ def build_page_prompt(
         "prompt_version": prompt_version,
         "instructions": (
             "Return contextual translation, explanation, grammar points and only stable "
-            "vocabulary identifiers listed for that same region. Never invent OCR text or "
-            "identifiers."
+            "vocabulary identifiers listed for that same region. Return exactly one analysis "
+            "for every requested region. Never invent OCR text or identifiers."
         ),
         "regions": [
             {
@@ -120,9 +125,15 @@ class GeminiAnalysisService:
         )
         result = await self._adapter.analyze(prompt=prompt, schema=GeminiPageAnalysis)
         known_regions = frozenset(regions)
+        returned_region_ids = tuple(analysis.region_id for analysis in result.regions)
+        for region_id in returned_region_ids:
+            if region_id not in known_regions:
+                raise UnknownRegionError(region_id)
+        if Counter(returned_region_ids) != Counter(regions):
+            raise RegionCompletenessError(
+                "Gemini response must contain exactly one analysis per requested region"
+            )
         for analysis in result.regions:
-            if analysis.region_id not in known_regions:
-                raise UnknownRegionError(analysis.region_id)
             allowed_vocabulary = frozenset(
                 candidate.id for candidate in vocabulary_by_region.get(analysis.region_id, ())
             )
