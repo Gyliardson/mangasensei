@@ -152,6 +152,6 @@ jobs:
           echo "${PAGE9_SHA256}  tmp/ocr54/black_jack_v01_pdf009.jpg" | sha256sum --check --strict
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add tmp/ocr54/black_jack_v01_pdf009.jpg
+          git add -f tmp/ocr54/black_jack_v01_pdf009.jpg
           git commit -m "test(ocr): stage verified page 9 fixture bytes"
           git push origin "HEAD:${HEAD_BRANCH}"
