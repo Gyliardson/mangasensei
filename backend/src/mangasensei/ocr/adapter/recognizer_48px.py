@@ -28,7 +28,9 @@ class MangaSenseiModel48pxOCR(Model48pxOCR):
         if not textlines:
             return await super().recognize(image, textlines, config, verbose)
 
-        crop_safe_lines = [_copy_quadrilateral(line) for line in textlines]
+        crop_safe_lines: list[Quadrilateral] = [
+            _copy_quadrilateral(line) for line in textlines
+        ]
         source_index_by_object = {id(line): index for index, line in enumerate(crop_safe_lines)}
         source_index_by_geometry = {
             _geometry_key(line): index for index, line in enumerate(crop_safe_lines)
