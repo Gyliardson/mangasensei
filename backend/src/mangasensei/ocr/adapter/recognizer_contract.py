@@ -10,3 +10,10 @@ RECOGNITION_WARP_VERSION = "inclusive-source-v1"
 # detector quadrilateral for merge/final regions.
 RECOGNITION_SHORT_EDGE_PAD_RATIO = 0.08
 RECOGNITION_SHORT_AXIS_CONTEXT = 1.0 + 2.0 * RECOGNITION_SHORT_EDGE_PAD_RATIO
+
+# The vendored 48px recognizer can move marginal candidates across its 0.2
+# acceptance boundary solely because they share a padded batch with other crop
+# widths. Results below 0.5 are therefore confirmed once in isolation. The
+# confirmation is only an acceptance stability check: if it also survives alone,
+# the original full-batch text/confidence remains authoritative.
+RECOGNITION_BATCH_CONFIRMATION_CEILING = 0.5
