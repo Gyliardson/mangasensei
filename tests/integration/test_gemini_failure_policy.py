@@ -4,12 +4,14 @@ import hashlib
 import io
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from PIL import Image
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mangasensei.api.app import create_app
 from mangasensei.config import Settings
@@ -134,8 +136,8 @@ class TransientProviderFailureFixture(SuccessfulGeminiFixture):
 
 
 class FailBeforeSentWorker(Worker):
-    def __init__(self, **kwargs: object) -> None:
-        super().__init__(**kwargs)  # type: ignore[arg-type]
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         self.fail_once = True
 
     async def _mark_call_sent(self, call_id: int) -> None:
@@ -155,8 +157,9 @@ def _settings(database_url: str, root: Path) -> Settings:
     )
 
 
-def _worker_kwargs(database_url: str, root: Path, gemini: object) -> dict[str, object]:
-    _, sessions = create_database(database_url)
+def _worker_kwargs(
+    sessions: async_sessionmaker[AsyncSession], root: Path, gemini: object
+) -> dict[str, Any]:
     return {
         "sessions": sessions,
         "storage": LocalFilesystemStorage(root),
@@ -188,9 +191,7 @@ async def test_permanent_provider_failure_is_terminal_after_one_job_attempt(
         upload = await _upload_page(client, "gemini-permanent-failure-0001")
 
     engine, sessions = create_database(clean_postgres_url)
-    worker = Worker(
-        **_worker_kwargs(clean_postgres_url, tmp_path, PermanentProviderFailureFixture())
-    )
+    worker = Worker(**_worker_kwargs(sessions, tmp_path, PermanentProviderFailureFixture()))
     assert await worker.run_once()
     assert await worker.run_once() is False
 
@@ -234,7 +235,7 @@ async def test_transient_provider_failure_remains_retryable_and_can_succeed(
 
     engine, sessions = create_database(clean_postgres_url)
     gemini = TransientProviderFailureFixture()
-    worker = Worker(**_worker_kwargs(clean_postgres_url, tmp_path, gemini))
+    worker = Worker(**_worker_kwargs(sessions, tmp_path, gemini))
 
     assert await worker.run_once()
     async with sessions.begin() as session:
@@ -287,7 +288,7 @@ async def test_daily_budget_exhaustion_is_terminal_without_creating_a_call(
 
     engine, sessions = create_database(clean_postgres_url)
     worker = Worker(
-        **_worker_kwargs(clean_postgres_url, tmp_path, SuccessfulGeminiFixture()),
+        **_worker_kwargs(sessions, tmp_path, SuccessfulGeminiFixture()),
         gemini_daily_budget=Decimal("0.50"),
     )
 
@@ -315,6 +316,63 @@ async def test_daily_budget_exhaustion_is_terminal_without_creating_a_call(
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+async def test_page_call_limit_is_terminal_after_a_transient_sent_call(
+    clean_postgres_url: str, tmp_path: Path
+) -> None:
+    app = create_app(_settings(clean_postgres_url, tmp_path))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        upload = await _upload_page(client, "gemini-page-call-limit-0001")
+
+    engine, sessions = create_database(clean_postgres_url)
+    worker = Worker(
+        **_worker_kwargs(sessions, tmp_path, TransientProviderFailureFixture()),
+        gemini_daily_budget=Decimal("100"),
+        gemini_max_calls_per_page=1,
+    )
+
+    assert await worker.run_once()
+    async with sessions.begin() as session:
+        job = (
+            await session.execute(
+                select(JobRecord).where(JobRecord.public_id == UUID(str(upload["jobId"])))
+            )
+        ).scalar_one()
+        assert job.status == "retryable_failure"
+        job.available_at = func.now()
+
+    assert await worker.run_once()
+    assert await worker.run_once() is False
+
+    async with sessions() as session:
+        job = (
+            await session.execute(
+                select(JobRecord).where(JobRecord.public_id == UUID(str(upload["jobId"])))
+            )
+        ).scalar_one()
+        attempts = (
+            await session.execute(
+                select(JobAttemptRecord)
+                .where(JobAttemptRecord.job_id == job.id)
+                .order_by(JobAttemptRecord.attempt_no)
+            )
+        ).scalars().all()
+        calls = (await session.execute(select(GeminiCallRecord))).scalars().all()
+        bucket = (await session.execute(select(GeminiBudgetBucketRecord))).scalar_one()
+
+    assert job.status == "failed"
+    assert job.attempt_count == 2
+    assert job.error_code == "gemini_budget_exceeded"
+    assert [attempt.outcome for attempt in attempts] == ["retryable_failure", "failed"]
+    assert len(calls) == 1
+    assert calls[0].state == "unknown"
+    assert calls[0].page_call_ordinal == 1
+    assert bucket.reserved_amount == Decimal("0")
+    assert bucket.actual_amount == Decimal("0.52")
+    await engine.dispose()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
 async def test_unsent_reservation_releases_budget_and_page_ordinal(
     clean_postgres_url: str, tmp_path: Path
 ) -> None:
@@ -324,7 +382,7 @@ async def test_unsent_reservation_releases_budget_and_page_ordinal(
 
     engine, sessions = create_database(clean_postgres_url)
     worker = FailBeforeSentWorker(
-        **_worker_kwargs(clean_postgres_url, tmp_path, SuccessfulGeminiFixture())
+        **_worker_kwargs(sessions, tmp_path, SuccessfulGeminiFixture())
     )
 
     assert await worker.run_once()
