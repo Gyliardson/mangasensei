@@ -147,8 +147,8 @@ export function App() {
           </button>
 
           {phase === "uploading" || phase === "processing" ? (
-            <button className="cancel-button" type="button" onClick={reset}>
-              <X aria-hidden="true" /> Cancelar
+            <button className="cancel-button" type="button" onClick={reset} aria-describedby="upload-retention">
+              <X aria-hidden="true" /> Parar de acompanhar
             </button>
           ) : null}
 
@@ -156,7 +156,7 @@ export function App() {
 
           <p id="upload-retention" className="retention">
             <LockKeyhole aria-hidden="true" />
-            Originais e resultados são excluídos automaticamente após 24 horas.
+            Parar de acompanhar interrompe apenas a espera nesta tela; a análise pode continuar. Originais e resultados são excluídos automaticamente após 24 horas.
           </p>
         </form>
 

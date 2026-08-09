@@ -203,7 +203,7 @@ describe("App", () => {
     );
   });
 
-  it("cancels polling and returns to the initial state", async () => {
+  it("stops observing the queued job without claiming to cancel backend processing", async () => {
     const user = userEvent.setup();
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", {
@@ -254,7 +254,15 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Analisar página" }));
 
     expect(await screen.findByRole("button", { name: "Aguardando worker" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.getByRole("button", { name: "Parar de acompanhar" })).toBeVisible();
+    expect(
+      screen.getByText(
+        "Parar de acompanhar interrompe apenas a espera nesta tela; a análise pode continuar. Originais e resultados são excluídos automaticamente após 24 horas.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Cancelar" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Parar de acompanhar" }));
 
     expect(screen.getByRole("button", { name: "Analisar página" })).toBeDisabled();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:pending-image");
