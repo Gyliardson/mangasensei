@@ -190,13 +190,13 @@ class MangaImageTranslatorEngine:
         )
 
     async def _ensure_loaded(self) -> tuple[Any, Any, Any, ModelManifest]:
-        from .recognizer_48px import MangaSenseiModel48pxOCR
         from ..vendor.manga_image_translator.manga_translator.detection.default import (
             DefaultDetector,
         )
         from ..vendor.manga_image_translator.manga_translator.textline_merge import (
             dispatch,
         )
+        from .recognizer_48px import MangaSenseiModel48pxOCR
 
         manifest = self._verify_required_models()
         if self._detector is None:
