@@ -19,7 +19,7 @@ def test_language_contract_is_explicit_and_backward_compatible() -> None:
 
 
 def test_unsupported_study_language_is_rejected() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="not a valid StudyLanguage"):
         StudyLanguage("es")
 
 
