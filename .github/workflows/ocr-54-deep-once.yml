@@ -1,0 +1,45 @@
+name: OCR 54 Deep Validation Once
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ocr-54-deep-once.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ocr-54-deep-once-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deep:
+    name: Reviewed targets and full licensed corpus (CPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
+      MANGASENSEI_RUN_OCR_SMOKE: "1"
+      MANGASENSEI_OCR_REPEAT_RUNS: "3"
+      MANGASENSEI_OCR_FULL_CORPUS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install locked OCR dependencies
+        run: uv sync --frozen --extra ocr
+
+      - name: Download reviewed OCR models
+        run: uv run mangasensei models download
+
+      - name: Verify reviewed OCR models
+        run: uv run mangasensei models verify
+
+      - name: Run reviewed targets and full licensed corpus
+        run: uv run pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv -s --maxfail=1
