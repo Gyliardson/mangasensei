@@ -32,6 +32,7 @@ def test_migrations_upgrade_downgrade_and_reupgrade(postgres_url: str) -> None:
         "gemini_analyses",
         "gemini_cost_ledger",
         "rate_limit_buckets",
+        "study_results",
     }.issubset(inspect(engine).get_table_names(schema="mangasensei"))
 
     command.downgrade(config, "base")
