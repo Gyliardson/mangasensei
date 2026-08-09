@@ -5,6 +5,9 @@ from __future__ import annotations
 from sqlalchemy import delete, exists, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from mangasensei.infrastructure.database.gemini_accounting import (
+    reconcile_abandoned_gemini_calls,
+)
 from mangasensei.infrastructure.database.operational_models import RateLimitBucketRecord
 from mangasensei.infrastructure.database.storage_locks import acquire_image_blob_lock
 from mangasensei.infrastructure.database.storage_models import ImageBlobRecord, PageRecord
@@ -46,6 +49,7 @@ class RetentionJanitor:
             )
             if expired:
                 page_ids = tuple(row.id for row in expired)
+                await reconcile_abandoned_gemini_calls(session, page_ids=page_ids)
                 await session.execute(delete(PageRecord).where(PageRecord.id.in_(page_ids)))
             expired_blob_ids = tuple(dict.fromkeys(row.image_blob_id for row in expired))
             unreferenced_blob_ids = tuple(

@@ -8,6 +8,9 @@ from datetime import datetime
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from mangasensei.infrastructure.database.gemini_accounting import (
+    reconcile_abandoned_gemini_calls,
+)
 from mangasensei.infrastructure.database.job_models import JobAttemptRecord, JobRecord
 from mangasensei.infrastructure.database.queue import build_claim_statement
 from mangasensei.infrastructure.database.storage_models import PageRecord
@@ -120,6 +123,11 @@ class QueueRepository:
                 )
                 if result.scalar_one_or_none() is None:
                     continue
+                await reconcile_abandoned_gemini_calls(
+                    session,
+                    job_id=job_id,
+                    fencing_token=fencing_token,
+                )
                 await session.execute(
                     update(JobAttemptRecord)
                     .where(
