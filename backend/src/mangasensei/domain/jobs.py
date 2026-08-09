@@ -22,7 +22,14 @@ class InvalidJobTransition(ValueError):
 _TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
     JobStatus.PENDING: frozenset({JobStatus.CLAIMED, JobStatus.EXPIRED}),
     JobStatus.CLAIMED: frozenset(
-        {JobStatus.PROCESSING_OCR, JobStatus.RETRYABLE_FAILURE, JobStatus.FAILED, JobStatus.EXPIRED}
+        {
+            JobStatus.PROCESSING_OCR,
+            JobStatus.PROCESSING_GEMINI,
+            JobStatus.COMPLETED,
+            JobStatus.RETRYABLE_FAILURE,
+            JobStatus.FAILED,
+            JobStatus.EXPIRED,
+        }
     ),
     JobStatus.PROCESSING_OCR: frozenset(
         {
