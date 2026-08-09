@@ -122,14 +122,16 @@ The required Frontend CI job contains a separate **Full-stack critical-flow E2E*
 The full-stack harness uses:
 
 - the real current Alembic migrations and a real PostgreSQL service;
-- the real FastAPI upload, status, protected-page and protected-image endpoints;
+- the real FastAPI upload, status, reprocess, protected-page and protected-image endpoints;
 - capability tokens returned by the real upload response and consumed by the real frontend client;
-- the real queue claim/state-transition and `Worker` implementation;
+- the real queue claim/state-transition, language-only reuse path and `Worker` implementation;
 - real local filesystem storage, Sudachi tokenization, normalized JMdict loading and linguistic persistence;
-- Gemini disabled, validating the privacy-first local baseline;
-- a deterministic OCR engine double only at the OCR inference boundary, so heavy model loading stays in the separate Real OCR model smoke.
+- a deterministic OCR engine double only at the OCR inference boundary, so heavy model loading stays in the separate Real OCR model smoke;
+- a deterministic Gemini adapter only at the paid external-provider boundary, so structured prompt/language handling, budget accounting, worker orchestration and persistence remain real without network calls or API secrets.
 
-The worker fixture deliberately keeps OCR in progress long enough for browser polling to observe a non-terminal real job state before `completed`. The final browser assertions require persisted `猫です` output, local JMdict vocabulary, the no-Gemini contextual fallback, a successful protected original-image read, and a successful protected page-result read. If migrations, capabilities, queue orchestration, persistence, the API/frontend contract, or worker completion breaks, this required Frontend check fails.
+The browser first uploads a Japanese page with the default `pt-BR` study language and waits for a persisted contextual Portuguese result. It then changes the study language to `en` through the real reader control. The real reprocess capability creates a new job, the worker follows the language-only regeneration path, and the browser reads the newly persisted English result back through the protected API. Assertions require Japanese OCR text to remain unchanged, contextual fields to switch from `pt-BR` to `en`, deterministic local JMdict meanings to remain English, the document/UI locale to remain `pt-BR`, and the browser preference to persist as `en` for the next request.
+
+The worker fixture deliberately keeps the external OCR/provider boundaries in progress long enough for browser polling to observe non-terminal real job states before `completed`. Network observers verify the real upload and reprocess requests, protected original-image read and protected persisted-result reads; they do not intercept or synthesize MangaSensei API responses. If migrations, capabilities, queue/reprocessing orchestration, persistence, the API/frontend contract, language metadata or worker completion breaks, this required Frontend check fails.
 
 The full-stack Playwright command is:
 
@@ -137,4 +139,4 @@ The full-stack Playwright command is:
 npm run e2e:fullstack
 ```
 
-It assumes PostgreSQL has been migrated and the API plus deterministic worker harness are already running; the CI workflow performs that orchestration. This test is intentionally distinct from both the fast mocked browser suite and the heavyweight real-model OCR smoke so each layer states exactly what it validates.
+It assumes PostgreSQL has been migrated and the API plus deterministic worker harness are already running; the CI workflow performs that orchestration. This test is intentionally distinct from the fast mocked browser suite and the heavyweight real-model OCR smoke so each layer states exactly what it validates.

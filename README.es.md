@@ -19,13 +19,15 @@ Un entorno de estudio centrado en la privacidad para convertir páginas de manga
 
 MangaSensei extrae texto japonés de páginas de manga, enriquece el resultado con datos lingüísticos locales y lo presenta en un lector responsivo sin alterar la imagen original. Los pesos de OCR y los datos derivados de JMdict permanecen en local y no se incluyen en Git ni en la imagen distribuible. Gemini es opcional.
 
+El contenido japonés puede estudiarse con **explicaciones contextuales en Portugués de Brasil (`pt-BR`) o Inglés (`en`)**. El idioma de estudio se elige de forma explícita y es independiente del locale actual de la interfaz, que permanece en portugués. Los significados deterministas del JMdict local siguen en inglés en ambos modos, y cambiar solo el idioma de estudio reutiliza el OCR y el análisis lingüístico japonés ya completados. Consulta el [contrato de idiomas de estudio](docs/study-languages.md) para los límites exactos.
+
 La versión actual de desarrollo está registrada en [`VERSION`](VERSION).
 
 ## ¿Por qué MangaSensei?
 
 | Local-first | Imagen original preservada | Diseñado para estudiar |
 | --- | --- | --- |
-| OCR, modelos y datos del diccionario son locales por defecto. | La página subida se conserva sin modificaciones y las capas de estudio se renderizan por separado. | Furigana, vocabulario, datos lingüísticos y explicaciones contextuales se organizan alrededor de la lectura. |
+| OCR, modelos y datos del diccionario son locales por defecto. | La página subida se conserva sin modificaciones y las capas de estudio se renderizan por separado. | Furigana, vocabulario, idioma de estudio, datos lingüísticos y explicaciones contextuales se organizan alrededor de la lectura. |
 
 ## Vista previa del lector
 
@@ -40,11 +42,11 @@ La versión actual de desarrollo está registrada en [`VERSION`](VERSION).
 
 | Área | Capacidad |
 | --- | --- |
-| Carga | Subida segura de imágenes con idempotencia y capabilities HMAC por página |
+| Carga | Subida segura de imágenes con idempotencia, idioma de estudio explícito `pt-BR`/`en` y capabilities HMAC por página |
 | OCR | Subconjunto local de Manga Image Translator con modelos verificados por checksum |
-| Lingüística | Tokenización Sudachi e índice JMdict normalizado generado desde una fuente verificada |
-| Gemini | Explicaciones estructuradas opcionales con control de presupuesto y `store=False` |
-| Lector | SPA React con Blob autenticado, overlays SVG responsivos, furigana y tarjetas de vocabulario |
+| Lingüística | Tokenización Sudachi e índice JMdict normalizado en inglés generado desde una fuente verificada |
+| Gemini | Explicaciones contextuales estructuradas opcionales en `pt-BR`/`en`, con control de presupuesto y `store=False` |
+| Lector | SPA React con Blob autenticado, overlays SVG responsivos, furigana, preferencia de idioma de estudio y tarjetas de vocabulario |
 | Operación | Cola PostgreSQL, recuperación de leases, retención, readiness y métricas |
 
 ## Arquitectura
@@ -98,10 +100,10 @@ flowchart TD
 
 | Método | Ruta | Propósito |
 | --- | --- | --- |
-| `POST` | `/api/v1/pages` | Sube una página de manga y crea un job de análisis en cola |
-| `GET` | `/api/v1/pages/{page_id}` | Consulta estado y datos de estudio completados usando el token de página |
+| `POST` | `/api/v1/pages` | Sube una página de manga japonés y crea análisis con `studyLanguage` opcional (`pt-BR` por defecto o `en`) |
+| `GET` | `/api/v1/pages/{page_id}` | Consulta estado, metadatos persistidos de idioma y datos de estudio completados usando el token de página |
 | `GET` | `/api/v1/pages/{page_id}/image` | Devuelve la imagen original mediante una respuesta Blob autenticada |
-| `POST` | `/api/v1/pages/{page_id}/reprocess` | Encola un nuevo análisis usando una capability de reprocesamiento |
+| `POST` | `/api/v1/pages/{page_id}/reprocess` | Encola análisis o regeneración solo del idioma de estudio usando una capability de reprocesamiento |
 | `GET` | `/health` | Health check del proceso |
 | `GET` | `/ready` | Verificación de base de datos, almacenamiento y schema |
 | `GET` | `/metrics` | Métricas Prometheus |
@@ -135,7 +137,7 @@ Genera secretos y configúralos en `.env` antes de ejecutar cualquier cosa que u
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Gemini es opcional. Deja `GOOGLE_API_KEY` sin definir o en blanco para ejecutar el worker solo con OCR y lingüística locales; configura una clave no vacía para habilitar el enriquecimiento de Gemini. Cuando está habilitado, solo se envían el texto OCR y candidatos léxicos mínimos por región (`id`, `surface`, `lemma`, `reading`) para el enriquecimiento opcional. La imagen original, los significados del diccionario y el dataset JMdict local no se envían.
+Gemini es opcional. Deja `GOOGLE_API_KEY` sin definir o en blanco para ejecutar el worker solo con OCR y lingüística locales; configura una clave no vacía para habilitar enriquecimiento contextual en el idioma de estudio seleccionado. Cuando está habilitado, solo se envían el texto OCR y candidatos léxicos mínimos por región (`id`, `surface`, `lemma`, `reading`). La imagen original, los significados del diccionario y el dataset JMdict local no se envían. Con Gemini deshabilitado, el OCR/tokenización japoneses y el vocabulario JMdict en inglés siguen disponibles, mientras que la traducción y explicación contextuales pueden estar ausentes.
 
 Ejecuta con Docker Compose:
 

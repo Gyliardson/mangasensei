@@ -21,11 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Version consistency tooling, repository-local Markdown link validation, Dependabot configuration, and tagged GitHub Release automation.
 - Privacy-safe worker failure diagnostics with pipeline stage, retry correlation, exception type and bounded source-location context for operator logs.
 - Reviewed real-OCR smoke automation with checksum-verified model downloads, scheduled/manual validation and a release-publishing gate.
-- Deterministic full-stack browser gate covering the real FastAPI, PostgreSQL, queue/worker, persistence, capability-protected reads and frontend polling path with only OCR inference doubled.
+- Deterministic full-stack browser gate covering real FastAPI, PostgreSQL, queue/worker, persistence, capability-protected reads and `pt-BR` → `en` study-language reprocessing, with only external OCR/Gemini boundaries deterministically substituted.
 - Explicit SHA-pinned CodeQL advanced workflow for Actions, JavaScript/TypeScript and Python on pull requests, `main` pushes and weekly scans.
 - Reader-local furigana display preferences for Hiragana, canonical Katakana and hidden ruby, persisted safely in browser storage.
 - Adaptive reader fit and zoom controls for portrait and landscape pages, with local preferences and contained pan/scroll behavior.
 - Explicit Japanese-content study-language backend contract for `pt-BR` and `en`, including persisted effective-language metadata, structured Gemini language input, backward-compatible `pt-BR` migration, and language-only reprocessing that reuses completed OCR and Japanese linguistic analysis.
+- Browser-local `pt-BR`/`en` study-language preference and reader control, independent from the Portuguese UI locale and persisted result language.
 
 ### Changed
 

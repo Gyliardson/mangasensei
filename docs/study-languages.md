@@ -10,9 +10,19 @@ Three concepts are intentionally separate:
 | --- | --- |
 | Content / study-target language | `ja` only |
 | Study / explanation language | `pt-BR` (default) or `en` |
-| UI locale | Independent from study language; the current application UI remains Portuguese |
+| UI locale | Independent from study language; the current application UI remains Portuguese (`pt-BR`) |
 
-The API does not infer study language from browser locale, `Accept-Language`, UI copy, nationality, or any other ambient signal.
+The API does not infer study language from browser locale, `Accept-Language`, UI copy, nationality, or any other ambient signal. The browser exposes an explicit study-language preference instead.
+
+## Browser preference and reader
+
+The upload screen and reader expose `Português (Brasil)` and `Inglês` as study-language choices. The preference is stored locally in the browser under a validated two-value contract. Missing, malformed, or inaccessible browser storage falls back to `pt-BR` without breaking the application.
+
+Browser storage is a convenience for the next request; it is not the source of truth for already generated content. The reader displays the effective `studyLanguage` returned by the persisted completed result. If a language-only reprocessing request fails, the previous completed result remains visible and the browser selector is restored to that effective language rather than pretending the failed preference was generated successfully.
+
+Study language is part of the reader's **study preferences** alongside furigana. It is intentionally separate from navigation and from page-presentation controls such as fit and zoom.
+
+The document/UI locale remains `pt-BR` when English study content is selected. Contextual English output is marked with `lang="en"`, Japanese text with `lang="ja"`, and deterministic local JMdict meanings with `lang="en"`.
 
 ## Upload API
 
@@ -32,7 +42,7 @@ Replaying an upload idempotency key with a different study language is treated a
 
 This metadata belongs to the persisted result. A browser preference change cannot silently reinterpret an existing English result as Portuguese or vice versa.
 
-When a newer reprocessing attempt is pending or fails, `resultAvailable` may remain true and the API continues to expose the previous completed result together with that result's effective language metadata.
+When a newer reprocessing attempt is pending or fails, `resultAvailable` may remain true and the API continues to expose the previous completed result together with that result's effective language metadata. The browser keeps rendering that completed result while a requested language replacement is still being generated.
 
 ## Reprocessing a study language
 
@@ -81,22 +91,24 @@ This preserves the pre-existing Portuguese study-flow interpretation while retai
 
 Study-language-only results can reference an earlier linguistic run. Page retention remains the governing lifecycle: deleting an expired page still cascades through the related jobs/results and their reused analysis graph according to the existing retention model.
 
-## Backend assurance
+## Assurance
 
-The backend contract is covered by deterministic unit/integration tests that verify:
+The deterministic unit/integration layers verify:
 
 - `pt-BR` is the default and unsupported study-language values are rejected;
+- browser preference persistence has deterministic fallback for malformed or inaccessible storage;
 - the Gemini prompt contains the explicit validated study language and its persisted request digest remains tied to the exact prompt;
 - a real pre-language database state with a completed analysis upgrades to `pt-BR` result metadata without losing the existing linguistic run;
 - `pt-BR` → `en` language reprocessing creates a new study result while retaining exactly one OCR run and one linguistic run;
 - the previously completed result and its language remain readable while the new language job is pending;
 - English study metadata remains valid with Gemini disabled and deterministic local JMdict vocabulary still works;
-- normal analysis jobs cannot use the direct state transitions reserved for language-only reuse jobs.
+- normal analysis jobs cannot use the direct state transitions reserved for language-only reuse jobs;
+- mocked browser coverage exercises desktop/mobile/accessibility behavior and verifies that UI locale, study language, Japanese content and English dictionary meanings remain distinct.
 
-The repository's ordinary full-stack browser gate remains a separate assurance layer. It does not yet prove the final user-driven study-language selection flow; that feature-level browser coverage is required before issue #63 can be closed.
+The required real full-stack Playwright flow performs an actual browser upload against FastAPI, PostgreSQL and the queue/worker, receives a persisted `pt-BR` contextual result, requests `en` through the real reprocess endpoint and capability, waits for the worker, then reads the newly persisted English result back through the application. MangaSensei API requests are not intercepted. Heavy OCR inference and the paid Gemini network call are replaced only at their external boundaries with deterministic fixtures; API, migrations, capabilities, queue transitions, Sudachi/JMdict processing, persistence, reprocessing and browser behavior remain real.
 
 ## Current product boundary
 
-This contract does **not** add English, Portuguese, Spanish, or generic multilingual manga OCR. It also does not automatically localize the application UI. The backend currently supports Japanese content with `pt-BR` or `en` learner-facing contextual result metadata and optional Gemini output.
+This feature does **not** add English, Portuguese, Spanish, or generic multilingual manga OCR. Content remains Japanese and automatic content-language detection is not performed. It also does not translate or replace text inside the manga image.
 
-The current browser UI does not yet expose a study-language selector or browser-local study-language preference. UI locale remains independent from the backend study-language contract, so an eventual UI control does not need to reinterpret existing persisted results or couple explanation language to interface language.
+The current browser UI remains Portuguese while study/explanation language can independently be Portuguese (Brazil) or English. Deterministic local JMdict meanings remain English regardless of the selected study language, and optional contextual translation/explanation remains absent when Gemini is disabled.
