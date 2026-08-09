@@ -49,7 +49,12 @@ def _intersects(box: tuple[int, int, int, int] | list[int]) -> bool:
     return x1 >= rx0 and x0 <= rx1 and y1 >= ry0 and y0 <= ry1
 
 
-def _expand_short_axis(line: Quadrilateral, factor: float, width: int, height: int) -> Quadrilateral:
+def _expand_short_axis(
+    line: Quadrilateral,
+    factor: float,
+    width: int,
+    height: int,
+) -> Quadrilateral:
     if factor == 1.0:
         return copy.deepcopy(line)
 
