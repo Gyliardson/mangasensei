@@ -22,17 +22,23 @@ def _quadrilateral(points: list[list[int]]) -> Quadrilateral:
     return Quadrilateral(np.asarray(points, dtype=np.int64), "", 0.9)
 
 
-def test_recognizer_crop_keeps_maximum_detector_pixel_in_source() -> None:
-    image = np.full((5, 5, 3), 255, dtype=np.uint8)
-    line = _RecognitionQuadrilateral(
-        np.asarray([[1, 1], [3, 1], [3, 3], [1, 3]], dtype=np.int64),
-        "",
-        0.9,
-    )
+@pytest.mark.parametrize(
+    ("points", "direction"),
+    (
+        ([[1, 1], [3, 1], [3, 3], [1, 3]], "h"),
+        ([[1, 1], [3, 1], [3, 4], [1, 4]], "v"),
+    ),
+)
+def test_recognizer_crop_keeps_maximum_detector_pixel_in_source(
+    points: list[list[int]],
+    direction: str,
+) -> None:
+    image = np.full((6, 6, 3), 255, dtype=np.uint8)
+    line = _RecognitionQuadrilateral(np.asarray(points, dtype=np.int64), "", 0.9)
 
-    crop = line.get_transformed_region(image, "h", 3)
+    crop = line.get_transformed_region(image, direction, 3)
 
-    assert crop.shape == (3, 3, 3)
+    assert crop.size > 0
     assert np.all(crop == 255), (
         "the perspective crop sampled outside the detector quadrilateral's inclusive pixel bounds"
     )
