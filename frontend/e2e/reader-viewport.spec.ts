@@ -17,8 +17,23 @@ const fixtures = {
   landscape: { width: 120, height: 60, image: landscapePng },
 } as const;
 
-async function installApiFixture(page: Page, fixtureName: FixtureName) {
+async function installApiFixture(
+  page: Page,
+  fixtureName: FixtureName,
+  options: { readonly longStudy?: boolean } = {},
+) {
   const fixture = fixtures[fixtureName];
+  const studyVocabulary = options.longStudy
+    ? Array.from({ length: 12 }, (_, index) => ({
+      id: `vocabulary-${index}`,
+      surface: "猫",
+      lemma: "猫",
+      reading: "ネコ",
+      meanings: [`cat ${index + 1}`],
+      source: "fixture",
+      jlpt: null,
+    }))
+    : [];
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     if (route.request().method() === "POST" && url.pathname === "/api/v1/pages") {
@@ -104,7 +119,7 @@ async function installApiFixture(page: Page, fixtureName: FixtureName) {
               translation: null,
               explanation: null,
               grammar: [],
-              vocabulary: [],
+              vocabulary: studyVocabulary,
             },
           ],
         },
@@ -278,7 +293,7 @@ test("keeps page controls sticky only while traversing the manga stage", async (
   if (testInfo.project.name === "desktop-chromium") {
     await page.setViewportSize({ width: 900, height: 700 });
   }
-  await installApiFixture(page, "portrait");
+  await installApiFixture(page, "portrait", { longStudy: true });
   await page.goto("/?fixture=sticky");
   await enterReader(page, "portrait");
 
@@ -300,7 +315,9 @@ test("keeps page controls sticky only while traversing the manga stage", async (
   await expect.poll(() => toolbar.evaluate((element) => element.getBoundingClientRect().top)).toBeGreaterThanOrEqual(7);
 
   const studyTop = await study.evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
-  await page.evaluate((top) => window.scrollTo(0, top + 80), studyTop);
+  const beyondStageScroll = studyTop + 80;
+  await page.evaluate((top) => window.scrollTo(0, top), beyondStageScroll);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThanOrEqual(beyondStageScroll - 1);
   await expect.poll(() => toolbar.evaluate((element) => element.getBoundingClientRect().bottom)).toBeLessThan(8);
 
   const horizontal = await readGeometry(page);
