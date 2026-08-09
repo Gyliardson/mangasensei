@@ -27,6 +27,7 @@ class GoogleGenAiAdapter:
         model: str,
         timeout_seconds: float = 60,
         max_attempts: int = 2,
+        max_output_tokens: int = 16_384,
         api_key: str | None = None,
         client: Any | None = None,
     ) -> None:
@@ -34,10 +35,13 @@ class GoogleGenAiAdapter:
             raise ValueError("a Gemini API key or injected client is required")
         if not 1 <= max_attempts <= 3:
             raise ValueError("Gemini attempts must be between 1 and 3")
+        if not 1 <= max_output_tokens <= 65_536:
+            raise ValueError("Gemini output token limit must be between 1 and 65536")
         self._client = client or genai.Client(api_key=api_key)
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._max_attempts = max_attempts
+        self._max_output_tokens = max_output_tokens
 
     async def analyze(self, *, prompt: str, schema: type[SchemaT]) -> SchemaT:
         response: Any | None = None
@@ -54,7 +58,7 @@ class GoogleGenAiAdapter:
                     },
                     generation_config={
                         "thinking_level": "low",
-                        "max_output_tokens": 16_384,
+                        "max_output_tokens": self._max_output_tokens,
                     },
                     timeout=self._timeout_seconds,
                 )
