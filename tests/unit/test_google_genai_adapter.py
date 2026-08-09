@@ -45,3 +45,34 @@ async def test_interactions_adapter_disables_storage_and_enforces_json_schema() 
         "thinking_level": "low",
         "max_output_tokens": 16_384,
     }
+
+
+@pytest.mark.asyncio
+async def test_interactions_adapter_accepts_a_bounded_output_limit_for_smoke_calls() -> None:
+    interactions = FakeInteractions()
+    client = SimpleNamespace(aio=SimpleNamespace(interactions=interactions))
+    adapter = GoogleGenAiAdapter(
+        client=client,
+        model="gemini-test",
+        max_output_tokens=128,
+    )
+
+    await adapter.analyze(prompt="region-001", schema=GeminiPageAnalysis)
+
+    assert interactions.request is not None
+    assert interactions.request["generation_config"] == {
+        "thinking_level": "low",
+        "max_output_tokens": 128,
+    }
+
+
+@pytest.mark.parametrize("max_output_tokens", [0, 65_537])
+def test_interactions_adapter_rejects_invalid_output_limits(max_output_tokens: int) -> None:
+    client = SimpleNamespace(aio=SimpleNamespace(interactions=FakeInteractions()))
+
+    with pytest.raises(ValueError, match="output token limit"):
+        GoogleGenAiAdapter(
+            client=client,
+            model="gemini-test",
+            max_output_tokens=max_output_tokens,
+        )
