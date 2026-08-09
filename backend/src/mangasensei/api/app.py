@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from sqlalchemy import text
 
+import mangasensei
 from mangasensei.application.authorization import PageAuthorizer, ResourceNotFoundError
 from mangasensei.application.idempotency import InvalidIdempotencyKeyError
 from mangasensei.application.page_queries import PageQueryService
@@ -102,7 +103,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     app = FastAPI(
         title="MangaSensei API",
-        version="0.1.0",
+        version=mangasensei.__version__,
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
         lifespan=lifespan,
@@ -156,8 +157,7 @@ def create_app(settings: Settings) -> FastAPI:
     @app.exception_handler(IdempotencyConflictError)
     async def idempotency_error(_: Request, __: IdempotencyConflictError) -> JSONResponse:
         return JSONResponse(
-            status_code=409,
-            content=_error("idempotency_conflict", "A chave já foi usada por outro arquivo."),
+            status_code=409, content=_error("idempotency_conflict", "A chave já foi usada por outro arquivo.")
         )
 
     @app.exception_handler(InvalidIdempotencyKeyError)
@@ -272,7 +272,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict[str, Any]:
-        return _success({"status": "ok", "version": "0.1.0"})
+        return _success({"status": "ok", "version": mangasensei.__version__})
 
     @app.get("/metrics", include_in_schema=False)
     async def metrics() -> Response:
