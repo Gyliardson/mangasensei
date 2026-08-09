@@ -23,6 +23,7 @@ _ACTIVE_STATUSES = (
     "processing_gemini",
     "retryable_failure",
 )
+_REPROCESS_KINDS = ("page_reprocess", "study_language_reprocess")
 
 
 class AnalysisInProgressError(RuntimeError):
@@ -30,7 +31,7 @@ class AnalysisInProgressError(RuntimeError):
 
 
 class ReprocessIdempotencyConflictError(ValueError):
-    """A reprocess idempotency key was reused with a different language contract."""
+    """A reprocess idempotency key was reused with a different request contract."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,15 +104,18 @@ class ReprocessService:
                 await session.execute(
                     select(JobRecord).where(
                         JobRecord.page_id == page.id,
-                        JobRecord.job_kind == job_kind,
+                        JobRecord.job_kind.in_(_REPROCESS_KINDS),
                         JobRecord.idempotency_digest == digest,
                     )
                 )
             ).scalar_one_or_none()
             if existing is not None:
-                if existing.study_language != requested_language.value:
+                if (
+                    existing.job_kind != job_kind
+                    or existing.study_language != requested_language.value
+                ):
                     raise ReprocessIdempotencyConflictError(
-                        "idempotency key is bound to another study language"
+                        "idempotency key is bound to another reprocess request"
                     )
                 return ReprocessResult(
                     job_id=existing.public_id,
