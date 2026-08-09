@@ -32,6 +32,7 @@ on:
       - "backend/src/mangasensei/ocr/**"
       - "tests/test_ocr_smoke.py"
       - "tests/test_ocr_real_manga.py"
+      - "tests/test_ocr_real_manga_precision.py"
       - "tests/fixtures/ocr/real_manga/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -42,6 +43,7 @@ on:
       - "backend/src/mangasensei/ocr/**"
       - "tests/test_ocr_smoke.py"
       - "tests/test_ocr_real_manga.py"
+      - "tests/test_ocr_real_manga_precision.py"
       - "tests/fixtures/ocr/real_manga/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -110,7 +112,9 @@ jobs:
         run: uv run mangasensei models verify
 
       - name: Run synthetic and licensed real-manga OCR smoke
-        run: uv run pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv -s --maxfail=1
+        run: >-
+          uv run pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py
+          tests/test_ocr_real_manga_precision.py -m ocr_smoke -vv -s --maxfail=1
 
       - name: Upload boxed OCR visual audit
         if: always()
