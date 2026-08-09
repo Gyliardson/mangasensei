@@ -7,6 +7,7 @@ from typing import Any, TypeVar, cast
 
 import httpx
 from google import genai
+from google.genai import types
 from pydantic import BaseModel, ValidationError
 
 from mangasensei.gemini.errors import (
@@ -38,7 +39,7 @@ class GoogleGenAiAdapter:
             raise ValueError("Gemini attempts must be between 1 and 3")
         if not 1 <= max_output_tokens <= 65_536:
             raise ValueError("Gemini output token limit must be between 1 and 65536")
-        self._client = client or genai.Client(api_key=api_key)
+        self._client = client or _build_google_client(cast(str, api_key))
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._max_attempts = max_attempts
@@ -83,6 +84,18 @@ class GoogleGenAiAdapter:
         close = getattr(aio, "aclose", None)
         if close is not None:
             await close()
+
+
+def _build_google_client(api_key: str) -> Any:
+    # Interactions has a generated SDK retry layer in addition to this adapter.
+    # Disable that layer so every external HTTP attempt is represented by the
+    # worker's own GeminiCallRecord, reservation and page-call ordinal.
+    return genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(
+            retry_options=types.HttpRetryOptions(attempts=0),
+        ),
+    )
 
 
 def _interactions_json_schema(schema: type[BaseModel]) -> dict[str, Any]:
