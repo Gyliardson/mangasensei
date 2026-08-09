@@ -55,7 +55,7 @@ The workflow:
 - installs the committed OCR dependency set with `uv sync --frozen --extra ocr`;
 - obtains model files only through `mangasensei models download`;
 - re-verifies exact artifact size and SHA-256 with `mangasensei models verify` before inference;
-- sets `MANGASENSEI_RUN_OCR_SMOKE=1` and runs both the synthetic compatibility smoke and licensed real-manga regressions;
+- sets `MANGASENSEI_RUN_OCR_SMOKE=1` and runs both the synthetic compatibility smoke and licensed real-manga regressions, including the page-201 reviewed precision guard;
 - keeps the synthetic input as a cheap model-load/inference compatibility check;
 - uses reviewed fixtures from `tests/fixtures/ocr/real_manga/black_jack/` for bounded behavioral assertions against real manga layout/text;
 - keeps recognized manga text out of normal worker logs; ordinary OCR assurance output records fixture identity, region counts and reviewed target geometry rather than full-page transcripts;
@@ -68,12 +68,14 @@ The visual artifact is deliberately supplemental to machine assertions. A page c
 
 The real-manga suite deliberately avoids brittle full-page transcription or pixel-perfect snapshots and has two heavyweight depths:
 
-- **OCR-related pull requests and `main`:** pages 73 and 90 run once using the exact production configuration and require the known-good short vertical targets (`うむ` and the `はい` core of `はい‼`) to survive detector → recognizer → merge → adapter inside broad reviewed page areas, with a `4..32` region-count guard. Page 9 protects two independent recognizer boundaries: the earlier two-line batch-composition regression, and a three-column dialogue that is re-rendered deterministically at 90% scale to verify that all three detector candidates survive recognition and merge into a broad complete region. Page 171 supplies a second real-page regression for the same crop-edge class by requiring the detector-complete first column of a long vertical footnote to survive the full production path. These cases also emit boxed visual-audit artifacts.
-- **Weekly schedule, tagged release and deep manual run:** pages 73 and 90 repeat their reviewed short-text inference three times. Page 9 repeats the narrow recognizer → merge batch boundary three times, checks both full production and deterministic-resampling coverage, and page 171 retains its independent crop-context anchor. The remaining eight manifest pages run once with a broad `2..32` catastrophic region-count contract. Deep mode therefore produces boxed visual-audit artifacts for the complete 12-page licensed corpus while still avoiding invented full-page transcript ground truth.
+- **OCR-related pull requests and `main`:** pages 73 and 90 run once using the exact production configuration and require the known-good short vertical targets (`うむ` and the `はい` core of `はい‼`) to survive detector → recognizer → merge → adapter inside broad reviewed page areas, with a `4..32` region-count guard. Page 9 protects two independent recognizer boundaries: the earlier two-line batch-composition regression, and a three-column dialogue that is re-rendered deterministically at 90% scale to verify that all three detector candidates survive recognition and merge into a broad complete region. Page 171 supplies a second real-page regression for the same crop-edge class by requiring the detector-complete first column of a long vertical footnote to survive the full production path. Page 201 adds a precision regression: the reviewed necktie-dot area must not become an OCR region after marginal recognition. These cases also emit boxed visual-audit artifacts where applicable.
+- **Weekly schedule, tagged release and deep manual run:** pages 73 and 90 repeat their reviewed short-text inference three times. Page 9 repeats the narrow recognizer → merge batch boundary three times, checks both full production and deterministic-resampling coverage, and page 171 retains its independent crop-context anchor. The remaining seven manifest pages run once with a broad `2..32` catastrophic region-count contract; page 201 also retains its explicit precision assertion. Deep mode therefore produces boxed visual-audit artifacts for the complete 12-page licensed corpus while still avoiding invented full-page transcript ground truth.
 
 The deeper corpus bound was established after characterizing the non-anchor pages with the reviewed model/configuration: observed counts remain well inside `2..32`, so the bound is intentionally loose enough to catch collapse/explosion rather than ordinary model variation. The pressure pages 21, 41, 145 and 201 are reviewed when an OCR-output change is proposed; their visual audit should be inspected for new graphics/SFX regions or dialogue truncation even when the numeric bound remains green. Deterministic synthetic reading-order tests remain authoritative for the reader-order algorithm itself.
 
-Pages 73 and 90 were first characterized during #54 investigation as known-good short-text examples; both already succeeded at the production `minimum_confidence=0.2`, so they remain positive regressions rather than evidence for lowering OCR thresholds. Page 9 later exposed two distinct 48px-recognizer integration defects. The first was batch padding narrower than the recognizer's own `ceil(width / 4) + 2` feature mask. The second is crop-edge sensitivity: a detector-complete vertical line can lose enough source context after ordinary resampling to fall below the unchanged production confidence threshold even though adjacent columns survive. MangaSensei now adds a bounded `1.16x` short-axis margin only to the recognizer input crop and copies the accepted recognition result back to the original detector quadrilateral before merge. Detector thresholds, model weights, confidence threshold and final geometry are not globally widened. Page 171 demonstrates that the same fix applies beyond the page-9 balloon.
+Pages 73 and 90 were first characterized during #54 investigation as known-good short-text examples; both already succeeded at the production `minimum_confidence=0.2`, so they remain positive regressions rather than evidence for lowering OCR thresholds. Page 9 later exposed two distinct 48px-recognizer integration defects. The first was batch padding narrower than the recognizer's own `ceil(width / 4) + 2` feature mask. The second included a lower-level perspective-crop coordinate mismatch: detector maximum pixel coordinates were retained in the homography while the NumPy source crop excluded the same maximum row/column, so edge samples could fall one pixel outside the actual crop. MangaSensei now includes the maximum detector/context pixel in the recognizer source crop. A separate recognizer-only 8% real-source pad on each local short edge remains because independent page-171 semantic tests show detector-tight quadrilaterals can otherwise truncate valid text even when the box and confidence appear healthy. Recognition metadata is copied back to the original detector quadrilateral before merge, so this input context does not widen detector or final-region geometry.
+
+The inclusive crop fix also exposed a separate batch-stability precision boundary. A reviewed 12-page audit covered 237 detector candidates and 226 accepted full-batch recognitions; nine accepted lines had recognizer confidence below `0.5`. Re-running only those nine candidates in isolation at the same unchanged production confidence boundary rejected exactly three reviewed false positives (one display-like fragment on page 21 and two necktie-dot fragments on page 201) while all reviewed low-confidence manga text remained accepted. The production recognizer therefore confirms sub-`0.5` full-batch results once in isolation before merge. Isolation is an acceptance check only: when a candidate survives, the original batch text and confidence remain authoritative so benign batch/isolated orthographic differences do not rewrite output. This does **not** lower or replace the production `minimum_confidence=0.2` threshold.
 
 The historical field-only `でも` omission remains a separate unresolved #54 observation until its own first failing stage is reproduced. Detached bōten geometry is tracked separately in #93. Repeatability checks characterize the current CPU boundary; they do not claim that PyTorch/OpenCV are universally deterministic.
 
@@ -83,7 +85,7 @@ Model weights are deliberately downloaded fresh on GitHub-hosted runners while t
 
 The heavy smoke stays separate from ordinary CI cost, but runs automatically when its boundary is relevant:
 
-- pull requests and `main` changes that touch the OCR implementation/model files, either OCR smoke test, the licensed real-manga fixture corpus, `pyproject.toml`, `uv.lock`, or the smoke workflow itself use the reviewed four-source-page gate plus the deterministic page-9 resampling regression;
+- pull requests and `main` changes that touch the OCR implementation/model files, either OCR smoke test, the licensed real-manga fixture corpus, `pyproject.toml`, `uv.lock`, or the smoke workflow itself use the reviewed source-page gate, page-201 precision regression and deterministic page-9 resampling regression;
 - once per week from the default branch, with three repeats of the reviewed repeatability-sensitive cases plus the wider licensed corpus guard and complete corpus visual audit;
 - explicit maintainer `workflow_dispatch` defaults to the same deep mode and accepts bounded repeat/full-corpus inputs;
 - every tagged release calls the reusable OCR workflow with three repeats and the full corpus enabled, and publishing cannot proceed unless it succeeds.
@@ -102,7 +104,7 @@ $env:MANGASENSEI_MODEL_CACHE='var/models'
 .\.venv\Scripts\mangasensei.exe models download
 .\.venv\Scripts\mangasensei.exe models verify
 $env:MANGASENSEI_RUN_OCR_SMOKE='1'
-.\.venv\Scripts\python.exe -m pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv --maxfail=1
+.\.venv\Scripts\python.exe -m pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py tests/test_ocr_real_manga_precision.py -m ocr_smoke -vv --maxfail=1
 ```
 
 POSIX shell:
@@ -113,12 +115,12 @@ export MANGASENSEI_MODEL_CACHE=var/models
 .venv/bin/mangasensei models download
 .venv/bin/mangasensei models verify
 export MANGASENSEI_RUN_OCR_SMOKE=1
-.venv/bin/python -m pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv --maxfail=1
+.venv/bin/python -m pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py tests/test_ocr_real_manga_precision.py -m ocr_smoke -vv --maxfail=1
 ```
 
 For the deep repeatability/full-corpus mode, also set `MANGASENSEI_OCR_REPEAT_RUNS=3` and `MANGASENSEI_OCR_FULL_CORPUS=1` before running pytest. To render the same numbered images and JSON sidecars locally, set `MANGASENSEI_OCR_ARTIFACT_DIR` to an output directory before the run.
 
-A model-load, vendored API, PyTorch/OpenCV, inference, selected short-text recall, page-9 batch-composition, crop-context recall, repeatability, or catastrophic full-corpus regression must fail the appropriate OCR assurance tier rather than being treated as covered by the fast fixture-backed tests.
+A model-load, vendored API, PyTorch/OpenCV, inference, selected short-text recall, page-9 batch-composition, crop-context recall, marginal-recognition precision, repeatability, or catastrophic full-corpus regression must fail the appropriate OCR assurance tier rather than being treated as covered by the fast fixture-backed tests.
 
 ## Full-stack critical flow
 
