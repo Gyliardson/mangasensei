@@ -48,11 +48,13 @@ async def reconcile_abandoned_gemini_calls(
     else:
         predicates.append(GeminiCallRecord.page_id.in_(page_ids))
 
-    calls = (
-        await session.execute(
-            select(GeminiCallRecord).where(*predicates).order_by(GeminiCallRecord.id).with_for_update()
-        )
-    ).scalars()
+    statement = (
+        select(GeminiCallRecord)
+        .where(*predicates)
+        .order_by(GeminiCallRecord.id)
+        .with_for_update()
+    )
+    calls = (await session.execute(statement)).scalars()
 
     reconciled = 0
     for call in calls:
