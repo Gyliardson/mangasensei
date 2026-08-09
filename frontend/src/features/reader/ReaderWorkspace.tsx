@@ -400,7 +400,9 @@ function StudyPanel({
       <section aria-labelledby="grammar-title">
         <p className="panel-label" id="grammar-title">Gramática</p>
         {region.grammar.length > 0 ? (
-          <ul className="grammar-list">{region.grammar.map((point) => <li key={point}>{point}</li>)}</ul>
+          <ul className="grammar-list" lang={studyLanguage}>
+            {region.grammar.map((point) => <li key={point}>{point}</li>)}
+          </ul>
         ) : <p className="muted-panel">Nenhum ponto gramatical adicional.</p>}
       </section>
     </aside>
