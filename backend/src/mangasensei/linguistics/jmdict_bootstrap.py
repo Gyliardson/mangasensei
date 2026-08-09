@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from mangasensei.linguistics.jmdict import (
     NORMALIZED_CONVERTER_VERSION,
     JsonJmdictDictionary,
+    _normalized_form_key,
 )
 
 CONVERTER_VERSION = NORMALIZED_CONVERTER_VERSION
@@ -422,7 +423,7 @@ def _add_form(
     reading: str,
     meanings: tuple[str, ...],
 ) -> None:
-    key = (lemma, reading)
+    key = _normalized_form_key(lemma, reading)
     existing = forms.get(key, ())
     forms[key] = tuple(dict.fromkeys((*existing, *meanings)))
 

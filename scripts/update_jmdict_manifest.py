@@ -9,9 +9,11 @@ import json
 import os
 import secrets
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import httpx
 
+from mangasensei.linguistics.jmdict import JsonJmdictDictionary
 from mangasensei.linguistics.jmdict_bootstrap import (
     CONVERTER_VERSION,
     JmdictManifest,
@@ -41,6 +43,11 @@ async def update_manifest(path: Path, *, check: bool) -> dict[str, object]:
     entries = payload.get("entries")
     if not isinstance(entries, list):
         raise ValueError("normalized JMdict output must contain entries")
+    _validate_runtime_dictionary(
+        normalized,
+        expected_entry_count=len(entries),
+        expected_version=manifest.source.source_version,
+    )
     derived = {
         "filename": manifest.normalized.filename,
         "sha256": hashlib.sha256(normalized).hexdigest(),
@@ -77,6 +84,25 @@ async def update_manifest(path: Path, *, check: bool) -> dict[str, object]:
     finally:
         temporary.unlink(missing_ok=True)
     return derived
+
+
+def _validate_runtime_dictionary(
+    normalized: bytes,
+    *,
+    expected_entry_count: int,
+    expected_version: str,
+) -> None:
+    """Require the complete generated artifact to satisfy the runtime consumer contract."""
+    with TemporaryDirectory(prefix="mangasensei-jmdict-") as temporary_directory:
+        dictionary_path = Path(temporary_directory) / "jmdict.json"
+        dictionary_path.write_bytes(normalized)
+        dictionary = JsonJmdictDictionary(dictionary_path)
+    if dictionary.entry_count != expected_entry_count:
+        raise ValueError("generated JMdict runtime entry count differs from normalized output")
+    if dictionary.version != expected_version:
+        raise ValueError("generated JMdict runtime version differs from pinned source")
+    if dictionary.digest != hashlib.sha256(normalized).digest():
+        raise ValueError("generated JMdict runtime digest differs from normalized output")
 
 
 def main() -> int:

@@ -9,7 +9,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import httpx
 import pytest
 
-from mangasensei.linguistics.jmdict import JsonJmdictDictionary
+from mangasensei.linguistics.jmdict import DictionaryDataError, JsonJmdictDictionary
 from mangasensei.linguistics.jmdict_bootstrap import (
     CONVERTER_VERSION,
     JmdictIntegrityError,
@@ -52,6 +52,78 @@ def test_convert_simplified_jmdict_outputs_deterministic_normalized_json() -> No
         },
         "version": "jmdict-simplified-3.6.2+test",
     }
+
+
+def test_converter_canonicalizes_script_equivalent_runtime_forms(tmp_path: Path) -> None:
+    """Entry 1000060 exposed the v2 producer/consumer normalization mismatch."""
+    normalized = converted_fixture(script_variant_payload())
+    payload = json.loads(normalized)
+
+    assert payload["entries"] == [
+        {
+            "forms": [
+                {
+                    "lemma": "のま",
+                    "meanings": ["kanji repetition mark"],
+                    "reading": "のま",
+                }
+            ],
+            "id": "jmdict-1000060",
+        }
+    ]
+
+    dictionary_path = tmp_path / "jmdict.json"
+    dictionary_path.write_bytes(normalized)
+    dictionary = JsonJmdictDictionary(dictionary_path)
+    entry = dictionary.lookup("のま", "ノマ")
+
+    assert entry is not None
+    assert entry.id == "jmdict-1000060"
+    assert entry.meanings == ("kanji repetition mark",)
+
+
+def test_converter_unions_meanings_when_runtime_keys_collide(tmp_path: Path) -> None:
+    normalized = converted_fixture(script_variant_payload(different_meanings=True))
+    payload = json.loads(normalized)
+    form = payload["entries"][0]["forms"][0]
+
+    assert form == {
+        "lemma": "のま",
+        "meanings": ["hiragana-specific meaning", "katakana-specific meaning"],
+        "reading": "のま",
+    }
+
+    dictionary_path = tmp_path / "jmdict.json"
+    dictionary_path.write_bytes(normalized)
+    entry = JsonJmdictDictionary(dictionary_path).lookup("のま", "のま")
+    assert entry is not None
+    assert entry.meanings == ("hiragana-specific meaning", "katakana-specific meaning")
+
+
+def test_runtime_loader_still_rejects_duplicate_canonical_forms(tmp_path: Path) -> None:
+    path = tmp_path / "jmdict.json"
+    path.write_text(
+        json.dumps(
+            {
+                "converterVersion": CONVERTER_VERSION,
+                "version": "fixture",
+                "entries": [
+                    {
+                        "id": "jmdict-malformed",
+                        "forms": [
+                            {"lemma": "のま", "reading": "のま", "meanings": ["first"]},
+                            {"lemma": "ノマ", "reading": "ノマ", "meanings": ["second"]},
+                        ],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DictionaryDataError, match="duplicate form"):
+        JsonJmdictDictionary(path)
 
 
 def test_actual_pinned_restricted_entry_preserves_reading_and_sense_rules(
@@ -116,6 +188,37 @@ async def test_download_jmdict_is_atomic_verified_and_idempotent(tmp_path: Path)
     assert target.read_bytes() == normalized
     assert not tuple(target.parent.glob("*.part-*"))
     assert not tuple(target.parent.glob("*.lock"))
+
+
+@pytest.mark.asyncio
+async def test_download_jmdict_replaces_stale_converter_artifact(tmp_path: Path) -> None:
+    normalized = converted_fixture(simplified_payload())
+    source = zipped_source(simplified_payload())
+    manifest = manifest_for(source, normalized)
+    manifest_path = write_manifest(tmp_path, manifest)
+    target = tmp_path / "data" / "jmdict.json"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(
+        normalized.replace(
+            CONVERTER_VERSION.encode("utf-8"),
+            b"mangasensei-jmdict-v2",
+            1,
+        )
+    )
+    requests = 0
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        return httpx.Response(200, content=source, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        replaced = await download_jmdict(target, manifest_path=manifest_path, client=client)
+
+    assert replaced
+    assert requests == 1
+    assert target.read_bytes() == normalized
+    verify_jmdict(target, manifest=manifest)
 
 
 @pytest.mark.asyncio
@@ -204,6 +307,39 @@ def simplified_payload() -> dict[str, object]:
                 "sense": [sense(["thanks"])],
             },
         ],
+    }
+
+
+def script_variant_payload(*, different_meanings: bool = False) -> dict[str, object]:
+    if different_meanings:
+        senses = [
+            sense(["hiragana-specific meaning"], applies_to_kana=["のま"]),
+            sense(["katakana-specific meaning"], applies_to_kana=["ノマ"]),
+        ]
+    else:
+        senses = [sense(["kanji repetition mark"])]
+    return {
+        "words": [
+            {
+                "id": "1000060",
+                "kanji": [],
+                "kana": [
+                    {
+                        "text": "のま",
+                        "common": False,
+                        "tags": [],
+                        "appliesToKanji": [],
+                    },
+                    {
+                        "text": "ノマ",
+                        "common": False,
+                        "tags": [],
+                        "appliesToKanji": [],
+                    },
+                ],
+                "sense": senses,
+            }
+        ]
     }
 
 
