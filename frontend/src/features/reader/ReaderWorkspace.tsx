@@ -2,8 +2,10 @@ import { BookOpenText, RotateCcw } from "lucide-react";
 import { useState } from "react";
 
 import type { StudyPage, StudyRegion, StudyToken } from "../../lib/api";
-import { furiganaReading } from "./furigana";
+import { type FuriganaMode, furiganaReading, isFuriganaMode } from "./furigana";
+import { loadFuriganaPreference, saveFuriganaPreference } from "./furiganaPreference";
 import { toSvgBox } from "./overlay";
+import "./reader-preferences.css";
 
 interface ReaderWorkspaceProps {
   readonly page: StudyPage;
@@ -13,7 +15,14 @@ interface ReaderWorkspaceProps {
 
 export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProps) {
   const [selectedId, setSelectedId] = useState(page.regions[0]?.id ?? null);
+  const [furiganaMode, setFuriganaMode] = useState<FuriganaMode>(() => loadFuriganaPreference());
   const selected = page.regions.find((region) => region.id === selectedId) ?? page.regions[0];
+
+  const changeFuriganaMode = (value: string) => {
+    if (!isFuriganaMode(value)) return;
+    setFuriganaMode(value);
+    saveFuriganaPreference(value);
+  };
 
   return (
     <main id="conteudo" className="reader-layout">
@@ -23,9 +32,23 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
             <p className="eyebrow">Página processada</p>
             <h1 id="reader-title">Selecione uma região</h1>
           </div>
-          <button className="text-button" type="button" onClick={onReset}>
-            <RotateCcw aria-hidden="true" /> Nova página
-          </button>
+          <div className="reader-actions">
+            <label className="reader-preference">
+              <span>Furigana na leitura</span>
+              <select
+                aria-label="Exibição de furigana"
+                value={furiganaMode}
+                onChange={(event) => changeFuriganaMode(event.currentTarget.value)}
+              >
+                <option value="hiragana">Hiragana</option>
+                <option value="katakana">Katakana</option>
+                <option value="hidden">Oculto</option>
+              </select>
+            </label>
+            <button className="text-button" type="button" onClick={onReset}>
+              <RotateCcw aria-hidden="true" /> Nova página
+            </button>
+          </div>
         </div>
 
         <div className="page-canvas">
@@ -53,7 +76,7 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
         </p>
       </section>
 
-      <StudyPanel region={selected} />
+      <StudyPanel region={selected} furiganaMode={furiganaMode} />
     </main>
   );
 }
@@ -94,7 +117,13 @@ function RegionShape({ region, index, selected, dimensions, onSelect }: RegionSh
   );
 }
 
-function StudyPanel({ region }: { readonly region: StudyRegion | undefined }) {
+function StudyPanel({
+  region,
+  furiganaMode,
+}: {
+  readonly region: StudyRegion | undefined;
+  readonly furiganaMode: FuriganaMode;
+}) {
   if (!region) {
     return (
       <aside className="study-panel empty-study" aria-label="Painel de estudo">
@@ -111,7 +140,11 @@ function StudyPanel({ region }: { readonly region: StudyRegion | undefined }) {
         <span>{Math.round(region.confidence * 100)}% de confiança</span>
       </div>
       <h2 id="study-title" lang="ja">
-        {region.tokens.length > 0 ? region.tokens.map((token, index) => <RubyToken key={`${token.surface}-${index}`} token={token} />) : region.text}
+        {region.tokens.length > 0
+          ? region.tokens.map((token, index) => (
+            <RubyToken key={`${token.surface}-${index}`} token={token} furiganaMode={furiganaMode} />
+          ))
+          : region.text}
       </h2>
 
       <section aria-labelledby="translation-title">
@@ -148,8 +181,14 @@ function StudyPanel({ region }: { readonly region: StudyRegion | undefined }) {
   );
 }
 
-function RubyToken({ token }: { readonly token: StudyToken }) {
-  const reading = furiganaReading(token.surface, token.reading);
+function RubyToken({
+  token,
+  furiganaMode,
+}: {
+  readonly token: StudyToken;
+  readonly furiganaMode: FuriganaMode;
+}) {
+  const reading = furiganaReading(token.surface, token.reading, furiganaMode);
   if (!reading) {
     return <span>{token.surface}</span>;
   }
