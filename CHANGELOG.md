@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deterministic full-stack browser gate covering the real FastAPI, PostgreSQL, queue/worker, persistence, capability-protected reads and frontend polling path with only OCR inference doubled.
 - Explicit SHA-pinned CodeQL advanced workflow for Actions, JavaScript/TypeScript and Python on pull requests, `main` pushes and weekly scans.
 - Reader-local furigana display preferences for Hiragana, canonical Katakana and hidden ruby, persisted safely in browser storage.
+- Adaptive reader fit and zoom controls for portrait and landscape pages, with local preferences and contained pan/scroll behavior.
 
 ### Changed
 

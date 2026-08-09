@@ -1,10 +1,24 @@
-import { BookOpenText, RotateCcw } from "lucide-react";
-import { useState } from "react";
+import { BookOpenText, Minus, Plus, RotateCcw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import type { StudyPage, StudyRegion, StudyToken } from "../../lib/api";
 import { type FuriganaMode, furiganaReading, isFuriganaMode } from "./furigana";
 import { loadFuriganaPreference, saveFuriganaPreference } from "./furiganaPreference";
 import { toSvgBox } from "./overlay";
+import {
+  READER_ZOOM_MAX,
+  READER_ZOOM_MIN,
+  READER_ZOOM_STEP,
+  type ReaderViewportMetrics,
+  calculateReaderCanvasWidth,
+  clampReaderZoom,
+  isReaderFitMode,
+} from "./readerViewport";
+import {
+  type ReaderViewportPreference,
+  loadReaderViewportPreference,
+  saveReaderViewportPreference,
+} from "./readerViewportPreference";
 import "./reader-preferences.css";
 
 interface ReaderWorkspaceProps {
@@ -16,12 +30,83 @@ interface ReaderWorkspaceProps {
 export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProps) {
   const [selectedId, setSelectedId] = useState(page.regions[0]?.id ?? null);
   const [furiganaMode, setFuriganaMode] = useState<FuriganaMode>(() => loadFuriganaPreference());
+  const [viewportPreference, setViewportPreference] = useState<ReaderViewportPreference>(() =>
+    loadReaderViewportPreference(),
+  );
+  const [viewportMetrics, setViewportMetrics] = useState<ReaderViewportMetrics | null>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const selected = page.regions.find((region) => region.id === selectedId) ?? page.regions[0];
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const measure = () => {
+      const rect = viewport.getBoundingClientRect();
+      const width = Math.max(1, viewport.clientWidth || rect.width || window.innerWidth);
+      const height = Math.max(240, window.innerHeight - Math.max(rect.top, 0) - 24);
+      setViewportMetrics((current) => {
+        if (
+          current
+          && Math.abs(current.width - width) < 1
+          && Math.abs(current.height - height) < 1
+        ) {
+          return current;
+        }
+        return { width, height };
+      });
+    };
+
+    measure();
+    window.addEventListener("resize", measure);
+    const resizeObserver = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(() => measure());
+    resizeObserver?.observe(viewport);
+
+    return () => {
+      window.removeEventListener("resize", measure);
+      resizeObserver?.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const canvas = canvasRef.current;
+    if (!viewport || !canvas || !viewportMetrics) return;
+
+    const canvasWidth = calculateReaderCanvasWidth(
+      page.dimensions,
+      viewportMetrics,
+      viewportPreference.fitMode,
+      viewportPreference.zoom,
+    );
+    viewport.style.maxHeight = `${Math.round(viewportMetrics.height)}px`;
+    canvas.style.width = `${Math.round(canvasWidth)}px`;
+  }, [page.dimensions, viewportMetrics, viewportPreference.fitMode, viewportPreference.zoom]);
 
   const changeFuriganaMode = (value: string) => {
     if (!isFuriganaMode(value)) return;
     setFuriganaMode(value);
     saveFuriganaPreference(value);
+  };
+
+  const changeFitMode = (value: string) => {
+    if (!isReaderFitMode(value)) return;
+    setViewportPreference((current) => {
+      const next = { ...current, fitMode: value };
+      saveReaderViewportPreference(next);
+      return next;
+    });
+  };
+
+  const changeZoom = (delta: number) => {
+    setViewportPreference((current) => {
+      const next = { ...current, zoom: clampReaderZoom(current.zoom + delta) };
+      saveReaderViewportPreference(next);
+      return next;
+    });
   };
 
   return (
@@ -45,31 +130,77 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
                 <option value="hidden">Oculto</option>
               </select>
             </label>
+            <label className="reader-preference">
+              <span>Ajuste da página</span>
+              <select
+                aria-label="Ajuste da página"
+                value={viewportPreference.fitMode}
+                onChange={(event) => changeFitMode(event.currentTarget.value)}
+              >
+                <option value="comfortable">Confortável</option>
+                <option value="page">Página inteira</option>
+                <option value="width">Largura</option>
+              </select>
+            </label>
+            <div className="reader-zoom" role="group" aria-label="Zoom da página">
+              <button
+                className="reader-zoom-button"
+                type="button"
+                aria-label="Diminuir zoom"
+                disabled={viewportPreference.zoom <= READER_ZOOM_MIN}
+                onClick={() => changeZoom(-READER_ZOOM_STEP)}
+              >
+                <Minus aria-hidden="true" />
+              </button>
+              <output aria-label="Nível de zoom">{viewportPreference.zoom}%</output>
+              <button
+                className="reader-zoom-button"
+                type="button"
+                aria-label="Aumentar zoom"
+                disabled={viewportPreference.zoom >= READER_ZOOM_MAX}
+                onClick={() => changeZoom(READER_ZOOM_STEP)}
+              >
+                <Plus aria-hidden="true" />
+              </button>
+            </div>
             <button className="text-button" type="button" onClick={onReset}>
               <RotateCcw aria-hidden="true" /> Nova página
             </button>
           </div>
         </div>
 
-        <div className="page-canvas">
-          <img src={imageUrl} alt="Página original enviada para estudo" />
-          <svg
-            className="region-overlay"
-            viewBox={`0 0 ${page.dimensions.width} ${page.dimensions.height}`}
-            role="group"
-            aria-label="Regiões de texto reconhecidas"
+        <div
+          ref={viewportRef}
+          className="page-viewport"
+          role="region"
+          aria-label="Visualização da página"
+          tabIndex={0}
+        >
+          <div
+            ref={canvasRef}
+            className="page-canvas"
+            data-fit-mode={viewportPreference.fitMode}
+            data-zoom={viewportPreference.zoom}
           >
-            {page.regions.map((region, index) => (
-              <RegionShape
-                key={region.id}
-                region={region}
-                index={index}
-                selected={region.id === selected?.id}
-                dimensions={page.dimensions}
-                onSelect={() => setSelectedId(region.id)}
-              />
-            ))}
-          </svg>
+            <img src={imageUrl} alt="Página original enviada para estudo" />
+            <svg
+              className="region-overlay"
+              viewBox={`0 0 ${page.dimensions.width} ${page.dimensions.height}`}
+              role="group"
+              aria-label="Regiões de texto reconhecidas"
+            >
+              {page.regions.map((region, index) => (
+                <RegionShape
+                  key={region.id}
+                  region={region}
+                  index={index}
+                  selected={region.id === selected?.id}
+                  dimensions={page.dimensions}
+                  onSelect={() => setSelectedId(region.id)}
+                />
+              ))}
+            </svg>
+          </div>
         </div>
         <p className="reader-meta">
           {page.regions.length} regiões · OCR {page.ocr.detector}/{page.ocr.recognizer} · exclusão em 24 horas
