@@ -135,7 +135,7 @@ Copy-Item .env.example .env
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Gemini は任意です。ローカル OCR と言語解析だけで worker を実行する場合は `GOOGLE_API_KEY` を未設定または空のままにし、Gemini の補強を有効にする場合のみ空でないキーを設定してください。
+Gemini は任意です。ローカル OCR と言語解析だけで worker を実行する場合は `GOOGLE_API_KEY` を未設定または空のままにし、Gemini の補強を有効にする場合のみ空でないキーを設定してください。有効にした場合、任意の補強のために送信されるのは OCR テキストとリージョン単位の最小限の語彙候補（`id`、`surface`、`lemma`、`reading`）だけです。元画像、辞書の意味、ローカル JMdict データセットは送信されません。
 
 Docker Compose で起動:
 
