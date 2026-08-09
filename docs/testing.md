@@ -81,11 +81,31 @@ The historical field-only `でも` omission remains a separate unresolved #54 ob
 
 Model weights are deliberately downloaded fresh on GitHub-hosted runners while their redistribution status remains pending review. The project manifest and integrity checks remain the source of truth for the exact files loaded by the smoke.
 
+### OpenCV migration diagnostics
+
+The OCR extra pins `opencv-python-headless==5.0.0.93`. This major-version change was accepted only after `scripts/ocr_opencv_ab.py` ran the complete 12-page corpus under OpenCV 4.14.0.94 and 5.0.0.93 with the same repository SHA, fixture bytes, verified model manifest, NumPy/Torch versions and effective OCR configuration. The probe compares detector candidates spatially rather than by contour enumeration.
+
+The reviewed A/B found bit-identical detector preprocessing, DBNet output, candidate scores and candidate geometry. OpenCV 5 first diverged at the perspective-transformed recognizer crop, consistent with its documented revised warp interpolation: transformed byte values differed by at most `6/255`. All accepted recognizer strings, merged strings, final strings, final geometry and reading order remained equal across 237 detector candidates and 90 final regions. Page 9/page 171 recall, page 201 precision and the page-9 bōten probability-map evidence were unchanged. Single-run runtime and peak-memory observations are recorded as characterization, not benchmark claims.
+
+To reproduce the controlled comparison on one clean checkout, first verify the model cache. Temporarily install the former baseline wheel, capture it, restore the locked candidate, capture it and compare:
+
+```powershell
+$env:MANGASENSEI_MODEL_CACHE='var/models'
+.\.venv\Scripts\mangasensei.exe models verify
+py -3.11 -m uv pip install --python .venv\Scripts\python.exe --reinstall opencv-python-headless==4.14.0.94
+.\.venv\Scripts\python.exe scripts/ocr_opencv_ab.py probe --output var/ocr-opencv-ab/opencv-4 --model-cache var/models
+py -3.11 -m uv sync --frozen --extra ocr
+.\.venv\Scripts\python.exe scripts/ocr_opencv_ab.py probe --output var/ocr-opencv-ab/opencv-5 --model-cache var/models
+.\.venv\Scripts\python.exe scripts/ocr_opencv_ab.py compare --baseline var/ocr-opencv-ab/opencv-4 --candidate var/ocr-opencv-ab/opencv-5 --output var/ocr-opencv-ab/comparison.json
+```
+
+The probe refuses artifact paths outside ignored `var/ocr-opencv-ab/`. Its JSON/NPZ files can contain licensed source-derived detector maps, recognizer crops and OCR text, so they must remain controlled, must not enter normal logs or commits, and must follow the fixture terms recorded beside each probe. Only aggregate text-free comparison output belongs in ordinary logs or PR evidence.
+
 ### Automated policy
 
 The heavy smoke stays separate from ordinary CI cost, but runs automatically when its boundary is relevant:
 
-- pull requests and `main` changes that touch the OCR implementation/model files, either OCR smoke test, the licensed real-manga fixture corpus, `pyproject.toml`, `uv.lock`, or the smoke workflow itself use the reviewed source-page gate, page-201 precision regression and deterministic page-9 resampling regression;
+- pull requests and `main` changes that touch the OCR implementation/model files, OCR diagnostics, OCR smoke tests, the licensed real-manga fixture corpus, `pyproject.toml`, `uv.lock`, or the smoke workflow itself use the reviewed source-page gate, page-201 precision regression and deterministic page-9 resampling regression;
 - once per week from the default branch, with three repeats of the reviewed repeatability-sensitive cases plus the wider licensed corpus guard and complete corpus visual audit;
 - explicit maintainer `workflow_dispatch` defaults to the same deep mode and accepts bounded repeat/full-corpus inputs;
 - every tagged release calls the reusable OCR workflow with three repeats and the full corpus enabled, and publishing cannot proceed unless it succeeds.

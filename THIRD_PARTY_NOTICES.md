@@ -46,6 +46,15 @@ Runtime and development dependencies are pinned in [`uv.lock`](uv.lock) and
 [`package-lock.json`](package-lock.json). Their licenses are not reproduced in this
 notice file; consult each upstream package distribution for its license terms.
 
+### OpenCV Python Headless
+
+The local OCR runtime uses the headless OpenCV Python wheel pinned in `uv.lock`. The `opencv-python` packaging scripts are MIT-licensed, OpenCV itself is Apache-2.0, and the binary wheels include additional third-party components documented by the upstream distribution. The headless package is used because MangaSensei does not require OpenCV GUI functions in its server or worker runtime.
+
+References:
+
+- [OpenCV Python packaging and licenses](https://github.com/opencv/opencv-python)
+- [OpenCV license](https://github.com/opencv/opencv/blob/5.0.0/LICENSE)
+
 ## Give My Regards to Black Jack Test Fixtures
 
 The MangaSensei repository contains a small testing corpus of selected pages from the official PDF of Volume 1 of `ブラックジャックによろしく` by `佐藤秀峰` (`Give My Regards to Black Jack` by `SHUHO SATO`).
