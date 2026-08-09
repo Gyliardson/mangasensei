@@ -1,4 +1,4 @@
-"""Run PP-OCRv6 over every prepared licensed detector-line crop.
+"""Run a selected PaddleOCR recognizer over prepared licensed line crops.
 
 Investigation only. Recognized licensed text is written to short-lived Actions artifacts, not
 ordinary application logs.
@@ -17,13 +17,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-MODEL_NAME = "PP-OCRv6_medium_rec"
+DEFAULT_MODEL_NAME = "PP-OCRv6_medium_rec"
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--model-name", default=DEFAULT_MODEL_NAME)
     return parser.parse_args()
 
 
@@ -99,7 +100,7 @@ def main() -> None:
 
     load_started = time.perf_counter()
     recognizer = TextRecognition(
-        model_name=MODEL_NAME,
+        model_name=args.model_name,
         engine="transformers",
         device="cpu",
     )
@@ -115,7 +116,7 @@ def main() -> None:
         total_seconds += elapsed
         if len(results) != 1:
             raise RuntimeError(
-                f"PP-OCRv6 returned {len(results)} results for one crop: {item['id']}"
+                f"PaddleOCR returned {len(results)} results for one crop: {item['id']}"
             )
         result = _result_payload(results[0])
         observations.append(
@@ -132,16 +133,17 @@ def main() -> None:
         )
         print(
             "OCR_PADDLE_CORPUS_RUN "
-            f"page={item['page']} line={item['line_index']} seconds={elapsed:.3f}"
+            f"model={args.model_name} page={item['page']} "
+            f"line={item['line_index']} seconds={elapsed:.3f}"
         )
 
     payload = {
-        "schema_version": 1,
-        "recognizer": "paddle-v6",
+        "schema_version": 2,
+        "recognizer": "paddle",
         "package_version": _package_version("paddleocr"),
         "transformers_version": _package_version("transformers"),
         "torch_version": _package_version("torch"),
-        "model_name": MODEL_NAME,
+        "model_name": args.model_name,
         "engine": "transformers",
         "load_seconds": load_seconds,
         "inference_seconds": total_seconds,
