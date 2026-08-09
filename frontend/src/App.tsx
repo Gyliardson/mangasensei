@@ -49,7 +49,7 @@ export function App() {
       setPhase("error");
       return;
     }
-    selectFile(dropped[0]);
+    selectFile(dropped[0] ?? null);
   };
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
