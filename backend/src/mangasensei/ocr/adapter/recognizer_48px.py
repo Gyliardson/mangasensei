@@ -17,7 +17,7 @@ class MangaSenseiModel48pxOCR(Model48pxOCR):
         if short_axis_context < 1.0:
             raise ValueError("short_axis_context must be at least 1.0")
         self._short_axis_context = short_axis_context
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)  # type: ignore[no-untyped-call]
 
     async def recognize(
         self,
@@ -90,7 +90,7 @@ def _expand_short_axis(
         )
 
     expanded = _copy_quadrilateral(line, np.rint(expanded_points).astype(np.int64))
-    expanded.clip(image_width, image_height)
+    expanded.clip(image_width, image_height)  # type: ignore[no-untyped-call]
     return expanded
 
 
