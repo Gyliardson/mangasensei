@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reader vocabulary now exposes deterministic local JMdict entries even when Gemini is disabled or omits a vocabulary link; contextual Gemini fields remain optional enrichment.
 - Reprocessing no longer hides a previously completed study result while a replacement is pending or after that replacement fails; only a newer completed result replaces it.
 - Expired worker leases and 24-hour retention now reconcile abandoned Gemini reservations before ownership or page data is discarded; unsent reservations are released and uncertain sent calls are conservatively charged exactly once.
+- Gemini enrichment now receives and validates minimal region-scoped local vocabulary candidates instead of a page-global list of opaque JMdict identifiers.
 
 ## [0.1.0] - 2026-08-07
 

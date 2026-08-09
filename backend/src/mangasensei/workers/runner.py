@@ -19,7 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mangasensei.domain.models import PageDimensions
 from mangasensei.gemini.contracts import GeminiPageAnalysis
-from mangasensei.gemini.service import GeminiAdapter, GeminiAnalysisService
+from mangasensei.gemini.service import (
+    PAGE_STUDY_PROMPT_VERSION,
+    GeminiAdapter,
+    GeminiAnalysisService,
+    build_page_prompt,
+    build_vocabulary_candidates_by_region,
+)
 from mangasensei.infrastructure.database.analysis_models import (
     GeminiAnalysisRecord,
     GeminiBudgetBucketRecord,
@@ -160,22 +166,23 @@ class Worker:
             if self._gemini is None:
                 await self._complete_without_gemini(claim)
                 return True
+            regions = {region.id: region.japanese_text for region in ocr_result.regions}
+            vocabulary_by_region = build_vocabulary_candidates_by_region(linguistic_by_region)
+            prompt = build_page_prompt(
+                prompt_version=PAGE_STUDY_PROMPT_VERSION,
+                regions=regions,
+                vocabulary_by_region=vocabulary_by_region,
+            )
             stage = "reserve_gemini"
-            call_id = await self._reserve_gemini_call(claim, page, ocr_result, linguistic_by_region)
+            call_id = await self._reserve_gemini_call(claim, page, prompt)
             stage = "mark_gemini_sent"
             await self._mark_call_sent(call_id)
-            vocabulary_ids = frozenset(
-                token.dictionary_id
-                for tokens in linguistic_by_region.values()
-                for token in tokens
-                if token.dictionary_id is not None
-            )
             stage = "gemini"
             analysis = await GeminiAnalysisService(
-                self._gemini, prompt_version="page-study-v1"
+                self._gemini, prompt_version=PAGE_STUDY_PROMPT_VERSION
             ).analyze_page(
-                regions={region.id: region.japanese_text for region in ocr_result.regions},
-                vocabulary_ids=vocabulary_ids,
+                regions=regions,
+                vocabulary_by_region=vocabulary_by_region,
             )
             stage = "persist_gemini"
             await self._persist_gemini_and_complete(
@@ -403,24 +410,9 @@ class Worker:
         self,
         claim: ClaimedJob,
         page: PageRecord,
-        result: OcrResult,
-        linguistic: dict[str, tuple[LinguisticToken, ...]],
+        prompt: str,
     ) -> int:
-        request_digest = hashlib.sha256(
-            json.dumps(
-                {
-                    "regions": [(region.id, region.japanese_text) for region in result.regions],
-                    "vocabulary": sorted(
-                        token.dictionary_id
-                        for tokens in linguistic.values()
-                        for token in tokens
-                        if token.dictionary_id is not None
-                    ),
-                },
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ).encode()
-        ).digest()
+        request_digest = hashlib.sha256(prompt.encode()).digest()
         today = datetime.now(UTC).date()
         async with self._sessions.begin() as session:
             await _lock_owned_job(session, claim, "processing_gemini")
@@ -471,7 +463,7 @@ class Worker:
                 page_call_ordinal=ordinal,
                 fencing_token=claim.fencing_token,
                 model=self._gemini_model,
-                prompt_version="page-study-v1",
+                prompt_version=PAGE_STUDY_PROMPT_VERSION,
                 schema_version="v1",
                 request_digest=request_digest,
                 reserved_cost=self._gemini_reservation,
