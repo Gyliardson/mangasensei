@@ -11,6 +11,7 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import re
 import resource
 import tempfile
 import time
@@ -25,6 +26,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model-name", default=DEFAULT_MODEL_NAME)
+    parser.add_argument("--id-regex")
     return parser.parse_args()
 
 
@@ -97,6 +99,14 @@ def main() -> None:
     inputs = corpus.get("inputs")
     if not isinstance(inputs, list):
         raise TypeError("corpus inputs must be a list")
+    id_pattern = re.compile(args.id_regex) if args.id_regex else None
+    selected_inputs = [
+        item
+        for item in inputs
+        if id_pattern is None or id_pattern.search(str(item.get("id", "")))
+    ]
+    if not selected_inputs:
+        raise ValueError("Paddle benchmark input filter selected no crops")
 
     load_started = time.perf_counter()
     recognizer = TextRecognition(
@@ -108,7 +118,7 @@ def main() -> None:
 
     observations: list[dict[str, Any]] = []
     total_seconds = 0.0
-    for item in inputs:
+    for item in selected_inputs:
         image_path = root / str(item["path"])
         started = time.perf_counter()
         results = list(recognizer.predict(input=str(image_path), batch_size=1))
@@ -145,6 +155,7 @@ def main() -> None:
         "torch_version": _package_version("torch"),
         "model_name": args.model_name,
         "engine": "transformers",
+        "input_filter": args.id_regex,
         "load_seconds": load_seconds,
         "inference_seconds": total_seconds,
         "mean_seconds_per_line": total_seconds / len(observations) if observations else 0.0,
