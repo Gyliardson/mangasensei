@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import io
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from PIL import Image
 from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mangasensei.api.app import create_app
 from mangasensei.config import Settings
@@ -15,7 +17,7 @@ from mangasensei.domain.models import BoundingBox, PageDimensions
 from mangasensei.infrastructure.database.job_models import JobRecord
 from mangasensei.infrastructure.database.session import create_database
 from mangasensei.linguistics.service import DictionaryEntry, LinguisticService
-from mangasensei.ocr.contracts import OcrImage, OcrRegionResult, OcrResult
+from mangasensei.ocr.contracts import OcrEngine, OcrImage, OcrRegionResult, OcrResult
 from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.runner import Worker
 
@@ -105,11 +107,13 @@ def settings(database_url: str, root: Path) -> Settings:
     )
 
 
-def worker(sessions: object, root: Path, ocr: object) -> Worker:
+def worker(
+    sessions: async_sessionmaker[AsyncSession], root: Path, ocr: OcrEngine
+) -> Worker:
     return Worker(
-        sessions=sessions,  # type: ignore[arg-type]
+        sessions=sessions,
         storage=LocalFilesystemStorage(root),
-        ocr=ocr,  # type: ignore[arg-type]
+        ocr=ocr,
         linguistics=LinguisticService(TokenizerFixture(), DictionaryFixture()),
         gemini=None,
         worker_id="reprocess-result-worker",
@@ -172,15 +176,18 @@ async def test_reprocess_keeps_last_completed_result_until_replacement_completes
             assert pending_page["regions"][0]["text"] == "猫です"
 
             async with sessions.begin() as session:
+                page_id = (
+                    await session.execute(
+                        select(JobRecord.page_id).where(
+                            JobRecord.public_id == UUID(upload_data["jobId"])
+                        )
+                    )
+                ).scalar_one()
                 latest_reprocess = (
                     await session.execute(
                         select(JobRecord)
                         .where(
-                            JobRecord.page_id == (
-                                select(JobRecord.page_id)
-                                .where(JobRecord.public_id == upload_data["jobId"])
-                                .scalar_subquery()
-                            ),
+                            JobRecord.page_id == page_id,
                             JobRecord.job_kind == "page_reprocess",
                         )
                         .order_by(JobRecord.id.desc())
@@ -251,7 +258,7 @@ async def test_page_without_completed_result_stays_empty_when_attempt_fails(
             async with sessions.begin() as session:
                 await session.execute(
                     update(JobRecord)
-                    .where(JobRecord.public_id == upload_data["jobId"])
+                    .where(JobRecord.public_id == UUID(upload_data["jobId"]))
                     .values(max_attempts=1)
                 )
             assert await worker(sessions, tmp_path, FailingOcrFixture()).run_once()
