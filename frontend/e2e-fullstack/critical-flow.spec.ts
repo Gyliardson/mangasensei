@@ -7,6 +7,12 @@ const png = Buffer.from(
   "base64",
 );
 
+interface UploadEnvelope {
+  readonly data: {
+    readonly studyLanguage: string;
+  };
+}
+
 interface PersistedStudyPageEnvelope {
   readonly data: {
     readonly contentLanguage: string;
@@ -63,8 +69,8 @@ test("completes real page analysis and pt-BR to English language reprocessing", 
   await page.getByRole("button", { name: "Analisar página" }).click();
   const uploadResponse = await uploadResponsePromise;
   expect(uploadResponse.status()).toBe(202);
-  expect(uploadResponse.request().postData()).toContain('name="studyLanguage"');
-  expect(uploadResponse.request().postData()).toContain("pt-BR");
+  const uploaded = (await uploadResponse.json()) as UploadEnvelope;
+  expect(uploaded.data.studyLanguage).toBe("pt-BR");
 
   await expect(page.getByRole("button", { name: "Região 1: 猫です" })).toBeVisible({
     timeout: 20_000,
