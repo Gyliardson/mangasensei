@@ -78,8 +78,8 @@ async def test_licensed_manga_short_vertical_text_recall_is_repeatable() -> None
     os.environ.get("MANGASENSEI_OCR_FULL_CORPUS") != "1",
     reason="full licensed corpus is reserved for the deeper OCR assurance tier",
 )
-async def test_licensed_manga_full_corpus_characterization() -> None:
-    """Characterize non-anchor corpus pages without inventing transcript ground truth."""
+async def test_licensed_manga_full_corpus_stays_within_catastrophic_region_bounds() -> None:
+    """Catch full-corpus detection collapse/explosion without transcript ground truth."""
     engine = _real_engine()
     manifest = _load_manifest()
 
@@ -89,7 +89,9 @@ async def test_licensed_manga_full_corpus_characterization() -> None:
             continue
 
         result = await _analyze_fixture(engine, relative_path)
-        assert result.regions, f"OCR detection collapsed to zero regions for {relative_path}"
+        assert 2 <= len(result.regions) <= 32, (
+            f"catastrophic region-count shift for {relative_path}: {len(result.regions)}"
+        )
         print(f"OCR_CORPUS fixture={relative_path} region_count={len(result.regions)}")
 
 
