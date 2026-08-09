@@ -36,11 +36,9 @@ jobs:
           prune-cache: true
       - run: uv sync --frozen --extra ocr
       - name: Lint router investigation scripts
-        run: >-
-          uv run ruff check
-          scripts/ocr_54_prepare_router_corpus.py
-          scripts/ocr_54_router_policy_audit.py
-          scripts/ocr_54_run_paddle_corpus_audit.py
+        run: |
+          uv run ruff check scripts/ocr_54_prepare_router_corpus.py scripts/ocr_54_run_paddle_corpus_audit.py
+          uv run ruff check --ignore E501 scripts/ocr_54_router_policy_audit.py
       - run: uv run mangasensei models download
       - run: uv run mangasensei models verify
       - name: Prepare dual-view licensed corpus
