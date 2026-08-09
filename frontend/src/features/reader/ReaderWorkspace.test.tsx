@@ -84,6 +84,35 @@ describe("ReaderWorkspace", () => {
     expect(second).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("uses API reading order for overlay numbers, initial selection and keyboard sequence", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReaderWorkspace
+        page={page([
+          region("top-right", "上右", 0),
+          region("top-left", "上左", 1),
+          region("lower-right", "下右", 2),
+        ])}
+        imageUrl="blob:image"
+        onReset={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "上右" })).toBeVisible();
+    const controls = screen.getAllByRole("button", { name: /^Região \d:/ });
+    expect(controls.map((control) => control.getAttribute("aria-label"))).toEqual([
+      "Região 1: 上右",
+      "Região 2: 上左",
+      "Região 3: 下右",
+    ]);
+
+    controls[0].focus();
+    await user.tab();
+    expect(controls[1]).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("heading", { name: /上左/ })).toBeVisible();
+  });
+
   it("shows local dictionary vocabulary when contextual AI is unavailable", () => {
     const localOnlyRegion: StudyRegion = {
       ...region("local", "猫", 0),
