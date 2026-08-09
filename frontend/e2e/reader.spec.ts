@@ -6,6 +6,16 @@ const png = Buffer.from(
   "base64",
 );
 
+async function uploadFixture(page: import("@playwright/test").Page) {
+  await page.getByLabel("Imagem da página").setInputFiles({
+    name: "pagina.png",
+    mimeType: "image/png",
+    buffer: png,
+  });
+  await page.getByRole("button", { name: "Analisar página" }).click();
+  await expect(page.getByRole("button", { name: "Região 1: 猫です" })).toBeVisible();
+}
+
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
@@ -108,19 +118,13 @@ test.beforeEach(async ({ page }) => {
 
 test("uploads a page and opens its study region by keyboard", async ({ page }, testInfo) => {
   await page.goto("/");
-  await page.getByLabel("Imagem da página").setInputFiles({
-    name: "pagina.png",
-    mimeType: "image/png",
-    buffer: png,
-  });
-  await page.getByRole("button", { name: "Analisar página" }).click();
+  await uploadFixture(page);
 
   const region = page.getByRole("button", { name: "Região 1: 猫です" });
-  await expect(region).toBeVisible();
   await region.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByText("É um gato.")).toBeVisible();
-  await expect(page.locator("rt", { hasText: "ネコ" })).toBeVisible();
+  await expect(page.locator("rt", { hasText: "ねこ" })).toBeVisible();
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
@@ -138,14 +142,34 @@ test("uploads a page and opens its study region by keyboard", async ({ page }, t
   });
 });
 
+test("switches and persists furigana display mode", async ({ page }) => {
+  await page.goto("/");
+  await uploadFixture(page);
+
+  const preference = page.getByRole("combobox", { name: "Exibição de furigana" });
+  await expect(preference).toHaveValue("hiragana");
+  await expect(page.locator("#study-title rt")).toHaveText("ねこ");
+
+  await preference.selectOption("katakana");
+  await expect(page.locator("#study-title rt")).toHaveText("ネコ");
+
+  await page.reload();
+  await uploadFixture(page);
+  const restored = page.getByRole("combobox", { name: "Exibição de furigana" });
+  await expect(restored).toHaveValue("katakana");
+  await expect(page.locator("#study-title rt")).toHaveText("ネコ");
+
+  await restored.selectOption("hidden");
+  await expect(page.locator("#study-title rt")).toHaveCount(0);
+  await expect(page.locator("#study-title")).toContainText("猫");
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
 test("shows local vocabulary when contextual AI is unavailable", async ({ page }) => {
   await page.goto("/?mode=local");
-  await page.getByLabel("Imagem da página").setInputFiles({
-    name: "pagina.png",
-    mimeType: "image/png",
-    buffer: png,
-  });
-  await page.getByRole("button", { name: "Analisar página" }).click();
+  await uploadFixture(page);
 
   await expect(page.getByText("Análise contextual indisponível.")).toBeVisible();
   await expect(page.getByText("gato")).toBeVisible();

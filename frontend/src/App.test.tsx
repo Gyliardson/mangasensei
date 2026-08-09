@@ -143,7 +143,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: /região 1: 猫です/i })).toBeVisible();
     expect(screen.getByText("É um gato.")).toBeVisible();
-    expect(screen.getByText("ネコ", { selector: "rt" })).toBeVisible();
+    expect(screen.getByText("ねこ", { selector: "rt" })).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Nova página" }));
     expect(screen.getByRole("heading", { name: "Escolha uma página" })).toBeVisible();
@@ -203,7 +203,7 @@ describe("App", () => {
     );
   });
 
-  it("cancels polling and returns to the initial state", async () => {
+  it("stops observing the queued job without claiming to cancel backend processing", async () => {
     const user = userEvent.setup();
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", {
@@ -254,7 +254,15 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Analisar página" }));
 
     expect(await screen.findByRole("button", { name: "Aguardando worker" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.getByRole("button", { name: "Parar de acompanhar" })).toBeVisible();
+    expect(
+      screen.getByText(
+        "Parar de acompanhar interrompe apenas a espera nesta tela; a análise pode continuar. Originais e resultados são excluídos automaticamente após 24 horas.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Cancelar" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Parar de acompanhar" }));
 
     expect(screen.getByRole("button", { name: "Analisar página" })).toBeDisabled();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:pending-image");

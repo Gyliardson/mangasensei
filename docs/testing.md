@@ -51,11 +51,12 @@ The workflow:
 - installs the committed OCR dependency set with `uv sync --frozen --extra ocr`;
 - obtains model files only through `mangasensei models download`;
 - re-verifies exact artifact size and SHA-256 with `mangasensei models verify` before inference;
-- sets `MANGASENSEI_RUN_OCR_SMOKE=1` and runs only `tests/test_ocr_smoke.py`;
-- uses deterministic synthetic image input, so failures do not require or expose user manga content;
+- sets `MANGASENSEI_RUN_OCR_SMOKE=1` and runs both the synthetic compatibility smoke and selected licensed real-manga regressions;
+- keeps the synthetic input as a cheap model-load/inference compatibility check;
+- uses reviewed fixtures from `tests/fixtures/ocr/real_manga/black_jack/` for bounded behavioral assertions against real manga layout/text;
 - does not upload or redistribute the OCR model weights through workflow artifacts or dependency caches.
 
-> **Note on Real Manga Fixtures:** The repository now contains a small corpus of licensed, real-manga OCR fixtures in `tests/fixtures/ocr/real_manga/` to provide future validation and regressions against real-world complexities. However, the current smoke test pipeline continues to use synthetic input until those fixtures are fully integrated in a separate task. This separates the introduction and provenance of the data from the behavioral changes in the tests.
+The real-manga smoke deliberately avoids brittle full-page transcription or pixel-perfect snapshots. `tests/test_ocr_real_manga.py` currently protects two known-good short vertical dialogue cases selected from the licensed corpus: `うむ` on volume 1 PDF page 73 and `はい‼` on page 90. Each assertion requires the expected short text in its reviewed page area and applies only a broad region-count bound to catch catastrophic output explosion. These cases were first characterized during #54 investigation with the production detector and recognizer thresholds; both already succeeded at the production `minimum_confidence=0.2`, so they are positive regressions rather than evidence that lowering OCR thresholds would fix the user-reported missing `でも` case.
 
 Model weights are deliberately downloaded fresh on GitHub-hosted runners while their redistribution status remains pending review. The project manifest and integrity checks remain the source of truth for the exact files loaded by the smoke.
 
@@ -63,7 +64,7 @@ Model weights are deliberately downloaded fresh on GitHub-hosted runners while t
 
 The heavy smoke stays separate from ordinary CI cost, but runs automatically when its boundary is relevant:
 
-- pull requests and `main` changes that touch the OCR implementation/model files, `tests/test_ocr_smoke.py`, `pyproject.toml`, `uv.lock`, or the smoke workflow itself;
+- pull requests and `main` changes that touch the OCR implementation/model files, either OCR smoke test, the licensed real-manga fixture corpus, `pyproject.toml`, `uv.lock`, or the smoke workflow itself;
 - once per week from the default branch;
 - on explicit maintainer `workflow_dispatch` runs;
 - every tagged release, because the [release workflow](../.github/workflows/release.yml) calls the same reusable OCR smoke and will not publish unless it succeeds.
@@ -82,7 +83,7 @@ $env:MANGASENSEI_MODEL_CACHE='var/models'
 .\.venv\Scripts\mangasensei.exe models download
 .\.venv\Scripts\mangasensei.exe models verify
 $env:MANGASENSEI_RUN_OCR_SMOKE='1'
-.\.venv\Scripts\python.exe -m pytest tests/test_ocr_smoke.py -m ocr_smoke -vv --maxfail=1
+.\.venv\Scripts\python.exe -m pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv --maxfail=1
 ```
 
 POSIX shell:
@@ -93,10 +94,10 @@ export MANGASENSEI_MODEL_CACHE=var/models
 .venv/bin/mangasensei models download
 .venv/bin/mangasensei models verify
 export MANGASENSEI_RUN_OCR_SMOKE=1
-.venv/bin/python -m pytest tests/test_ocr_smoke.py -m ocr_smoke -vv --maxfail=1
+.venv/bin/python -m pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv --maxfail=1
 ```
 
-A model-load, vendored API, PyTorch/OpenCV, or inference incompatibility must fail this smoke rather than being treated as proof that the fast fixture-backed tests cover the real model boundary.
+A model-load, vendored API, PyTorch/OpenCV, inference, or selected real-manga recall regression must fail this smoke rather than being treated as covered by the fast fixture-backed tests.
 
 ## Full-stack critical flow
 

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Licensed real-manga OCR fixture corpus with documented provenance and integrity metadata.
+- Reviewed real-model OCR regressions for known-good short vertical dialogue on licensed manga pages.
 - Verified JMdict bootstrap command and local dictionary manifest.
 - Root GPL-3.0-only license file and third-party notices.
 - Expanded multilingual portfolio documentation with architecture, setup and API references.
@@ -21,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reviewed real-OCR smoke automation with checksum-verified model downloads, scheduled/manual validation and a release-publishing gate.
 - Deterministic full-stack browser gate covering the real FastAPI, PostgreSQL, queue/worker, persistence, capability-protected reads and frontend polling path with only OCR inference doubled.
 - Explicit SHA-pinned CodeQL advanced workflow for Actions, JavaScript/TypeScript and Python on pull requests, `main` pushes and weekly scans.
+- Reader-local furigana display preferences for Hiragana, canonical Katakana and hidden ruby, persisted safely in browser storage.
 
 ### Changed
 
@@ -57,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CodeQL pull-request analysis no longer relies on default-setup configuration matching that could skip Dependabot heads or produce neutral missing-configuration summaries.
 - OCR runs now persist provenance supplied by the engine from the verified model manifest and effective configuration instead of worker-side literals or zero-region fallbacks.
 - API metadata, `/health` and the frontend footer now derive the synchronized package/workspace release version instead of independent hardcoded literals.
+- Reader furigana now suppresses kana-only script-equivalent annotations and presents useful canonical katakana readings in learner-facing hiragana without altering API token data.
+- The upload drop target now accepts the advertised single-file drag-and-drop gesture while rejecting multi-file drops explicitly; server-side image validation remains authoritative.
+- The processing-screen action now states that it only stops client-side observation; queued/running backend analysis and normal 24-hour retention continue unchanged.
+- The upload landing page now masks the section index over the card border and anchors the next-step block to the same workspace axis on desktop and mobile layouts.
 - OCR regions now follow deterministic manga page tiers from top to bottom and right to left within each tier instead of globally prioritizing vertical text by X position.
 
 ## [0.1.0] - 2026-08-07

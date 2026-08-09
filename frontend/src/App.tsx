@@ -34,6 +34,24 @@ export function App() {
     setError(null);
   };
 
+  const selectFile = (candidate: File | null) => {
+    setFile(candidate);
+    setError(null);
+    if (phase === "error") setPhase("idle");
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    const dropped = Array.from(event.dataTransfer.files);
+    if (dropped.length !== 1) {
+      setFile(null);
+      setError("Solte apenas uma imagem por vez.");
+      setPhase("error");
+      return;
+    }
+    selectFile(dropped[0] ?? null);
+  };
+
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!file) {
@@ -99,7 +117,15 @@ export function App() {
             <p>JPEG, PNG ou WebP. Até 12 MiB e 25 megapixels.</p>
           </div>
 
-          <label className="file-drop" htmlFor="page-image">
+          <label
+            className="file-drop"
+            htmlFor="page-image"
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+            }}
+            onDrop={handleDrop}
+          >
             <FileImage aria-hidden="true" />
             <span className="file-action">Selecionar imagem</span>
             <span className="file-detail">{file?.name ?? "ou arraste o arquivo para cá"}</span>
@@ -112,7 +138,7 @@ export function App() {
             accept={acceptedTypes}
             aria-label="Imagem da página"
             aria-describedby="upload-retention"
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
           />
 
           <button className="primary-button" type="submit" disabled={!file || phase === "uploading" || phase === "processing"}>
@@ -121,8 +147,8 @@ export function App() {
           </button>
 
           {phase === "uploading" || phase === "processing" ? (
-            <button className="cancel-button" type="button" onClick={reset}>
-              <X aria-hidden="true" /> Cancelar
+            <button className="cancel-button" type="button" onClick={reset} aria-describedby="upload-retention">
+              <X aria-hidden="true" /> Parar de acompanhar
             </button>
           ) : null}
 
@@ -130,7 +156,7 @@ export function App() {
 
           <p id="upload-retention" className="retention">
             <LockKeyhole aria-hidden="true" />
-            Originais e resultados são excluídos automaticamente após 24 horas.
+            Parar de acompanhar interrompe apenas a espera nesta tela; a análise pode continuar. Originais e resultados são excluídos automaticamente após 24 horas.
           </p>
         </form>
 

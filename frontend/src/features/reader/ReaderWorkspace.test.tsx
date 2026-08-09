@@ -1,9 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StudyPage, StudyRegion } from "../../lib/api";
 import { ReaderWorkspace } from "./ReaderWorkspace";
+import { FURIGANA_PREFERENCE_KEY } from "./furiganaPreference";
 
 function region(id: string, text: string, order: number): StudyRegion {
   return {
@@ -48,10 +49,14 @@ function page(regions: readonly StudyRegion[]): StudyPage {
 }
 
 describe("ReaderWorkspace", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
   it("shows an explicit empty state and resets to a new page", async () => {
     const onReset = vi.fn();
     const user = userEvent.setup();
-    render(<ReaderWorkspace page={page([])} imageUrl="blob:image" onReset={onReset} />);
+    render(<ReaderWorkspace page={page([])} imageUrl="fixture-image" onReset={onReset} />);
 
     expect(screen.getByText("Nenhuma região de texto foi reconhecida nesta página.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Nova página" }));
@@ -63,7 +68,7 @@ describe("ReaderWorkspace", () => {
     render(
       <ReaderWorkspace
         page={page([region("first", "猫", 0), region("second", "犬", 1)])}
-        imageUrl="blob:image"
+        imageUrl="fixture-image"
         onReset={vi.fn()}
       />,
     );
@@ -74,7 +79,7 @@ describe("ReaderWorkspace", () => {
     await user.keyboard("{Enter}");
 
     expect(screen.getByRole("heading", { name: /犬/ })).toBeVisible();
-    expect(screen.getByText("ヨミ", { selector: "rt" })).toBeVisible();
+    expect(screen.getByText("よみ", { selector: "rt" })).toBeVisible();
     expect(screen.getByText("Análise contextual indisponível.")).toBeVisible();
     expect(screen.getByText("Nenhuma associação confiável ao dicionário.")).toBeVisible();
     expect(screen.getByText("Nenhum ponto gramatical adicional.")).toBeVisible();
@@ -93,7 +98,7 @@ describe("ReaderWorkspace", () => {
           region("top-left", "上左", 1),
           region("lower-right", "下右", 2),
         ])}
-        imageUrl="blob:image"
+        imageUrl="fixture-image"
         onReset={vi.fn()}
       />,
     );
@@ -113,6 +118,126 @@ describe("ReaderWorkspace", () => {
     expect(secondControl).toHaveFocus();
     await user.keyboard("{Enter}");
     expect(screen.getByRole("heading", { name: /上左/ })).toBeVisible();
+  });
+
+  it("suppresses ruby when a kana-only surface differs only by script", () => {
+    const kanaRegion: StudyRegion = {
+      ...region("kana", "です", 0),
+      tokens: [
+        {
+          surface: "です",
+          lemma: "です",
+          reading: "デス",
+          partOfSpeech: "助動詞",
+          dictionaryId: null,
+        },
+      ],
+    };
+
+    render(
+      <ReaderWorkspace
+        page={page([kanaRegion])}
+        imageUrl="fixture-image"
+        onReset={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "です" })).toBeVisible();
+    expect(document.querySelector("rt")).not.toBeInTheDocument();
+  });
+
+  it("switches furigana script, hides ruby and persists the presentation preference", async () => {
+    const user = userEvent.setup();
+    const preferenceRegion: StudyRegion = {
+      ...region("preference", "猫です食べる", 0),
+      tokens: [
+        {
+          surface: "猫",
+          lemma: "猫",
+          reading: "ネコ",
+          partOfSpeech: "名詞",
+          dictionaryId: null,
+        },
+        {
+          surface: "です",
+          lemma: "です",
+          reading: "デス",
+          partOfSpeech: "助動詞",
+          dictionaryId: null,
+        },
+        {
+          surface: "食べる",
+          lemma: "食べる",
+          reading: "タベル",
+          partOfSpeech: "動詞",
+          dictionaryId: null,
+        },
+      ],
+    };
+
+    const first = render(
+      <ReaderWorkspace
+        page={page([preferenceRegion])}
+        imageUrl="fixture-image"
+        onReset={vi.fn()}
+      />,
+    );
+    const select = screen.getByRole("combobox", { name: "Exibição de furigana" });
+
+    expect(select).toHaveValue("hiragana");
+    expect(screen.getByText("ねこ", { selector: "rt" })).toBeVisible();
+    expect(screen.getByText("たべる", { selector: "rt" })).toBeVisible();
+    expect(screen.queryByText("デス", { selector: "rt" })).not.toBeInTheDocument();
+
+    await user.selectOptions(select, "katakana");
+    expect(screen.getByText("ネコ", { selector: "rt" })).toBeVisible();
+    expect(screen.getByText("タベル", { selector: "rt" })).toBeVisible();
+    expect(screen.queryByText("デス", { selector: "rt" })).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(FURIGANA_PREFERENCE_KEY)).toBe("katakana");
+
+    first.unmount();
+    render(
+      <ReaderWorkspace
+        page={page([preferenceRegion])}
+        imageUrl="fixture-image"
+        onReset={vi.fn()}
+      />,
+    );
+    const restored = screen.getByRole("combobox", { name: "Exibição de furigana" });
+    expect(restored).toHaveValue("katakana");
+    expect(screen.getByText("ネコ", { selector: "rt" })).toBeVisible();
+
+    await user.selectOptions(restored, "hidden");
+    expect(document.querySelector("rt")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "猫です食べる" })).toBeVisible();
+    expect(window.localStorage.getItem(FURIGANA_PREFERENCE_KEY)).toBe("hidden");
+  });
+
+  it("falls back to hiragana when the stored preference is stale", () => {
+    window.localStorage.setItem(FURIGANA_PREFERENCE_KEY, "natural");
+    const localOnlyRegion: StudyRegion = {
+      ...region("stale", "猫", 0),
+      tokens: [
+        {
+          surface: "猫",
+          lemma: "猫",
+          reading: "ネコ",
+          partOfSpeech: "名詞",
+          dictionaryId: null,
+        },
+      ],
+    };
+
+    render(
+      <ReaderWorkspace
+        page={page([localOnlyRegion])}
+        imageUrl="fixture-image"
+        onReset={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Exibição de furigana" })).toHaveValue("hiragana");
+    expect(screen.getByText("ねこ", { selector: "rt" })).toBeVisible();
   });
 
   it("shows local dictionary vocabulary when contextual AI is unavailable", () => {
@@ -143,11 +268,12 @@ describe("ReaderWorkspace", () => {
     render(
       <ReaderWorkspace
         page={page([localOnlyRegion])}
-        imageUrl="blob:image"
+        imageUrl="fixture-image"
         onReset={vi.fn()}
       />,
     );
 
+    expect(screen.getByText("ねこ", { selector: "rt" })).toBeVisible();
     expect(screen.getByText("Análise contextual indisponível.")).toBeVisible();
     expect(screen.getByText("cat")).toBeVisible();
     expect(screen.getByText("JMdict · JLPT N5 não oficial")).toBeVisible();
