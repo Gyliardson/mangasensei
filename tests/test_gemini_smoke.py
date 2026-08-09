@@ -5,7 +5,9 @@ import os
 from typing import Any, ClassVar
 
 import pytest
-from pydantic import BaseModel
+from google import genai
+from google.genai import types
+from pydantic import BaseModel, ValidationError
 
 from mangasensei.config import Settings
 from mangasensei.domain.languages import StudyLanguage
@@ -46,17 +48,9 @@ class _ProductionSchemaProxy:
 @pytest.mark.gemini_smoke
 @pytest.mark.asyncio
 async def test_real_gemini_interactions_production_shaped_structured_output() -> None:
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        pytest.skip("GOOGLE_API_KEY is not configured; real Gemini smoke was not executed")
-
+    api_key = _api_key()
     settings = Settings(_env_file=None)
-    prompt = build_page_prompt(
-        prompt_version=PAGE_STUDY_PROMPT_VERSION,
-        regions={"synthetic-region-001": "テストです"},
-        vocabulary_by_region={"synthetic-region-001": ()},
-        study_language=StudyLanguage.ENGLISH,
-    )
+    prompt = _production_prompt()
     production_adapter = GoogleGenAiAdapter(
         model=settings.gemini_model,
         api_key=api_key,
@@ -91,6 +85,93 @@ async def test_real_gemini_interactions_production_shaped_structured_output() ->
         "production-shaped Gemini request was rejected; "
         f"safe differential results: {', '.join(diagnostics)}",
         pytrace=False,
+    )
+
+
+@pytest.mark.gemini_smoke
+@pytest.mark.asyncio
+async def test_real_gemini_generate_content_structured_output_control() -> None:
+    """Compare the still-supported generateContent schema path without gating production."""
+    api_key = _api_key()
+    settings = Settings(_env_file=None)
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(
+            retry_options=types.HttpRetryOptions(attempts=0),
+        ),
+    )
+    try:
+        response_schema_result = await _generate_content_diagnostic(
+            client=client,
+            model=settings.gemini_model,
+            prompt=_production_prompt(),
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=GeminiPageAnalysis,
+                max_output_tokens=16_384,
+            ),
+        )
+        print(f"GEMINI_GENERATE_CONTENT response_schema={response_schema_result}")
+
+        if response_schema_result != "pass":
+            json_schema_result = await _generate_content_diagnostic(
+                client=client,
+                model=settings.gemini_model,
+                prompt=_production_prompt(),
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_json_schema=GeminiPageAnalysis.model_json_schema(),
+                    max_output_tokens=16_384,
+                ),
+            )
+            print(f"GEMINI_GENERATE_CONTENT response_json_schema={json_schema_result}")
+    finally:
+        await client.aio.aclose()
+
+
+async def _generate_content_diagnostic(
+    *,
+    client: Any,
+    model: str,
+    prompt: str,
+    config: types.GenerateContentConfig,
+) -> str:
+    try:
+        response = await client.aio.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=config,
+        )
+    except Exception as exc:
+        status = getattr(exc, "status_code", getattr(exc, "code", None))
+        safe_status = status if isinstance(status, int) else "unknown"
+        return f"error status={safe_status} type={type(exc).__name__}"
+
+    output_text = getattr(response, "text", None)
+    if not isinstance(output_text, str) or not output_text:
+        return "provider_accepted_no_text"
+    try:
+        result = GeminiPageAnalysis.model_validate_json(output_text)
+    except ValidationError:
+        return "provider_accepted_response_validation_failed"
+    if len(result.regions) != 1 or result.regions[0].region_id != "synthetic-region-001":
+        return "provider_accepted_semantic_validation_failed"
+    return "pass"
+
+
+def _api_key() -> str:
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        pytest.skip("GOOGLE_API_KEY is not configured; real Gemini smoke was not executed")
+    return api_key
+
+
+def _production_prompt() -> str:
+    return build_page_prompt(
+        prompt_version=PAGE_STUDY_PROMPT_VERSION,
+        regions={"synthetic-region-001": "テストです"},
+        vocabulary_by_region={"synthetic-region-001": ()},
+        study_language=StudyLanguage.ENGLISH,
     )
 
 
