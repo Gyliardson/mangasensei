@@ -143,7 +143,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: /região 1: 猫です/i })).toBeVisible();
     expect(screen.getByText("É um gato.")).toBeVisible();
-    expect(screen.getByText("ネコ", { selector: "rt" })).toBeVisible();
+    expect(screen.getByText("ねこ", { selector: "rt" })).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Nova página" }));
     expect(screen.getByRole("heading", { name: "Escolha uma página" })).toBeVisible();
