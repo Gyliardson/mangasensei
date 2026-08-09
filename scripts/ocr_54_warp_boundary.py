@@ -7,7 +7,7 @@ import logging
 import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Iterator
 
 import cv2
 import numpy as np
@@ -33,8 +33,6 @@ PAGE9_SCALE = 0.9
 TEXT_HEIGHT = 48
 NORMALIZED_PADS = (0, 1, 2, 3, 4, 5, 6)
 OUT = Path(os.environ.get("MANGASENSEI_OCR_WARP_ARTIFACT_DIR", "var/ocr-54-warp-boundary"))
-
-CropFn = Callable[[Quadrilateral, np.ndarray, str, int], np.ndarray]
 
 
 def _center_in_zone(line: Any, zone: tuple[int, int, int, int]) -> bool:
@@ -118,13 +116,6 @@ def _factor_for_normalized_pad(pad: int) -> float:
     return TEXT_HEIGHT / (TEXT_HEIGHT - 2 * pad)
 
 
-async def _load_recognizer(model_cache: Path, context: float) -> MangaSenseiModel48pxOCR:
-    recognizer = MangaSenseiModel48pxOCR(short_axis_context=context)
-    MangaSenseiModel48pxOCR._MODEL_DIR = str(model_cache)
-    await recognizer.load("cpu")
-    return recognizer
-
-
 async def _detect_targets(
     engine: MangaImageTranslatorEngine,
     source: Path,
@@ -165,7 +156,7 @@ async def _sweep_page(
     pixels: np.ndarray,
     targets: list[Quadrilateral],
     config_type: type[Any],
-    model_cache: Path,
+    recognizer: MangaSenseiModel48pxOCR,
 ) -> dict[str, Any]:
     if not targets:
         raise RuntimeError(f"{label}: no detector targets selected")
@@ -176,7 +167,7 @@ async def _sweep_page(
     with _patched_crop():
         for pad in NORMALIZED_PADS:
             factor = _factor_for_normalized_pad(pad)
-            recognizer = await _load_recognizer(model_cache, factor)
+            recognizer._short_axis_context = factor
             zero_lines = await recognizer.recognize(
                 pixels, copy.deepcopy(targets), zero, _RECOGNIZER_FLAG
             )
@@ -231,6 +222,10 @@ async def main() -> None:
             f"got {len(page171_targets)}: {[list(map(int, line.xyxy)) for line in page171_targets]}"
         )
 
+    recognizer = MangaSenseiModel48pxOCR(short_axis_context=1.0)
+    MangaSenseiModel48pxOCR._MODEL_DIR = str(model_cache)
+    await recognizer.load("cpu")
+
     payload = {
         "normalization_height": TEXT_HEIGHT,
         "page9_scale": PAGE9_SCALE,
@@ -240,14 +235,14 @@ async def main() -> None:
                 pixels=page9_pixels,
                 targets=page9_targets,
                 config_type=config_type,
-                model_cache=model_cache,
+                recognizer=recognizer,
             ),
             "page171": await _sweep_page(
                 label="page171",
                 pixels=page171_pixels,
                 targets=page171_targets,
                 config_type=config_type,
-                model_cache=model_cache,
+                recognizer=recognizer,
             ),
         },
     }
