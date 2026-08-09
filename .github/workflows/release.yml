@@ -15,6 +15,9 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/ocr-smoke.yml
+    with:
+      repeat_runs: 3
+      full_corpus: true
 
   release:
     name: Validate and publish release
