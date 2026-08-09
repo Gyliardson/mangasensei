@@ -59,7 +59,9 @@ def token(
     )
 
 
-def region_analysis(region_id: str, *, vocabulary_ids: tuple[str, ...] = ()) -> GeminiRegionAnalysis:
+def region_analysis(
+    region_id: str, *, vocabulary_ids: tuple[str, ...] = ()
+) -> GeminiRegionAnalysis:
     return GeminiRegionAnalysis(
         region_id=region_id,
         translation=f"translation:{region_id}",
