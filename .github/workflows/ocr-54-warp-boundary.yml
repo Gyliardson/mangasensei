@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      EXPECTED_SHA: d4e28a9876503dddc8ef31932623bea283eed542
+      EXPECTED_SHA: 59f12956582a5a3af482339a806585b8650cbd8e
       MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
       MANGASENSEI_RUN_OCR_SMOKE: "1"
       MANGASENSEI_OCR_REPEAT_RUNS: "3"
@@ -25,7 +25,7 @@ jobs:
       - name: Check out exact PR head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: d4e28a9876503dddc8ef31932623bea283eed542
+          ref: 59f12956582a5a3af482339a806585b8650cbd8e
       - name: Assert exact implementation SHA
         run: test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
