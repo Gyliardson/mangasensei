@@ -6,6 +6,8 @@ const png = Buffer.from(
   "base64",
 );
 
+type StudyLanguage = "pt-BR" | "en";
+
 async function uploadFixture(page: import("@playwright/test").Page) {
   await page.getByLabel("Imagem da página").setInputFiles({
     name: "pagina.png",
@@ -17,9 +19,14 @@ async function uploadFixture(page: import("@playwright/test").Page) {
 }
 
 test.beforeEach(async ({ page }) => {
+  let effectiveStudyLanguage: StudyLanguage = "pt-BR";
+
   await page.route("**/api/v1/**", async (route) => {
-    const url = new URL(route.request().url());
-    if (route.request().method() === "POST" && url.pathname === "/api/v1/pages") {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === "POST" && url.pathname === "/api/v1/pages") {
+      const body = request.postData() ?? "";
+      effectiveStudyLanguage = body.includes("\r\n\r\nen\r\n") ? "en" : "pt-BR";
       await route.fulfill({
         status: 202,
         contentType: "application/json",
@@ -33,11 +40,31 @@ test.beforeEach(async ({ page }) => {
             height: 120,
             mediaType: "image/png",
             expiresAt: "2026-08-09T00:00:00Z",
+            studyLanguage: effectiveStudyLanguage,
             capabilities: {
               readPage: "read-page-token",
               readImage: "read-image-token",
               reprocessPage: "reprocess-token",
             },
+          },
+          error: null,
+        }),
+      });
+      return;
+    }
+    if (request.method() === "POST" && url.pathname.endsWith("/reprocess")) {
+      const payload = request.postDataJSON() as { studyLanguage: StudyLanguage };
+      effectiveStudyLanguage = payload.studyLanguage;
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          data: {
+            jobId: "job-002",
+            status: "pending",
+            studyLanguage: effectiveStudyLanguage,
+            created: true,
           },
           error: null,
         }),
@@ -53,13 +80,14 @@ test.beforeEach(async ({ page }) => {
         contentType: "application/json",
         body: JSON.stringify({
           success: true,
-          data: { status: "completed", error: null },
+          data: { status: "completed", resultAvailable: true, error: null },
           error: null,
         }),
       });
       return;
     }
     const localOnly = new URL(page.url()).searchParams.get("mode") === "local";
+    const english = effectiveStudyLanguage === "en";
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -67,6 +95,10 @@ test.beforeEach(async ({ page }) => {
         data: {
           pageId: "page-001",
           status: "completed",
+          resultAvailable: true,
+          contentLanguage: "ja",
+          studyLanguage: effectiveStudyLanguage,
+          dictionaryLanguage: "en",
           expiresAt: "2026-08-09T00:00:00Z",
           imageUrl: "/api/v1/pages/page-001/image",
           dimensions: { width: 80, height: 120 },
@@ -93,16 +125,20 @@ test.beforeEach(async ({ page }) => {
                   dictionaryId: "jmdict-1467640",
                 },
               ],
-              translation: localOnly ? null : "É um gato.",
-              explanation: localOnly ? null : "Frase nominal polida.",
-              grammar: localOnly ? [] : ["です"],
+              translation: localOnly ? null : english ? "It is a cat." : "É um gato.",
+              explanation: localOnly
+                ? null
+                : english
+                  ? "A polite nominal sentence."
+                  : "Frase nominal polida.",
+              grammar: localOnly ? [] : [english ? "polite copula" : "cópula polida"],
               vocabulary: [
                 {
                   id: "jmdict-1467640",
                   surface: "猫",
                   lemma: "猫",
                   reading: "ネコ",
-                  meanings: ["gato"],
+                  meanings: ["cat"],
                   source: "JMdict",
                   jlpt: { level: "N5", official: false },
                 },
@@ -125,6 +161,7 @@ test("uploads a page and opens its study region by keyboard", async ({ page }, t
   await page.keyboard.press("Enter");
   await expect(page.getByText("É um gato.")).toBeVisible();
   await expect(page.locator("rt", { hasText: "ねこ" })).toBeVisible();
+  await expect(page.getByText("cat")).toHaveAttribute("lang", "en");
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
@@ -167,12 +204,36 @@ test("switches and persists furigana display mode", async ({ page }) => {
   expect(accessibility.violations).toEqual([]);
 });
 
+test("switches study language while UI locale and local dictionary language stay independent", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("lang", "pt-BR");
+  await expect(page.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("pt-BR");
+  await uploadFixture(page);
+
+  const studyControls = page.getByRole("group", { name: "Preferências de estudo" });
+  const language = studyControls.getByRole("combobox", { name: "Idioma de estudo" });
+  await language.selectOption("en");
+
+  await expect(page.getByText("It is a cat.")).toHaveAttribute("lang", "en");
+  await expect(page.getByText("A polite nominal sentence.")).toHaveAttribute("lang", "en");
+  await expect(page.getByText("cat")).toHaveAttribute("lang", "en");
+  await expect(page.getByText("significados locais em inglês")).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("lang", "pt-BR");
+  await expect(page.getByRole("group", { name: "Apresentação da página" }).getByRole("combobox", { name: "Idioma de estudo" })).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("en");
+
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
 test("shows local vocabulary when contextual AI is unavailable", async ({ page }) => {
   await page.goto("/?mode=local");
   await uploadFixture(page);
 
   await expect(page.getByText("Análise contextual indisponível.")).toBeVisible();
-  await expect(page.getByText("gato")).toBeVisible();
+  await expect(page.getByText("cat")).toHaveAttribute("lang", "en");
   await expect(page.getByText("JMdict · JLPT N5 não oficial")).toBeVisible();
   await expect(page.getByText("Nenhum ponto gramatical adicional.")).toBeVisible();
 
