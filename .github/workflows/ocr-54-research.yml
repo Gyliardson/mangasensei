@@ -1,0 +1,65 @@
+name: OCR 54 Adaptive Fallback Research
+
+on:
+  push:
+    branches: [investigate/54-warp-boundary]
+    paths:
+      - ".github/workflows/ocr-54-research.yml"
+      - "scripts/ocr_54_research_matrix.py"
+      - "scripts/ocr_54_mocr_probe.py"
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    name: Multi-crop 48px and Manga OCR fallback matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      PRODUCT_SHA: d4e28a9876503dddc8ef31932623bea283eed542
+      MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/product/var/models
+      MANGASENSEI_OCR_RESEARCH_DIR: ${{ github.workspace }}/var/ocr-54-research
+      HF_HOME: ${{ github.workspace }}/var/hf-home
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - name: Check out diagnostic harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact PR 96 implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: d4e28a9876503dddc8ef31932623bea283eed542
+          path: product
+      - name: Assert exact product SHA
+        run: test "$(git -C product rev-parse HEAD)" = "${PRODUCT_SHA}"
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - name: Install exact product OCR environment
+        working-directory: product
+        run: uv sync --frozen --extra ocr
+      - name: Download and verify reviewed MangaSensei models
+        working-directory: product
+        run: |
+          uv run mangasensei models download
+          uv run mangasensei models verify
+      - name: Run 48px multi-crop stability matrix
+        working-directory: product
+        run: uv run python ../scripts/ocr_54_research_matrix.py
+      - name: Install isolated Manga OCR probe
+        run: |
+          uv venv .mocr-venv --python 3.11
+          uv pip install --python .mocr-venv/bin/python "manga-ocr==0.1.16"
+          .mocr-venv/bin/python -c "import importlib.metadata as m; assert m.version('manga-ocr') == '0.1.16'"
+      - name: Run detector-gated Manga OCR fallback probe
+        run: .mocr-venv/bin/python scripts/ocr_54_mocr_probe.py var/ocr-54-research/research-matrix.json
+      - name: Upload research matrix and detector-gated crops
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-adaptive-fallback-research
+          path: var/ocr-54-research
+          if-no-files-found: error
+          retention-days: 7
