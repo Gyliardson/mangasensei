@@ -1,3 +1,5 @@
+import type { StudyLanguage } from "./studyLanguage";
+
 export type JobStatus =
   | "pending"
   | "claimed"
@@ -23,7 +25,15 @@ export interface UploadData {
   readonly height: number;
   readonly mediaType: string;
   readonly expiresAt: string;
+  readonly studyLanguage: StudyLanguage;
   readonly capabilities: CapabilityTokens;
+}
+
+export interface ReprocessData {
+  readonly jobId: string;
+  readonly status: JobStatus;
+  readonly studyLanguage: StudyLanguage;
+  readonly created: boolean;
 }
 
 export interface StudyToken {
@@ -71,6 +81,9 @@ export interface StudyPage {
   readonly pageId: string;
   readonly status: JobStatus;
   readonly resultAvailable: boolean;
+  readonly contentLanguage: "ja";
+  readonly studyLanguage: StudyLanguage;
+  readonly dictionaryLanguage: "en";
   readonly expiresAt: string;
   readonly imageUrl: string;
   readonly dimensions: { readonly width: number; readonly height: number };
@@ -101,17 +114,40 @@ export class ApiError extends Error {
   }
 }
 
-export async function uploadPage(file: File, signal: AbortSignal): Promise<UploadData> {
+export async function uploadPage(
+  file: File,
+  studyLanguage: StudyLanguage,
+  signal: AbortSignal,
+): Promise<UploadData> {
   validateClientFile(file);
   const form = new FormData();
   form.set("image", file);
+  form.set("studyLanguage", studyLanguage);
   const response = await fetch("/api/v1/pages", {
     method: "POST",
-    headers: { "Idempotency-Key": createIdempotencyKey() },
+    headers: { "Idempotency-Key": createIdempotencyKey("upload") },
     body: form,
     signal,
   });
   return parseEnvelope<UploadData>(response);
+}
+
+export async function reprocessStudyLanguage(
+  upload: UploadData,
+  studyLanguage: StudyLanguage,
+  signal: AbortSignal,
+): Promise<ReprocessData> {
+  const response = await fetch(`/api/v1/pages/${encodeURIComponent(upload.pageId)}/reprocess`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": createIdempotencyKey("reprocess"),
+      "X-Page-Token": upload.capabilities.reprocessPage,
+    },
+    body: JSON.stringify({ studyLanguage }),
+    signal,
+  });
+  return parseEnvelope<ReprocessData>(response);
 }
 
 export async function fetchProtectedImage(
@@ -186,12 +222,12 @@ function validateClientFile(file: File): void {
   }
 }
 
-function createIdempotencyKey(): string {
+function createIdempotencyKey(namespace: "upload" | "reprocess"): string {
   if (typeof crypto.randomUUID === "function") {
-    return `upload-${crypto.randomUUID()}`;
+    return `${namespace}-${crypto.randomUUID()}`;
   }
   const random = crypto.getRandomValues(new Uint8Array(16));
-  return `upload-${Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  return `${namespace}-${Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
