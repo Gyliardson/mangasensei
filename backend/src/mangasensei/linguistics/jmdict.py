@@ -10,7 +10,7 @@ from typing import Any
 
 from mangasensei.linguistics.service import DictionaryEntry
 
-NORMALIZED_CONVERTER_VERSION = "mangasensei-jmdict-v2"
+NORMALIZED_CONVERTER_VERSION = "mangasensei-jmdict-v3"
 
 
 class DictionaryDataError(ValueError):
@@ -71,9 +71,7 @@ def _normalize_entry(raw: Any, version: str) -> tuple[tuple[tuple[str, str], Dic
         )
         if not meanings:
             raise DictionaryDataError("JMdict form has no meanings")
-        reading = _hiragana(raw_reading)
-        lemma = _hiragana(raw_lemma) if raw_lemma == raw_reading else raw_lemma
-        key = (lemma, reading)
+        key = _normalized_form_key(raw_lemma, raw_reading)
         if key in seen_keys:
             raise DictionaryDataError("JMdict entry contains a duplicate form")
         seen_keys.add(key)
@@ -90,6 +88,13 @@ def _normalize_entry(raw: Any, version: str) -> tuple[tuple[tuple[str, str], Dic
             )
         )
     return tuple(normalized)
+
+
+def _normalized_form_key(lemma: str, reading: str) -> tuple[str, str]:
+    """Return the canonical runtime key used by both converter and dictionary loader."""
+    normalized_reading = _hiragana(reading)
+    normalized_lemma = _hiragana(lemma) if lemma == reading else lemma
+    return normalized_lemma, normalized_reading
 
 
 def _hiragana(value: str) -> str:

@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI installs Python dependencies from the committed lockfile with `uv sync --frozen`.
 - Documentation uses navigable repository links for contributor, visual-artifact and third-party references.
 - Docker/Compose image version metadata is supplied from release tooling instead of a hardcoded application version.
-- Normalized JMdict data now uses the `mangasensei-jmdict-v2` form contract and reproducible manifest metadata derived from the checksum-pinned source artifact.
+- Normalized JMdict data now uses the `mangasensei-jmdict-v3` canonical form contract and reproducible manifest metadata derived from the checksum-pinned source artifact.
 - Browser assurance now labels the fast API-mocked Playwright suite separately from the required full-stack critical-flow E2E.
 - Page and status responses now expose `resultAvailable` separately from the latest analysis-attempt status.
 
@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Local-only worker processing no longer fails database offset constraints when Sudachi normalization emits a zero-width morpheme.
 - Docker runtime roles now receive only their required database, capability and Gemini secrets; DB-only roles no longer require capability peppers.
 - Local JMdict lookup now respects kana-to-kanji and sense-to-form restrictions instead of reconstructing invalid Cartesian-product associations.
+- JMdict bootstrap now canonicalizes script-equivalent runtime form keys and preserves their combined meanings, so checksum-valid generated data cannot block the worker on duplicate normalized forms.
 - Reader vocabulary now exposes deterministic local JMdict entries even when Gemini is disabled or omits a vocabulary link; contextual Gemini fields remain optional enrichment.
 - Reprocessing no longer hides a previously completed study result while a replacement is pending or after that replacement fails; only a newer completed result replaces it.
 - Expired worker leases and 24-hour retention now reconcile abandoned Gemini reservations before ownership or page data is discarded; unsent reservations are released and uncertain sent calls are conservatively charged exactly once.
