@@ -1,0 +1,50 @@
+name: OCR 54 PR96 Final Exact Deep Audit
+
+on:
+  push:
+    branches: [investigate/54-ocr-ensemble-benchmark]
+    paths:
+      - ".github/workflows/ocr-54-pr96-final-deep.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deep:
+    name: Exact PR96 licensed corpus, precision and visual audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      EXPECTED_SHA: e1da4133b3c6010d6c3716fd251ffbdf3097f3a0
+      MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
+      MANGASENSEI_RUN_OCR_SMOKE: "1"
+      MANGASENSEI_OCR_FULL_CORPUS: "1"
+      MANGASENSEI_OCR_REPEAT_RUNS: "3"
+      MANGASENSEI_OCR_ARTIFACT_DIR: ${{ github.workspace }}/var/ocr-pr96-final-deep
+    steps:
+      - name: Check out exact PR96 head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: e1da4133b3c6010d6c3716fd251ffbdf3097f3a0
+      - name: Assert exact source SHA
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - run: uv sync --frozen --extra ocr
+      - run: uv run mangasensei models download
+      - run: uv run mangasensei models verify
+      - name: Run exact-head deep licensed OCR regressions and precision guard
+        run: >-
+          uv run pytest -q tests/test_ocr_real_manga.py tests/test_ocr_real_manga_precision.py
+          -m ocr_smoke
+      - name: Upload exact-head deep visual audit
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-pr96-final-exact-deep-visual-audit
+          path: var/ocr-pr96-final-deep
+          if-no-files-found: error
+          retention-days: 7
