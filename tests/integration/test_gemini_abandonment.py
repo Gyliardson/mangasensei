@@ -241,7 +241,9 @@ async def test_reserved_lease_loss_does_not_consume_later_page_call_ordinal(
     await _advance_claim_to_gemini(sessions, second)
 
     async with sessions.begin() as session:
-        bucket = (await session.execute(select(GeminiBudgetBucketRecord).with_for_update())).scalar_one()
+        bucket = (
+            await session.execute(select(GeminiBudgetBucketRecord).with_for_update())
+        ).scalar_one()
         bucket.reserved_amount += _RESERVATION
         replacement = GeminiCallRecord(
             page_id=page_id,
