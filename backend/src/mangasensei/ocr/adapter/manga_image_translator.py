@@ -19,11 +19,14 @@ from mangasensei.domain.models import BoundingBox, PageDimensions
 from mangasensei.ocr.contracts import OcrImage, OcrProvenance, OcrRegionResult, OcrResult
 from mangasensei.ocr.models.manifest import ModelManifest, verify_model
 
+from .recognizer_48px import RECOGNITION_SHORT_AXIS_PADDING
+
 DETECTOR_NAME = "default"
 RECOGNIZER_NAME = "48px"
 UPSTREAM_REPOSITORY = "https://github.com/zyddnys/manga-image-translator"
 _CONFIG_SCHEMA_VERSION = "manga-image-translator-v4"
 _READING_ORDER_VERSION = "manga-tiers-v1"
+_RECOGNITION_WARP_VERSION = "full-image-context-v1"
 _DETECTOR_FLAGS = (False, False, False, False, False)
 _RECOGNIZER_FLAG = False
 _UPSTREAM_RECOGNIZER_LOGGER = "manga-translator.Model48pxOCR"
@@ -175,6 +178,8 @@ class MangaImageTranslatorEngine:
             "ignore_bubble": self._ocr_config.ignore_bubble,
             "detector_flags": _DETECTOR_FLAGS,
             "recognizer_flag": _RECOGNIZER_FLAG,
+            "recognition_warp": _RECOGNITION_WARP_VERSION,
+            "recognition_short_axis_padding": RECOGNITION_SHORT_AXIS_PADDING,
             "reading_order": _READING_ORDER_VERSION,
         }
         canonical_config = json.dumps(config, sort_keys=True, separators=(",", ":"))
