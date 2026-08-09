@@ -107,9 +107,17 @@ async def _run() -> None:
     rss_primary_loaded_mb = process.memory_info().rss / (1024 * 1024)
 
     warm_page = page_map[WARM_PAGE_LABEL]
-    fixture_root = Path(__file__).parents[1] / "tests" / "fixtures" / "ocr" / "real_manga" / "black_jack"
-    warm_bytes = (fixture_root / str(warm_page["relative_path"])).read_bytes()
-    with Image.open(fixture_root / str(warm_page["relative_path"])) as warm_image:
+    fixture_root = (
+        Path(__file__).parents[1]
+        / "tests"
+        / "fixtures"
+        / "ocr"
+        / "real_manga"
+        / "black_jack"
+    )
+    warm_path = fixture_root / str(warm_page["relative_path"])
+    warm_bytes = warm_path.read_bytes()
+    with Image.open(warm_path) as warm_image:
         dimensions = PageDimensions(width=warm_image.width, height=warm_image.height)
     primary_infer_started = time.perf_counter()
     primary_result = await primary_engine.analyze(
@@ -159,7 +167,9 @@ async def _run() -> None:
         expected = reference.get(input_id)
         if expected is None:
             raise RuntimeError(f"missing PP-OCRv6 reference observation: {input_id}")
-        if text != str(expected.get("text", "")) or confidence != float(expected.get("confidence", 0.0)):
+        expected_text = str(expected.get("text", ""))
+        expected_confidence = float(expected.get("confidence", 0.0))
+        if text != expected_text or confidence != expected_confidence:
             mismatches.append(input_id)
         sample = {
             "id": input_id,
@@ -228,9 +238,13 @@ async def _run() -> None:
         f"secondary_seconds={secondary_infer_seconds:.3f}"
     )
     if len(selected) != 41:
-        raise AssertionError(f"secondary gate selected {len(selected)} lines instead of reviewed 41")
+        raise AssertionError(
+            f"secondary gate selected {len(selected)} lines instead of reviewed 41"
+        )
     if mismatches:
-        raise AssertionError(f"direct secondary differed from reference on {len(mismatches)} lines")
+        raise AssertionError(
+            f"direct secondary differed from reference on {len(mismatches)} lines"
+        )
 
 
 if __name__ == "__main__":
