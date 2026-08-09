@@ -8,6 +8,8 @@ The normal [CI workflow](../.github/workflows/ci.yml) runs on pull requests and 
 
 The same required Frontend CI job also runs the separate [full-stack critical-flow suite](../frontend/e2e-fullstack/critical-flow.spec.ts) described below. A failure in either browser layer fails the required Frontend quality check.
 
+Licensed manga test data also has a fast, model-free integrity contract. `tests/unit/test_ocr_real_manga_manifest.py` requires the complete committed Black Jack JPG inventory to match its manifest exactly, including unique safe relative paths, SHA-256 bytes, dimensions and successful image decoding. This keeps test-data corruption, an unmanifested fixture or stale metadata from being hidden behind a successful heavyweight OCR run.
+
 ## CodeQL security analysis
 
 The repository uses the explicit [CodeQL workflow](../.github/workflows/codeql.yml) rather than GitHub CodeQL default setup. It analyzes `actions`, `javascript-typescript` and `python` independently on pull requests targeting `main`, pushes to `main`, and a weekly schedule. Each language has a stable `/language:<identifier>` category so pull-request results can be matched to the same configuration on the default branch.
@@ -51,12 +53,22 @@ The workflow:
 - installs the committed OCR dependency set with `uv sync --frozen --extra ocr`;
 - obtains model files only through `mangasensei models download`;
 - re-verifies exact artifact size and SHA-256 with `mangasensei models verify` before inference;
-- sets `MANGASENSEI_RUN_OCR_SMOKE=1` and runs both the synthetic compatibility smoke and selected licensed real-manga regressions;
+- sets `MANGASENSEI_RUN_OCR_SMOKE=1` and runs both the synthetic compatibility smoke and licensed real-manga regressions;
 - keeps the synthetic input as a cheap model-load/inference compatibility check;
 - uses reviewed fixtures from `tests/fixtures/ocr/real_manga/black_jack/` for bounded behavioral assertions against real manga layout/text;
+- keeps recognized manga text out of normal worker logs; OCR assurance output records fixture identity, region counts and reviewed target geometry rather than full-page transcripts;
 - does not upload or redistribute the OCR model weights through workflow artifacts or dependency caches.
 
-The real-manga smoke deliberately avoids brittle full-page transcription or pixel-perfect snapshots. `tests/test_ocr_real_manga.py` currently protects two known-good short vertical dialogue cases selected from the licensed corpus: `うむ` on volume 1 PDF page 73 and `はい‼` on page 90. Each assertion requires the expected short text in its reviewed page area and applies only a broad region-count bound to catch catastrophic output explosion. These cases were first characterized during #54 investigation with the production detector and recognizer thresholds; both already succeeded at the production `minimum_confidence=0.2`, so they are positive regressions rather than evidence that lowering OCR thresholds would fix the user-reported missing `でも` case.
+### Assurance depth
+
+The real-manga suite deliberately avoids brittle full-page transcription or pixel-perfect snapshots and has two heavyweight depths:
+
+- **OCR-related pull requests and `main`:** pages 73 and 90 run once using the exact production configuration. `tests/test_ocr_real_manga.py` requires the known-good short vertical target (`うむ` on page 73 and the `はい` core of `はい‼` on page 90) to survive detector → recognizer → merge → adapter inside its broad reviewed page area, with a `4..32` region-count guard.
+- **Weekly schedule, tagged release and deep manual run:** the two reviewed targets run three identical CPU passes. Every pass must preserve the target, reviewed broad geometry and region-count guard. The other nine manifest pages run once with only a broad `2..32` catastrophic region-count contract; they intentionally do not claim transcript-level or semantic ground truth.
+
+The deeper corpus bound was established after characterizing all nine non-anchor pages with the reviewed model/configuration: observed counts were between 4 and 11, so `2..32` is intentionally loose enough to catch collapse/explosion rather than ordinary model variation. Page 66 remains only a candidate for future real-fixture reading-order assurance until a stable upper-before-lower relationship is explicitly reviewed; deterministic synthetic reading-order tests remain authoritative today.
+
+These short-text cases were first characterized during #54 investigation with the production detector and recognizer thresholds; both already succeeded at the production `minimum_confidence=0.2`, so they are positive regressions rather than evidence that lowering OCR thresholds would fix the user-reported missing `でも` case. Repeatability checks characterize the current CPU boundary; they do not claim that PyTorch/OpenCV are universally deterministic or that the original `でも` failure has been reproduced.
 
 Model weights are deliberately downloaded fresh on GitHub-hosted runners while their redistribution status remains pending review. The project manifest and integrity checks remain the source of truth for the exact files loaded by the smoke.
 
@@ -64,12 +76,12 @@ Model weights are deliberately downloaded fresh on GitHub-hosted runners while t
 
 The heavy smoke stays separate from ordinary CI cost, but runs automatically when its boundary is relevant:
 
-- pull requests and `main` changes that touch the OCR implementation/model files, either OCR smoke test, the licensed real-manga fixture corpus, `pyproject.toml`, `uv.lock`, or the smoke workflow itself;
-- once per week from the default branch;
-- on explicit maintainer `workflow_dispatch` runs;
-- every tagged release, because the [release workflow](../.github/workflows/release.yml) calls the same reusable OCR smoke and will not publish unless it succeeds.
+- pull requests and `main` changes that touch the OCR implementation/model files, either OCR smoke test, the licensed real-manga fixture corpus, `pyproject.toml`, `uv.lock`, or the smoke workflow itself use the small reviewed two-page gate;
+- once per week from the default branch, with three repeats of the reviewed short-text cases plus the wider licensed corpus guard;
+- explicit maintainer `workflow_dispatch` defaults to the same deep mode and accepts bounded repeat/full-corpus inputs;
+- every tagged release calls the reusable OCR workflow with three repeats and the full corpus enabled, and publishing cannot proceed unless it succeeds.
 
-If OCR, model, or Python dependency compatibility changed since the last reviewed validation, run **OCR Smoke** on the exact release-candidate SHA before creating the release tag. The tag workflow intentionally runs the same smoke again before publishing.
+If OCR, model, or Python dependency compatibility changed since the last reviewed validation, run **OCR Smoke** on the exact release-candidate SHA before creating the release tag. The tag workflow intentionally runs the deeper smoke again before publishing.
 
 ### Run locally
 
@@ -97,7 +109,9 @@ export MANGASENSEI_RUN_OCR_SMOKE=1
 .venv/bin/python -m pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv --maxfail=1
 ```
 
-A model-load, vendored API, PyTorch/OpenCV, inference, or selected real-manga recall regression must fail this smoke rather than being treated as covered by the fast fixture-backed tests.
+For the deep repeatability/full-corpus mode, also set `MANGASENSEI_OCR_REPEAT_RUNS=3` and `MANGASENSEI_OCR_FULL_CORPUS=1` before running pytest.
+
+A model-load, vendored API, PyTorch/OpenCV, inference, selected short-text recall, repeatability, or catastrophic full-corpus regression must fail the appropriate OCR assurance tier rather than being treated as covered by the fast fixture-backed tests.
 
 ## Full-stack critical flow
 
