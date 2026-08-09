@@ -25,12 +25,15 @@ from mangasensei.domain.languages import (
 )
 from mangasensei.domain.models import PageDimensions
 from mangasensei.gemini.contracts import GeminiPageAnalysis
+from mangasensei.gemini.errors import GeminiProviderError, GeminiResponseError
 from mangasensei.gemini.service import (
     PAGE_STUDY_PROMPT_VERSION,
     GeminiAdapter,
     GeminiAnalysisService,
     GeminiVocabularyCandidate,
     RegionCompletenessError,
+    UnknownRegionError,
+    UnknownVocabularyError,
     build_page_prompt,
     build_vocabulary_candidates_by_region,
 )
@@ -48,6 +51,9 @@ from mangasensei.infrastructure.database.analysis_models import (
     OcrRegionRecord,
     OcrRegionVertexRecord,
     OcrRunRecord,
+)
+from mangasensei.infrastructure.database.gemini_accounting import (
+    reconcile_abandoned_gemini_calls,
 )
 from mangasensei.infrastructure.database.job_models import JobAttemptRecord, JobRecord
 from mangasensei.infrastructure.database.queue_repository import ClaimedJob, QueueRepository
@@ -67,7 +73,15 @@ class StaleLeaseError(RuntimeError):
 
 
 class GeminiBudgetExceededError(RuntimeError):
+    """A configured Gemini budget or per-page call bound blocked another call."""
+
+
+class GeminiDailyBudgetExceededError(GeminiBudgetExceededError):
     """The configured daily Gemini budget cannot reserve another call."""
+
+
+class GeminiPageCallLimitExceededError(GeminiBudgetExceededError):
+    """The configured per-page Gemini call allowance has been exhausted."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,9 +96,20 @@ class ReusableAnalysis:
 
 def _public_error_code(exc: BaseException) -> str:
     """Map an internal failure to a stable public error code."""
+    if isinstance(exc, GeminiProviderError):
+        return "gemini_provider_failed"
+    if isinstance(
+        exc,
+        (
+            GeminiResponseError,
+            RegionCompletenessError,
+            UnknownRegionError,
+            UnknownVocabularyError,
+        ),
+    ):
+        return "gemini_response_invalid"
     known = {
         GeminiBudgetExceededError: "gemini_budget_exceeded",
-        RegionCompletenessError: "gemini_response_invalid",
         UnicodeError: "linguistics_failed",
         MemoryError: "resource_exhausted",
         TimeoutError: "provider_timeout",
@@ -93,6 +118,25 @@ def _public_error_code(exc: BaseException) -> str:
         if isinstance(exc, kind):
             return code
     return "processing_failed"
+
+
+def _is_retryable_pipeline_failure(exc: BaseException) -> bool:
+    """Keep transient/generated-output failures retryable and terminalize permanent bounds."""
+    if isinstance(exc, GeminiProviderError):
+        return exc.retryable
+    if isinstance(exc, GeminiBudgetExceededError):
+        return False
+    if isinstance(
+        exc,
+        (
+            GeminiResponseError,
+            RegionCompletenessError,
+            UnknownRegionError,
+            UnknownVocabularyError,
+        ),
+    ):
+        return True
+    return True
 
 
 def _safe_exception_context(exc: BaseException) -> str:
@@ -226,18 +270,20 @@ class Worker:
             return True
         except Exception as exc:
             error_code = _public_error_code(exc)
+            retryable = _is_retryable_pipeline_failure(exc)
             _LOGGER.error(
                 "worker_pipeline_failed stage=%s job_id=%d attempt_no=%d fencing_token=%d "
-                "error_code=%s exception_type=%s traceback=%s",
+                "error_code=%s retryable=%s exception_type=%s traceback=%s",
                 stage,
                 claim.job_id,
                 claim.attempt_no,
                 claim.fencing_token,
                 error_code,
+                retryable,
                 type(exc).__name__,
                 _safe_exception_context(exc),
             )
-            await self._mark_retryable_failure(claim, error_code)
+            await self._mark_failure(claim, error_code, retryable=retryable)
         finally:
             heartbeat.cancel()
             with suppress(asyncio.CancelledError, StaleLeaseError):
@@ -623,7 +669,7 @@ class Worker:
                 bucket.reserved_amount + bucket.actual_amount + self._gemini_reservation
                 > bucket.limit_amount
             ):
-                raise GeminiBudgetExceededError
+                raise GeminiDailyBudgetExceededError
             ordinal = (
                 await session.execute(
                     select(func.coalesce(func.max(GeminiCallRecord.page_call_ordinal), 0)).where(
@@ -632,7 +678,7 @@ class Worker:
                 )
             ).scalar_one() + 1
             if ordinal > self._gemini_max_calls_per_page:
-                raise GeminiBudgetExceededError("maximum Gemini calls reached")
+                raise GeminiPageCallLimitExceededError
             bucket.reserved_amount += self._gemini_reservation
             call = GeminiCallRecord(
                 page_id=page.id,
@@ -741,7 +787,13 @@ class Worker:
     async def _complete_without_gemini(self, claim: ClaimedJob) -> None:
         del claim
 
-    async def _mark_retryable_failure(self, claim: ClaimedJob, error_code: str) -> None:
+    async def _mark_failure(
+        self,
+        claim: ClaimedJob,
+        error_code: str,
+        *,
+        retryable: bool,
+    ) -> None:
         async with self._sessions.begin() as session:
             job = (
                 await session.execute(
@@ -764,21 +816,30 @@ class Worker:
             ).scalar_one_or_none()
             if job is None:
                 return
-            await _settle_open_gemini_calls(session, claim)
-            exhausted = job.attempt_count >= job.max_attempts
-            job.status = "failed" if exhausted else "retryable_failure"
-            job.available_at = func.now() + func.make_interval(
-                0, 0, 0, 0, 0, 0, min(300, 2**job.attempt_count)
+            await reconcile_abandoned_gemini_calls(
+                session,
+                job_id=claim.job_id,
+                fencing_token=claim.fencing_token,
             )
+            terminal = not retryable or job.attempt_count >= job.max_attempts
+            job.status = "failed" if terminal else "retryable_failure"
+            if not terminal:
+                job.available_at = func.now() + func.make_interval(
+                    0, 0, 0, 0, 0, 0, min(300, 2**job.attempt_count)
+                )
             job.error_code = error_code[:64]
             job.error_detail = "O processamento falhou sem expor conteúdo sensível."
             job.worker_id = None
             job.heartbeat_at = None
             job.lease_expires_at = None
             job.updated_at = func.now()
-            if exhausted:
+            if terminal:
                 job.finished_at = func.now()
-            await _finish_attempt(session, claim, "failed" if exhausted else "retryable_failure")
+            await _finish_attempt(
+                session,
+                claim,
+                "failed" if terminal else "retryable_failure",
+            )
 
 
 def _owned_job_predicates(claim: ClaimedJob, expected: str) -> tuple[Any, ...]:
@@ -836,46 +897,3 @@ async def _finish_attempt(session: AsyncSession, claim: ClaimedJob, outcome: str
         )
         .values(ended_at=func.now(), outcome=outcome)
     )
-
-
-async def _settle_open_gemini_calls(session: AsyncSession, claim: ClaimedJob) -> None:
-    calls = (
-        await session.execute(
-            select(GeminiCallRecord)
-            .where(
-                GeminiCallRecord.job_id == claim.job_id,
-                GeminiCallRecord.fencing_token == claim.fencing_token,
-                GeminiCallRecord.state.in_(("reserved", "sent")),
-            )
-            .with_for_update()
-        )
-    ).scalars()
-    for call in calls:
-        bucket = (
-            await session.execute(
-                select(GeminiBudgetBucketRecord)
-                .where(
-                    GeminiBudgetBucketRecord.budget_date == call.created_at.date(),
-                    GeminiBudgetBucketRecord.currency == "USD",
-                )
-                .with_for_update()
-            )
-        ).scalar_one()
-        bucket.reserved_amount = max(Decimal("0"), bucket.reserved_amount - call.reserved_cost)
-        if call.state == "sent":
-            bucket.actual_amount += call.reserved_cost
-            call.state = "unknown"
-            session.add(
-                GeminiCostLedgerRecord(
-                    gemini_call_id=call.id,
-                    observation_key="uncertain-request-upper-bound-v1",
-                    pricing_version="reservation-upper-bound-v1",
-                    usage_category="unknown_upper_bound",
-                    token_quantity=1,
-                    unit_rate=call.reserved_cost,
-                    amount=call.reserved_cost,
-                )
-            )
-        else:
-            call.state = "failed"
-        call.finished_at = func.now()
