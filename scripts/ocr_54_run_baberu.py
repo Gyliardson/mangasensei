@@ -77,25 +77,34 @@ def _download_verified_model(model_root: Path) -> list[dict[str, Any]]:
         sibling = metadata.get(relative_path)
         if sibling is None or not path.is_file():
             raise RuntimeError(f"missing pinned Baberu artifact metadata/file: {relative_path}")
-        lfs = getattr(sibling, "lfs", None)
-        expected_sha = _metadata_value(lfs, "sha256")
-        expected_size = _metadata_value(lfs, "size") or getattr(sibling, "size", None)
-        if not isinstance(expected_sha, str) or not isinstance(expected_size, int):
-            raise RuntimeError(
-                f"missing immutable LFS metadata for Baberu artifact: {relative_path}"
-            )
+
         actual_sha = _sha256(path)
         actual_size = path.stat().st_size
-        if actual_sha != expected_sha or actual_size != expected_size:
-            raise RuntimeError(
-                f"Baberu integrity mismatch for {relative_path}: "
-                f"size={actual_size} sha256={actual_sha}"
-            )
+        lfs = getattr(sibling, "lfs", None)
+        expected_sha = _metadata_value(lfs, "sha256")
+        expected_size = _metadata_value(lfs, "size")
+        if isinstance(expected_sha, str) and isinstance(expected_size, int):
+            if actual_sha != expected_sha or actual_size != expected_size:
+                raise RuntimeError(
+                    f"Baberu integrity mismatch for {relative_path}: "
+                    f"size={actual_size} sha256={actual_sha}"
+                )
+            integrity_basis = "pinned-revision+lfs-sha256+size"
+        else:
+            git_size = getattr(sibling, "size", None)
+            if not isinstance(git_size, int) or actual_size != git_size:
+                raise RuntimeError(
+                    f"Baberu pinned git-file size mismatch for {relative_path}: "
+                    f"expected={git_size!r} actual={actual_size}"
+                )
+            integrity_basis = "pinned-git-revision+size+recorded-sha256"
+
         verified.append(
             {
                 "path": relative_path,
                 "size": actual_size,
                 "sha256": actual_sha,
+                "integrity_basis": integrity_basis,
             }
         )
     return verified
