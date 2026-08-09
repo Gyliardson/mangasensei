@@ -4,8 +4,7 @@ on:
   push:
     branches: [investigate/54-page9-overlay3]
     paths:
-      - "scripts/ocr_54_visual_audit.py"
-      - "scripts/ocr_54_variant_audit.py"
+      - "scripts/ocr_54_recognition_context_corpus.py"
       - ".github/workflows/ocr-54-visual-audit.yml"
       - "backend/src/mangasensei/ocr/**"
       - "tests/fixtures/ocr/real_manga/**"
@@ -19,12 +18,12 @@ concurrency:
 
 jobs:
   audit:
-    name: Page 9 variant robustness audit
+    name: Recognition context corpus audit
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
       MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
-      MANGASENSEI_OCR_AUDIT_DIR: ${{ github.workspace }}/var/ocr54-variant-audit
+      MANGASENSEI_OCR_AUDIT_DIR: ${{ github.workspace }}/var/ocr54-context-corpus
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -44,14 +43,14 @@ jobs:
       - name: Verify reviewed OCR models
         run: uv run mangasensei models verify
 
-      - name: Characterize page 9 transformed-input robustness
-        run: uv run python scripts/ocr_54_variant_audit.py
+      - name: Compare recognizer-only crop context across corpus
+        run: uv run python scripts/ocr_54_recognition_context_corpus.py
 
-      - name: Upload variant audit
+      - name: Upload recognition context audit
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ocr-54-variant-audit
-          path: var/ocr54-variant-audit
+          name: ocr-54-context-corpus
+          path: var/ocr54-context-corpus
           if-no-files-found: error
           retention-days: 7
