@@ -7,6 +7,7 @@ on:
       - ".github/workflows/ocr-54-ensemble-benchmark.yml"
       - "scripts/ocr_54_prepare_ensemble_benchmark.py"
       - "scripts/ocr_54_run_external_recognizer.py"
+      - "scripts/ocr_54_run_baberu.py"
       - "scripts/ocr_54_summarize_ensemble_benchmark.py"
       - "backend/src/mangasensei/ocr/**"
       - "tests/fixtures/ocr/real_manga/**"
@@ -31,7 +32,12 @@ jobs:
           prune-cache: true
       - run: uv sync --frozen --extra ocr
       - name: Lint investigation scripts
-        run: uv run ruff check scripts/ocr_54_prepare_ensemble_benchmark.py scripts/ocr_54_run_external_recognizer.py scripts/ocr_54_summarize_ensemble_benchmark.py
+        run: >-
+          uv run ruff check
+          scripts/ocr_54_prepare_ensemble_benchmark.py
+          scripts/ocr_54_run_external_recognizer.py
+          scripts/ocr_54_run_baberu.py
+          scripts/ocr_54_summarize_ensemble_benchmark.py
       - run: uv run mangasensei models download
       - run: uv run mangasensei models verify
       - name: Prepare crops and 48px baselines
@@ -114,6 +120,11 @@ jobs:
         run: >-
           uv pip install --python .bench-paddle-v6/bin/python
           "paddleocr==3.7.0" "transformers==5.14.1"
+      - name: Install project-matched CPU Torch for Paddle transformers engine
+        run: >-
+          uv pip install --python .bench-paddle-v6/bin/python
+          --index https://download.pytorch.org/whl/cpu
+          "torch==2.13.0" "torchvision==0.28.0"
       - name: Run PP-OCRv6 recognition over line crops
         run: >-
           .bench-paddle-v6/bin/python scripts/ocr_54_run_external_recognizer.py
@@ -128,9 +139,47 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  baberu:
+    name: Baberu bubble expert
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HF_HOME: ${{ github.workspace }}/var/hf-baberu
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-ensemble-prepared
+          path: var/ocr-54-ensemble/prepared
+      - run: uv venv .bench-baberu --python 3.11
+      - name: Install pinned Baberu benchmark runtime
+        run: >-
+          uv pip install --python .bench-baberu/bin/python
+          "onnxruntime==1.27.0" "huggingface-hub==1.24.0"
+          "numpy==2.4.6" "pillow==12.3.0"
+      - name: Run pinned Baberu ONNX tier over detector-gated blocks
+        run: >-
+          .bench-baberu/bin/python scripts/ocr_54_run_baberu.py
+          --input var/ocr-54-ensemble/prepared
+          --output var/ocr-54-ensemble/baberu
+      - name: Upload Baberu observations only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-ensemble-baberu
+          path: var/ocr-54-ensemble/baberu/baberu.json
+          if-no-files-found: error
+          retention-days: 7
+
   summarize:
     name: Compare semantic quality and stability
-    needs: [prepare, manga-ocr, paddle-v6]
+    needs: [prepare, manga-ocr, paddle-v6, baberu]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -147,12 +196,17 @@ jobs:
         with:
           name: ocr-54-ensemble-paddle-v6
           path: var/ocr-54-ensemble/paddle-v6
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-ensemble-baberu
+          path: var/ocr-54-ensemble/baberu
       - name: Build semantic benchmark report
         run: >-
           python scripts/ocr_54_summarize_ensemble_benchmark.py
           --prepared var/ocr-54-ensemble/prepared
           --manga-ocr var/ocr-54-ensemble/manga-ocr/manga-ocr.json
           --paddle-v6 var/ocr-54-ensemble/paddle-v6/paddle-v6.json
+          --baberu var/ocr-54-ensemble/baberu/baberu.json
           --output var/ocr-54-ensemble/report
       - name: Upload benchmark report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
