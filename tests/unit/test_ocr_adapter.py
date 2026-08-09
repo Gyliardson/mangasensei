@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+import pytest
 
 from mangasensei.domain.models import PageDimensions
 from mangasensei.ocr.adapter.manga_image_translator import (
@@ -82,6 +85,24 @@ def test_engine_provenance_uses_supplied_manifest_and_effective_config(tmp_path:
     assert len(provenance.config_digest) == 32
     assert provenance.config_digest == identical_provenance.config_digest
     assert provenance.config_digest != changed_provenance.config_digest
+
+
+def test_engine_keeps_upstream_recognized_text_out_of_info_logs(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    recognizer_logger = logging.getLogger("manga-translator.Model48pxOCR")
+    previous_level = recognizer_logger.level
+    try:
+        recognizer_logger.setLevel(logging.NOTSET)
+        with caplog.at_level(logging.INFO):
+            MangaImageTranslatorEngine(model_cache=tmp_path)
+            recognizer_logger.info("prob: 0.99 秘密の本文")
+
+        assert recognizer_logger.level >= logging.WARNING
+        assert "秘密の本文" not in caplog.text
+    finally:
+        recognizer_logger.setLevel(previous_level)
 
 
 def test_manga_reading_order_finishes_upper_tier_before_lower_right_region() -> None:
