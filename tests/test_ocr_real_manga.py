@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -31,6 +32,9 @@ FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "ocr" / "real_manga" / "blac
 MANIFEST_PATH = FIXTURE_ROOT / "manifest.json"
 PAGE9_PATH = "v01/black_jack_v01_pdf009.jpg"
 PAGE9_TARGET_ZONE = (160, 290, 930, 1220)
+PAGE9_OVERLAY3_ZONE = (130, 285, 455, 745)
+PAGE9_OVERLAY3_SCALE = 0.9
+PAGE9_OVERLAY3_ANCHOR = "国家試験に合格しなければいけない"
 SHORT_TEXT_CASES = (
     (
         "v01/black_jack_v01_pdf073.jpg",
@@ -146,6 +150,82 @@ async def test_licensed_page9_two_line_target_survives_narrow_recognizer_batch()
 
 
 @pytest.mark.asyncio
+async def test_licensed_page9_three_column_dialogue_survives_resampling() -> None:
+    """Protect a detector-complete dialogue block from recognizer crop-edge loss."""
+    engine = _real_engine()
+    detector, recognizer, merge, _ = await engine._ensure_loaded()
+    image_path = FIXTURE_ROOT / PAGE9_PATH
+    with Image.open(image_path) as source:
+        resized = source.convert("RGB").resize(
+            (
+                round(source.width * PAGE9_OVERLAY3_SCALE),
+                round(source.height * PAGE9_OVERLAY3_SCALE),
+            ),
+            Image.Resampling.LANCZOS,
+        )
+
+    encoded = io.BytesIO()
+    resized.save(encoded, format="PNG", optimize=True)
+    content = encoded.getvalue()
+    pixels = _decode_rgb(content)
+    width, height = resized.size
+    scaled_zone = _scale_zone(PAGE9_OVERLAY3_ZONE, PAGE9_OVERLAY3_SCALE)
+
+    textlines, _, _ = await detector.detect(
+        pixels,
+        engine._detection_size,
+        engine._text_threshold,
+        engine._box_threshold,
+        engine._unclip_ratio,
+        *_DETECTOR_FLAGS,
+    )
+    target_lines = [
+        line for line in textlines if _upstream_center_in_zone(line, scaled_zone)
+    ]
+    assert len(target_lines) == 3, (
+        "reviewed page-9 three-column detector target changed before recognition; "
+        f"target_candidate_count={len(target_lines)} detector_candidate_count={len(textlines)}"
+    )
+
+    recognized = await recognizer.recognize(
+        pixels,
+        copy.deepcopy(target_lines),
+        engine._ocr_config,
+        _RECOGNIZER_FLAG,
+    )
+    recognized = [line for line in recognized if str(line.text).strip()]
+    assert len(recognized) == 3, (
+        "all three detector-complete page-9 dialogue columns must survive production "
+        f"recognition after ordinary resampling; recognized_count={len(recognized)}"
+    )
+
+    merged = await merge(recognized, width, height)
+    merged_extents = tuple(tuple(int(value) for value in block.xyxy) for block in merged)
+    assert any(_spans_scaled_page9_overlay3(extent) for extent in merged_extents), (
+        "resampled page-9 dialogue did not merge across all three reviewed columns; "
+        f"merged_extents={merged_extents!r}"
+    )
+
+    result = await engine.analyze(
+        OcrImage(
+            content=content,
+            sha256=hashlib.sha256(content).hexdigest(),
+            media_type="image/png",
+            dimensions=PageDimensions(width=width, height=height),
+        )
+    )
+    target_regions = [
+        region for region in result.regions if _center_in_zone(region, scaled_zone)
+    ]
+    assert any(
+        PAGE9_OVERLAY3_ANCHOR in region.japanese_text for region in target_regions
+    ), "full production OCR lost the reading-first column of the reviewed page-9 dialogue"
+    assert any(_region_spans_scaled_page9_overlay3(region) for region in target_regions), (
+        "full production OCR truncated the reviewed page-9 three-column dialogue geometry"
+    )
+
+
+@pytest.mark.asyncio
 @pytest.mark.skipif(
     os.environ.get("MANGASENSEI_OCR_FULL_CORPUS") != "1",
     reason="full licensed corpus is reserved for the deeper OCR assurance tier",
@@ -236,6 +316,12 @@ def _upstream_center_in_zone(region: Any, zone: tuple[int, int, int, int]) -> bo
     return min_x <= center_x <= max_x and min_y <= center_y <= max_y
 
 
+def _scale_zone(
+    zone: tuple[int, int, int, int], scale: float
+) -> tuple[int, int, int, int]:
+    return tuple(round(value * scale) for value in zone)  # type: ignore[return-value]
+
+
 def _spans_page9_target(extent: tuple[int, int, int, int]) -> bool:
     x1, y1, x2, y2 = extent
     return x1 <= 190 and y1 <= 970 and x2 >= 250 and y2 >= 1180
@@ -243,6 +329,22 @@ def _spans_page9_target(extent: tuple[int, int, int, int]) -> bool:
 
 def _region_spans_page9_target(region: OcrRegionResult) -> bool:
     return _spans_page9_target(
+        (
+            region.bbox.x,
+            region.bbox.y,
+            region.bbox.x + region.bbox.width,
+            region.bbox.y + region.bbox.height,
+        )
+    )
+
+
+def _spans_scaled_page9_overlay3(extent: tuple[int, int, int, int]) -> bool:
+    x1, y1, x2, y2 = extent
+    return x1 <= 145 and y1 <= 450 and x2 >= 220 and y2 >= 625
+
+
+def _region_spans_scaled_page9_overlay3(region: OcrRegionResult) -> bool:
+    return _spans_scaled_page9_overlay3(
         (
             region.bbox.x,
             region.bbox.y,
