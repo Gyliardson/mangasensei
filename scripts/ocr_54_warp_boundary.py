@@ -24,11 +24,14 @@ from mangasensei.ocr.vendor.manga_image_translator.manga_translator.utils.generi
     Quadrilateral,
 )
 
-FIXTURE = Path(
-    "tests/fixtures/ocr/real_manga/black_jack/v01/black_jack_v01_pdf009.jpg"
-)
-TARGET_ZONE = (130, 285, 455, 745)
-SCALE = 0.9
+ROOT = Path("tests/fixtures/ocr/real_manga/black_jack/v01")
+PAGE9 = ROOT / "black_jack_v01_pdf009.jpg"
+PAGE171 = ROOT / "black_jack_v01_pdf171.jpg"
+PAGE9_ZONE = (130, 285, 455, 745)
+PAGE171_ZONE = (70, 180, 650, 1750)
+PAGE9_SCALE = 0.9
+TEXT_HEIGHT = 48
+NORMALIZED_PADS = (0, 1, 2, 3, 4, 5, 6)
 OUT = Path(os.environ.get("MANGASENSEI_OCR_WARP_ARTIFACT_DIR", "var/ocr-54-warp-boundary"))
 
 CropFn = Callable[[Quadrilateral, np.ndarray, str, int], np.ndarray]
@@ -51,140 +54,100 @@ def _crop_inclusive(
     img: np.ndarray,
     direction: str,
     textheight: int,
-    *,
-    border_mode: int,
 ) -> np.ndarray:
-    structure = [np.asarray(a, dtype=np.float32) for a in line.structure]
+    structure = [np.asarray(point, dtype=np.float32) for point in line.structure]
     l1a, l1b, l2a, l2b = structure
-    v_vec = l1b - l1a
-    h_vec = l2b - l2a
-    ratio = float(np.linalg.norm(v_vec) / np.linalg.norm(h_vec))
+    vertical_vector = l1b - l1a
+    horizontal_vector = l2b - l2a
+    ratio = float(np.linalg.norm(vertical_vector) / np.linalg.norm(horizontal_vector))
 
-    src_pts = np.asarray(line.pts, dtype=np.int64).copy()
-    im_h, im_w = img.shape[:2]
-    src_pts[:, 0] = np.clip(src_pts[:, 0], 0, im_w - 1)
-    src_pts[:, 1] = np.clip(src_pts[:, 1], 0, im_h - 1)
+    source_points = np.asarray(line.pts, dtype=np.int64).copy()
+    image_height, image_width = img.shape[:2]
+    source_points[:, 0] = np.clip(source_points[:, 0], 0, image_width - 1)
+    source_points[:, 1] = np.clip(source_points[:, 1], 0, image_height - 1)
 
-    x1 = int(src_pts[:, 0].min())
-    y1 = int(src_pts[:, 1].min())
-    x2 = int(src_pts[:, 0].max())
-    y2 = int(src_pts[:, 1].max())
+    x1 = int(source_points[:, 0].min())
+    y1 = int(source_points[:, 1].min())
+    x2 = int(source_points[:, 0].max())
+    y2 = int(source_points[:, 1].max())
     cropped = img[y1 : y2 + 1, x1 : x2 + 1]
-    src_pts[:, 0] -= x1
-    src_pts[:, 1] -= y1
-    src = src_pts.astype(np.float32)
+    source_points[:, 0] -= x1
+    source_points[:, 1] -= y1
+    source = source_points.astype(np.float32)
 
     if direction == "h":
-        h = max(int(textheight), 2)
-        w = max(int(round(textheight / ratio)), 2)
-        dst = np.asarray([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32)
-        matrix, _ = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
-        return cv2.warpPerspective(cropped, matrix, (w, h), borderMode=border_mode)
+        height = max(int(textheight), 2)
+        width = max(int(round(textheight / ratio)), 2)
+        destination = np.asarray(
+            [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
+            dtype=np.float32,
+        )
+        matrix, _ = cv2.findHomography(source, destination, cv2.RANSAC, 5.0)
+        if matrix is None:
+            raise RuntimeError("could not construct horizontal homography")
+        return cv2.warpPerspective(cropped, matrix, (width, height))
 
-    w = max(int(textheight), 2)
-    h = max(int(round(textheight * ratio)), 2)
-    dst = np.asarray([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32)
-    matrix, _ = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
-    region = cv2.warpPerspective(cropped, matrix, (w, h), borderMode=border_mode)
+    width = max(int(textheight), 2)
+    height = max(int(round(textheight * ratio)), 2)
+    destination = np.asarray(
+        [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
+        dtype=np.float32,
+    )
+    matrix, _ = cv2.findHomography(source, destination, cv2.RANSAC, 5.0)
+    if matrix is None:
+        raise RuntimeError("could not construct vertical homography")
+    region = cv2.warpPerspective(cropped, matrix, (width, height))
     return cv2.rotate(region, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
 
-def _inclusive_constant(line: Quadrilateral, img: np.ndarray, direction: str, textheight: int) -> np.ndarray:
-    return _crop_inclusive(line, img, direction, textheight, border_mode=cv2.BORDER_CONSTANT)
-
-
-def _inclusive_replicate(line: Quadrilateral, img: np.ndarray, direction: str, textheight: int) -> np.ndarray:
-    return _crop_inclusive(line, img, direction, textheight, border_mode=cv2.BORDER_REPLICATE)
-
-
 @contextmanager
-def _patched_crop(fn: CropFn | None) -> Iterator[None]:
+def _patched_crop() -> Iterator[None]:
     original = Quadrilateral.get_transformed_region
-    if fn is not None:
-        Quadrilateral.get_transformed_region = fn  # type: ignore[method-assign]
+    Quadrilateral.get_transformed_region = _crop_inclusive  # type: ignore[method-assign]
     try:
         yield
     finally:
         Quadrilateral.get_transformed_region = original  # type: ignore[method-assign]
 
 
-async def _recognizer(model_cache: Path, context: float) -> MangaSenseiModel48pxOCR:
+def _factor_for_normalized_pad(pad: int) -> float:
+    if pad == 0:
+        return 1.0
+    if pad * 2 >= TEXT_HEIGHT:
+        raise ValueError("normalized pad must leave positive text width")
+    return TEXT_HEIGHT / (TEXT_HEIGHT - 2 * pad)
+
+
+async def _load_recognizer(model_cache: Path, context: float) -> MangaSenseiModel48pxOCR:
     recognizer = MangaSenseiModel48pxOCR(short_axis_context=context)
     MangaSenseiModel48pxOCR._MODEL_DIR = str(model_cache)
     await recognizer.load("cpu")
     return recognizer
 
 
-async def _observe(
-    recognizer: MangaSenseiModel48pxOCR,
-    pixels: np.ndarray,
-    target_lines: list[Quadrilateral],
-    config_type: type[Any],
+async def _detect_targets(
+    engine: MangaImageTranslatorEngine,
+    source: Path,
+    zone: tuple[int, int, int, int],
     *,
-    crop_fn: CropFn | None,
-    label: str,
-) -> dict[str, Any]:
-    zero = config_type(prob=0.0, ignore_bubble=0)
-    prod = config_type(prob=0.2, ignore_bubble=0)
-    with _patched_crop(crop_fn):
-        zero_lines = await recognizer.recognize(
-            pixels, copy.deepcopy(target_lines), zero, _RECOGNIZER_FLAG
-        )
-        prod_lines = await recognizer.recognize(
-            pixels, copy.deepcopy(target_lines), prod, _RECOGNIZER_FLAG
-        )
-
-        crop_records: list[dict[str, Any]] = []
-        generated = list(recognizer._generate_text_direction(copy.deepcopy(target_lines)))
-        for index, (line, direction) in enumerate(generated):
-            crop = line.get_transformed_region(pixels, direction, 48)
-            cv2.imwrite(str(OUT / f"{label}-{index}.png"), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
-            edge = np.concatenate(
-                [
-                    crop[:, :1].reshape(-1, 3),
-                    crop[:, -1:].reshape(-1, 3),
-                    crop[:1, :].reshape(-1, 3),
-                    crop[-1:, :].reshape(-1, 3),
-                ],
-                axis=0,
+    scale: float = 1.0,
+) -> tuple[np.ndarray, list[Quadrilateral]]:
+    if scale != 1.0:
+        with Image.open(source) as opened:
+            resized = opened.convert("RGB").resize(
+                (round(opened.width * scale), round(opened.height * scale)),
+                Image.Resampling.LANCZOS,
             )
-            crop_records.append(
-                {
-                    "index": index,
-                    "shape": list(crop.shape),
-                    "edge_mean": float(edge.mean()),
-                    "edge_dark_fraction": float((edge < 32).mean()),
-                }
-            )
+        encoded = OUT / f"{source.stem}-scale-{round(scale * 100):03d}.png"
+        resized.save(encoded, format="PNG")
+        pixels = _decode_rgb(encoded.read_bytes())
+        effective_zone = _scale_zone(zone, scale)
+    else:
+        pixels = _decode_rgb(source.read_bytes())
+        effective_zone = zone
 
-    return {
-        "zero_count": len(zero_lines),
-        "zero_probabilities": [float(line.prob) for line in zero_lines],
-        "production_count": len(prod_lines),
-        "production_probabilities": [float(line.prob) for line in prod_lines],
-        "crops": crop_records,
-    }
-
-
-async def main() -> None:
-    OUT.mkdir(parents=True, exist_ok=True)
-    logging.getLogger("manga-translator.Model48pxOCR").setLevel(logging.WARNING)
-
-    with Image.open(FIXTURE) as source:
-        resized = source.convert("RGB").resize(
-            (round(source.width * SCALE), round(source.height * SCALE)),
-            Image.Resampling.LANCZOS,
-        )
-    encoded = Path(OUT / "page9-scale-090.png")
-    resized.save(encoded, format="PNG")
-    pixels = _decode_rgb(encoded.read_bytes())
-
-    engine = MangaImageTranslatorEngine(
-        model_cache=Path(os.environ.get("MANGASENSEI_MODEL_CACHE", "var/models")),
-        device="cpu",
-    )
     detector, _, _, _ = await engine._ensure_loaded()
-    textlines, _, _ = await detector.detect(
+    lines, _, _ = await detector.detect(
         pixels,
         engine._detection_size,
         engine._text_threshold,
@@ -192,53 +155,103 @@ async def main() -> None:
         engine._unclip_ratio,
         *_DETECTOR_FLAGS,
     )
-    target = [line for line in textlines if _center_in_zone(line, _scale_zone(TARGET_ZONE, SCALE))]
-    if len(target) != 3:
-        raise RuntimeError(f"expected 3 target detector lines, got {len(target)}")
+    targets = [line for line in lines if _center_in_zone(line, effective_zone)]
+    return pixels, targets
 
-    model_cache = Path(os.environ.get("MANGASENSEI_MODEL_CACHE", "var/models"))
-    no_context = await _recognizer(model_cache, 1.0)
-    current_context = await _recognizer(model_cache, 1.16)
-    config_type = type(engine._ocr_config)
 
-    observations = {
-        "upstream_tight": await _observe(
-            no_context, pixels, target, config_type, crop_fn=None, label="upstream-tight"
-        ),
-        "inclusive_constant": await _observe(
-            no_context,
-            pixels,
-            target,
-            config_type,
-            crop_fn=_inclusive_constant,
-            label="inclusive-constant",
-        ),
-        "inclusive_replicate": await _observe(
-            no_context,
-            pixels,
-            target,
-            config_type,
-            crop_fn=_inclusive_replicate,
-            label="inclusive-replicate",
-        ),
-        "current_1_16": await _observe(
-            current_context, pixels, target, config_type, crop_fn=None, label="current-1-16"
-        ),
-    }
+async def _sweep_page(
+    *,
+    label: str,
+    pixels: np.ndarray,
+    targets: list[Quadrilateral],
+    config_type: type[Any],
+    model_cache: Path,
+) -> dict[str, Any]:
+    if not targets:
+        raise RuntimeError(f"{label}: no detector targets selected")
 
-    payload = {
-        "detector_target_count": len(target),
-        "detector_xyxy": [[int(v) for v in line.xyxy] for line in target],
+    zero = config_type(prob=0.0, ignore_bubble=0)
+    prod = config_type(prob=0.2, ignore_bubble=0)
+    observations: dict[str, Any] = {}
+    with _patched_crop():
+        for pad in NORMALIZED_PADS:
+            factor = _factor_for_normalized_pad(pad)
+            recognizer = await _load_recognizer(model_cache, factor)
+            zero_lines = await recognizer.recognize(
+                pixels, copy.deepcopy(targets), zero, _RECOGNIZER_FLAG
+            )
+            prod_lines = await recognizer.recognize(
+                pixels, copy.deepcopy(targets), prod, _RECOGNIZER_FLAG
+            )
+            record = {
+                "normalized_pad_per_side": pad,
+                "factor": factor,
+                "zero_count": len(zero_lines),
+                "probabilities": [float(line.prob) for line in zero_lines],
+                "production_count": len(prod_lines),
+            }
+            observations[str(pad)] = record
+            print(
+                "PAD_SWEEP "
+                f"page={label} normalized_pad={pad} factor={factor:.6f} "
+                f"production_count={len(prod_lines)} "
+                f"probabilities={[round(float(line.prob), 6) for line in zero_lines]}"
+            )
+    return {
+        "detector_count": len(targets),
+        "detector_xyxy": [[int(v) for v in line.xyxy] for line in targets],
         "observations": observations,
     }
-    (OUT / "results.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    for name, value in observations.items():
-        print(
-            "WARP_BOUNDARY "
-            f"variant={name} production_count={value['production_count']} "
-            f"probabilities={[round(p, 6) for p in value['zero_probabilities']]}"
+
+async def main() -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
+    logging.getLogger("manga-translator.Model48pxOCR").setLevel(logging.WARNING)
+    model_cache = Path(os.environ.get("MANGASENSEI_MODEL_CACHE", "var/models"))
+    engine = MangaImageTranslatorEngine(model_cache=model_cache, device="cpu")
+    config_type = type(engine._ocr_config)
+
+    page9_pixels, page9_targets = await _detect_targets(
+        engine, PAGE9, PAGE9_ZONE, scale=PAGE9_SCALE
+    )
+    if len(page9_targets) != 3:
+        raise RuntimeError(f"page9 expected 3 targets, got {len(page9_targets)}")
+
+    page171_pixels, page171_targets = await _detect_targets(
+        engine, PAGE171, PAGE171_ZONE
+    )
+    page171_targets = [
+        line
+        for line in page171_targets
+        if (float(line.xyxy[3]) - float(line.xyxy[1])) >= 500
+    ]
+    if len(page171_targets) != 2:
+        raise RuntimeError(
+            "page171 expected 2 long footnote detector targets, "
+            f"got {len(page171_targets)}: {[list(map(int, line.xyxy)) for line in page171_targets]}"
         )
+
+    payload = {
+        "normalization_height": TEXT_HEIGHT,
+        "page9_scale": PAGE9_SCALE,
+        "pages": {
+            "page9-scale-090": await _sweep_page(
+                label="page9-scale-090",
+                pixels=page9_pixels,
+                targets=page9_targets,
+                config_type=config_type,
+                model_cache=model_cache,
+            ),
+            "page171": await _sweep_page(
+                label="page171",
+                pixels=page171_pixels,
+                targets=page171_targets,
+                config_type=config_type,
+                model_cache=model_cache,
+            ),
+        },
+    }
+    (OUT / "padding-sweep.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":
