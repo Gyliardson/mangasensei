@@ -1,9 +1,11 @@
 export type ReaderFitMode = "comfortable" | "page" | "width";
 
+export const DEFAULT_READER_FIT_MODE: ReaderFitMode = "comfortable";
 export const READER_ZOOM_MIN = 75;
 export const READER_ZOOM_MAX = 200;
 export const READER_ZOOM_STEP = 25;
 
+const MOBILE_READER_MAX_WIDTH = 720;
 const COMFORTABLE_VIEWPORT_FRACTION = 0.88;
 const COMFORTABLE_MAX_HEIGHT = 900;
 
@@ -15,6 +17,10 @@ interface PageDimensions {
 export interface ReaderViewportMetrics {
   readonly width: number;
   readonly height: number;
+}
+
+export function isReaderFitMode(value: unknown): value is ReaderFitMode {
+  return value === "comfortable" || value === "page" || value === "width";
 }
 
 export function clampReaderZoom(zoom: number): number {
@@ -38,7 +44,9 @@ export function calculateReaderCanvasWidth(
     viewportHeight * COMFORTABLE_VIEWPORT_FRACTION,
     COMFORTABLE_MAX_HEIGHT,
   );
-  const comfortableWidth = Math.min(viewportWidth, comfortableHeight * aspectRatio);
+  const comfortableWidth = viewportWidth <= MOBILE_READER_MAX_WIDTH
+    ? viewportWidth
+    : Math.min(viewportWidth, comfortableHeight * aspectRatio);
 
   const fittedWidth = fitMode === "width"
     ? viewportWidth
