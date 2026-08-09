@@ -92,6 +92,8 @@ jobs:
                   raise SystemExit("normalized bytes do not match the reviewed manifest")
 
               payload = json.loads(normalized.decode("utf-8"))
+              collisions: list[dict[str, object]] = []
+              differing_meanings = 0
               for entry in payload["entries"]:
                   seen: dict[tuple[str, str], dict[str, object]] = {}
                   for form in entry["forms"]:
@@ -102,22 +104,39 @@ jobs:
                       key = (lemma, reading)
                       previous = seen.get(key)
                       if previous is not None:
-                          print(
-                              "normalized_form_collision="
-                              + json.dumps(
-                                  {
-                                      "entry_id": entry["id"],
-                                      "normalized_key": list(key),
-                                      "first_form": previous,
-                                      "second_form": form,
-                                  },
-                                  ensure_ascii=False,
-                                  sort_keys=True,
-                              )
+                          same_meanings = previous.get("meanings") == form.get("meanings")
+                          if not same_meanings:
+                              differing_meanings += 1
+                          collisions.append(
+                              {
+                                  "entry_id": entry["id"],
+                                  "normalized_key": list(key),
+                                  "first_form": previous,
+                                  "second_form": form,
+                                  "same_meanings": same_meanings,
+                              }
                           )
-                          raise SystemExit(2)
-                      seen[key] = form
+                      else:
+                          seen[key] = form
 
+              print(
+                  "normalized_collision_summary="
+                  + json.dumps(
+                      {
+                          "collision_count": len(collisions),
+                          "entries_with_collisions": len({str(item["entry_id"]) for item in collisions}),
+                          "differing_meanings_count": differing_meanings,
+                      },
+                      sort_keys=True,
+                  )
+              )
+              for collision in collisions[:25]:
+                  print(
+                      "normalized_form_collision="
+                      + json.dumps(collision, ensure_ascii=False, sort_keys=True)
+                  )
+              if collisions:
+                  raise SystemExit(2)
               print("normalized_form_collision=none")
 
           asyncio.run(main())
