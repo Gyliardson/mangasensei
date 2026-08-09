@@ -41,10 +41,25 @@ jobs:
           test "$(git -C upstream rev-parse HEAD)" = "${UPSTREAM_SHA}"
           cp upstream/manga_translator/ocr/model_48px_ctc.py \
             product/backend/src/mangasensei/ocr/vendor/manga_image_translator/manga_translator/ocr/model_48px_ctc.py
-          sed -i 's/from typing import List, Tuple, Optional/from typing import Any, List, Tuple, Optional/' \
-            product/backend/src/mangasensei/ocr/vendor/manga_image_translator/manga_translator/ocr/model_48px_ctc.py
-          sed -i 's/from manga_translator.config import OcrConfig/OcrConfig = Any/' \
-            product/backend/src/mangasensei/ocr/vendor/manga_image_translator/manga_translator/ocr/model_48px_ctc.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("product/backend/src/mangasensei/ocr/vendor/manga_image_translator/manga_translator/ocr/model_48px_ctc.py")
+          source = path.read_text(encoding="utf-8")
+          source = source.replace(
+              "from typing import List, Tuple, Optional",
+              "from typing import Any, List, Tuple, Optional",
+          )
+          source = source.replace("from manga_translator.config import OcrConfig", "OcrConfig = Any")
+          source = source.replace(
+              "from ..utils import TextBlock, Quadrilateral, AvgMeter, chunks",
+              "from ..utils.textblock import TextBlock\nfrom ..utils.generic import Quadrilateral, AvgMeter, chunks",
+          )
+          source = source.replace(
+              "from ..utils.bubble import is_ignore",
+              "def is_ignore(_image: Any, _threshold: int) -> bool:\n    return False",
+          )
+          path.write_text(source, encoding="utf-8")
+          PY
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: 0.12.3
