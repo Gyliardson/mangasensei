@@ -23,6 +23,7 @@ from mangasensei.gemini.service import (
     PAGE_STUDY_PROMPT_VERSION,
     GeminiAdapter,
     GeminiAnalysisService,
+    RegionCompletenessError,
     build_page_prompt,
     build_vocabulary_candidates_by_region,
 )
@@ -65,6 +66,7 @@ def _public_error_code(exc: BaseException) -> str:
     """Map an internal failure to a stable public error code."""
     known = {
         GeminiBudgetExceededError: "gemini_budget_exceeded",
+        RegionCompletenessError: "gemini_response_invalid",
         UnicodeError: "linguistics_failed",
         MemoryError: "resource_exhausted",
         TimeoutError: "provider_timeout",
@@ -163,7 +165,7 @@ class Worker:
             token_ids = await self._persist_linguistics(
                 claim, ocr_result, region_ids, linguistic_by_region
             )
-            if self._gemini is None:
+            if self._gemini is None or not ocr_result.regions:
                 await self._complete_without_gemini(claim)
                 return True
             regions = {region.id: region.japanese_text for region in ocr_result.regions}
@@ -399,8 +401,9 @@ class Worker:
                             for index, meaning in enumerate(token.meanings)
                         ]
                     )
-            job.status = "processing_gemini" if self._gemini is not None else "completed"
-            if self._gemini is None:
+            use_gemini = self._gemini is not None and bool(result.regions)
+            job.status = "processing_gemini" if use_gemini else "completed"
+            if not use_gemini:
                 _finish_job(job)
                 await _finish_attempt(session, claim, "completed_without_gemini")
             job.updated_at = func.now()
