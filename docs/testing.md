@@ -51,6 +51,8 @@ The workflow:
 - uses deterministic synthetic image input, so failures do not require or expose user manga content;
 - does not upload or redistribute the OCR model weights through workflow artifacts or dependency caches.
 
+> **Note on Real Manga Fixtures:** The repository now contains a small corpus of licensed, real-manga OCR fixtures in `tests/fixtures/ocr/real_manga/` to provide future validation and regressions against real-world complexities. However, the current smoke test pipeline continues to use synthetic input until those fixtures are fully integrated in a separate task. This separates the introduction and provenance of the data from the behavioral changes in the tests.
+
 Model weights are deliberately downloaded fresh on GitHub-hosted runners while their redistribution status remains pending review. The project manifest and integrity checks remain the source of truth for the exact files loaded by the smoke.
 
 ### Automated policy

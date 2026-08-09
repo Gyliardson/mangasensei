@@ -45,3 +45,13 @@ The artifacts are intentionally excluded from Git and Docker images pending righ
 Runtime and development dependencies are pinned in [`uv.lock`](uv.lock) and
 [`package-lock.json`](package-lock.json). Their licenses are not reproduced in this
 notice file; consult each upstream package distribution for its license terms.
+
+## Give My Regards to Black Jack Test Fixtures
+
+The MangaSensei repository contains a small testing corpus of selected pages from the official PDF of Volume 1 of `ブラックジャックによろしく` by `佐藤秀峰` (`Give My Regards to Black Jack` by `SHUHO SATO`).
+
+These fixtures are located at [`tests/fixtures/ocr/real_manga/black_jack/`](tests/fixtures/ocr/real_manga/black_jack/).
+
+They are redistributed according to the specific terms for secondary use published by Sato Manga Works Ltd. at the official source: [https://densho810.com/free/](https://densho810.com/free/).
+
+These files are NOT part of the MangaSensei GPL license and remain subject to the copyright holder's terms. The applicable terms require a post-publication reporting communication to Sato Manga Works after publication/distribution of the files.

@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "collection": "Give My Regards to Black Jack",
+  "source": {
+    "workTitleJa": "ブラックジャックによろしく",
+    "authorJa": "佐藤秀峰",
+    "workTitleEn": "Give My Regards to Black Jack",
+    "authorEn": "SHUHO SATO",
+    "sourceUrl": "https://densho810.com/free/",
+    "sourceVolume": 1,
+    "sourceLanguage": "ja",
+    "sourceArchiveSha256": "ec7bbb4ce4f719536a2d58f29eb2c665d19b0769303efe009b4d98cccad699e1",
+    "sourcePdfSha256": "a2ad133db82a21cefce1acccb5548de10d2d74118c1519d86ede8566b02ca8b4"
+  },
+  "terms": {
+    "url": "https://densho810.com/free/"
+  },
+  "fixtures": [
+    {
+      "file": "v01/black_jack_v01_pdf007.jpg",
+      "sourcePdfPage": 7,
+      "sha256": "03e5bfd264bc4a3761e534d3acd5ef145ca4c1c1b6073c248c6f66c7ece206d8",
+      "width": 1414,
+      "height": 2000,
+      "purposes": [
+        "baseline de diálogo vertical convencional",
+        "vários balões",
+        "caso relativamente limpo"
+      ]
+    },
+    {
+      "file": "v01/black_jack_v01_pdf021.jpg",
+      "sourcePdfPage": 21,
+      "sha256": "d49630fc36f2c33f1946309257cf132a223c1cd79ba9bec35a60eb38daf00b40",
+      "width": 1414,
+      "height": 2000,
+      "purposes": [
+        "diálogo junto de elementos gráficos/SFX",
+        "útil futuramente para avaliar precision e falsos positivos"
+      ]
+    },
+    {
+      "file": "v01/black_jack_v01_pdf041.jpg",
+      "sourcePdfPage": 41,
+      "sha256": "2aa24364494cab900e623f9a2787a032adffaa3cdee614b30e0d7344584db85b",
+      "width": 1414,
+      "height": 2000,
+      "purposes": [
+        "página visualmente carregada",
+        "muitos elementos que podem confundir detector",
+        "stress case de precision"
+      ]
+    },
+    {
+      "file": "v01/black_jack_v01_pdf066.jpg",
+      "sourcePdfPage": 66,
+      "sha256": "9010d4ca712e3c9bafcefcadaac5c79f093825ed4f85bfb304902e01ac8e6c5f",
+      "width": 1414,
+      "height": 2000,
+      "purposes": [
+        "vários quadros e balões",
+        "útil para OCR e futura validação de reading order"
+      ]
+    },
+    {
+      "file": "v01/black_jack_v01_pdf073.jpg",
+      "sourcePdfPage": 73,
+      "sha256": "ddefcdfdba3b897e111d31afecd8b6de82773232e9743dabe00a266718ad6621",
+      "width": 1414,
+      "height": 2000,
+      "purposes": [
+        "caso importante de texto vertical muito curto",
+        "inclui `うむ` isolado",
+        "candidata importante para regressões de recall de textos de poucos caracteres"
+      ]
+    },
+    {
+      "file": "v01/black_jack_v01_pdf090.jpg",
+      "sourcePdfPage": 90,
+      "sha256": "14cac32dece90e82645e9b1cd35f0b710f86ad14f740b260b12ffbee4ccbafac",
+      "width": 1414,
+      "height": 2000,
+      "purposes": [
+        "segundo caso de texto vertical curto",
+        "inclui `はい!!`",
+        "útil para evitar que uma futura correção seja específica demais para um único exemplo"
+      ]
+    },
+    {
+      "file": "v01/black_jack_v01_pdf123.jpg",
+      "sourcePdfPage": 123,
+      "sha256": "5f0ff6ae9d375337041727d15c7833b3dced0f47f8033d41fab46abdc980000a",
+      "width": 1414,
+      "height": 2000,
+      "purposes": [
+        "mistura de narração, balões e elementos gráficos",
+        "layout diversificado"
+      ]
+    },
+    {
+      "file": "v01/black_jack_v01_pdf145.jpg",
+      "sourcePdfPage": 145,
+      "sha256": "19d002ba154ee6bb47702b287537c8c169aadd696af7daaec0f3e46921d43966",
+      "width": 1414,
+      "height": 2000,
+      "purposes": [
+        "diálogo, texto ambiental e SFX",
+        "útil como caso de precision/false positives"
+      ]
+    },
+    {
+      "file": "v01/black_jack_v01_pdf171.jpg",
+      "sourcePdfPage": 171,
+      "sha256": "bdd007cbd42ab74959f1d8b1db007d97910608894f7c7455059f6b2b4af17193",
+      "width": 1414,
+      "height": 2000,
+      "purposes": [
+        "mistura de diálogo, texto vertical e sinalização/elementos do ambiente"
+      ]
+    },
+    {
+      "file": "v01/black_jack_v01_pdf194.jpg",
+      "sourcePdfPage": 194,
+      "sha256": "03cc7a27ccac1d7ce31f17ae604e43c108f31a379c60b1c8ede7efe677a2bfb1",
+      "width": 1414,
+      "height": 2000,
+      "purposes": [
+        "página densa",
+        "bastante texto vertical",
+        "útil para cobertura de OCR em conteúdo textual mais carregado"
+      ]
+    },
+    {
+      "file": "v01/black_jack_v01_pdf201.jpg",
+      "sourcePdfPage": 201,
+      "sha256": "084c02bff8f9fdc65878384e0e84c2a14c75b07f86347dca1595c8e8f0a025e1",
+      "width": 1414,
+      "height": 2000,
+      "purposes": [
+        "diálogo/SFX em cenário visualmente mais complexo",
+        "útil para diversidade do corpus"
+      ]
+    }
+  ]
+}
