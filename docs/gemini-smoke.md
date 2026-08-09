@@ -20,7 +20,9 @@ Never commit `.env`, an API key, copied provider headers, or a secret-bearing re
 
 ## Structured-output compatibility boundary
 
-MangaSensei keeps the complete Pydantic response contract as the local validation authority. The Interactions request receives a provider-facing JSON Schema derived from that contract but limited to the JSON Schema subset documented by Gemini structured outputs. String `minLength`/`maxLength` constraints are currently omitted from the provider representation while local Pydantic validation still enforces the original string length bounds after the provider returns JSON. Supported array bounds such as `maxItems` remain in the provider schema unless provider evidence proves a narrower compatibility requirement.
+MangaSensei keeps the complete Pydantic response contract as the local validation authority. The Interactions request receives a provider-facing JSON Schema derived from that contract, while validation after generation still uses the original Pydantic model.
+
+String `minLength`/`maxLength` constraints are omitted from the provider representation because they are outside the currently documented Gemini structured-output subset. `maxItems` is also omitted from the provider representation as a narrower compatibility workaround established by the real-provider #90 differential: the current production-shaped request was rejected, flat and nested `$defs`/`$ref` controls were accepted, and the first production-derived schema variant accepted by Interactions was the variant without `maxItems`. Google currently documents `maxItems` as supported, so MangaSensei does not treat it as universally unsupported; the omission is retained only at the provider boundary while the local Pydantic contract continues to enforce every array-length limit.
 
 The real-provider smoke deliberately starts with the production page-analysis schema so an SDK/model/provider change that rejects this compatibility representation is visible before the optional Gemini path is considered validated.
 
