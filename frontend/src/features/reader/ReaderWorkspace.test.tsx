@@ -74,7 +74,7 @@ describe("ReaderWorkspace", () => {
     await user.keyboard("{Enter}");
 
     expect(screen.getByRole("heading", { name: /犬/ })).toBeVisible();
-    expect(screen.getByText("ヨミ", { selector: "rt" })).toBeVisible();
+    expect(screen.getByText("よみ", { selector: "rt" })).toBeVisible();
     expect(screen.getByText("Análise contextual indisponível.")).toBeVisible();
     expect(screen.getByText("Nenhuma associação confiável ao dicionário.")).toBeVisible();
     expect(screen.getByText("Nenhum ponto gramatical adicional.")).toBeVisible();
