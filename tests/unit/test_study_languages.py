@@ -25,7 +25,10 @@ def test_unsupported_study_language_is_rejected() -> None:
 
 
 def test_study_language_reuse_jobs_can_skip_language_independent_stages() -> None:
-    assert transition_job(JobStatus.CLAIMED, JobStatus.PROCESSING_GEMINI) is JobStatus.PROCESSING_GEMINI
+    assert (
+        transition_job(JobStatus.CLAIMED, JobStatus.PROCESSING_GEMINI)
+        is JobStatus.PROCESSING_GEMINI
+    )
     assert transition_job(JobStatus.CLAIMED, JobStatus.COMPLETED) is JobStatus.COMPLETED
 
 
