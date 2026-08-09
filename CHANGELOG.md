@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Normalized JMdict data now uses the `mangasensei-jmdict-v3` canonical form contract and reproducible manifest metadata derived from the checksum-pinned source artifact.
 - Browser assurance now labels the fast API-mocked Playwright suite separately from the required full-stack critical-flow E2E.
 - Page and status responses now expose `resultAvailable` separately from the latest analysis-attempt status.
+- Tagged release publishing now requires the reusable JMdict source-to-consumer contract plus clean Compose prerequisite, API-readiness and worker-readiness validation on the exact tag SHA.
 
 ### Fixed
 
