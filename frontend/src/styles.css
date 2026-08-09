@@ -177,7 +177,8 @@ h1 {
     3px 0 0 var(--paper),
     -3px 3px 0 var(--paper),
     0 3px 0 var(--paper),
-    3px 3px 0 var(--paper);
+    3px 3px 0 var(--paper),
+    5px 5px 0 rgb(33 30 26 / 12%);
 }
 
 .title-row {
