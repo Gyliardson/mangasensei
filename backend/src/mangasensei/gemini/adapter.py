@@ -3,21 +3,22 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import httpx
 from google import genai
 from pydantic import BaseModel, ValidationError
 
+from mangasensei.gemini.errors import (
+    GeminiProviderError,
+    GeminiProviderFailureKind,
+    GeminiResponseError,
+)
+
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
-
-class GeminiProviderError(RuntimeError):
-    """A sanitized provider failure safe for internal orchestration."""
-
-
-class GeminiResponseError(RuntimeError):
-    """The provider returned output outside the strict schema."""
+_UNSUPPORTED_INTERACTIONS_SCHEMA_KEYS = frozenset({"minLength", "maxLength"})
+_RETRYABLE_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 
 
 class GoogleGenAiAdapter:
@@ -54,7 +55,7 @@ class GoogleGenAiAdapter:
                     response_format={
                         "type": "text",
                         "mime_type": "application/json",
-                        "schema": schema.model_json_schema(),
+                        "schema": _interactions_json_schema(schema),
                     },
                     generation_config={
                         "thinking_level": "low",
@@ -64,8 +65,9 @@ class GoogleGenAiAdapter:
                 )
                 break
             except Exception as exc:
-                if attempt == self._max_attempts or not _is_retryable(exc):
-                    raise GeminiProviderError("Gemini request failed") from exc
+                failure = _classify_provider_failure(exc)
+                if attempt == self._max_attempts or not failure.retryable:
+                    raise failure from exc
                 await asyncio.sleep(2 ** (attempt - 1))
 
         output_text = getattr(response, "output_text", None)
@@ -83,8 +85,100 @@ class GoogleGenAiAdapter:
             await close()
 
 
-def _is_retryable(exc: Exception) -> bool:
-    if isinstance(exc, (TimeoutError, httpx.TransportError)):
-        return True
-    status_code = getattr(exc, "status_code", getattr(exc, "code", None))
-    return status_code in {408, 429, 500, 502, 503, 504}
+def _interactions_json_schema(schema: type[BaseModel]) -> dict[str, Any]:
+    """Return the documented Gemini JSON-Schema subset without weakening local validation."""
+    return cast(dict[str, Any], _strip_unsupported_schema_keys(schema.model_json_schema()))
+
+
+def _strip_unsupported_schema_keys(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _strip_unsupported_schema_keys(item)
+            for key, item in value.items()
+            if key not in _UNSUPPORTED_INTERACTIONS_SCHEMA_KEYS
+        }
+    if isinstance(value, list):
+        return [_strip_unsupported_schema_keys(item) for item in value]
+    return value
+
+
+def _classify_provider_failure(exc: Exception) -> GeminiProviderError:
+    status_code = _provider_status_code(exc)
+    if _contains_transport_failure(exc):
+        return GeminiProviderError(
+            kind=GeminiProviderFailureKind.TRANSPORT,
+            retryable=True,
+            status_code=status_code,
+        )
+    if status_code in {401, 403}:
+        return GeminiProviderError(
+            kind=GeminiProviderFailureKind.AUTH,
+            retryable=False,
+            status_code=status_code,
+        )
+    if status_code == 429:
+        return GeminiProviderError(
+            kind=GeminiProviderFailureKind.RATE_LIMIT,
+            retryable=True,
+            status_code=status_code,
+        )
+    if status_code in {408, 500, 502, 503, 504}:
+        kind = (
+            GeminiProviderFailureKind.TRANSPORT
+            if status_code == 408
+            else GeminiProviderFailureKind.SERVER
+        )
+        return GeminiProviderError(kind=kind, retryable=True, status_code=status_code)
+    if status_code is not None and 400 <= status_code < 500:
+        return GeminiProviderError(
+            kind=GeminiProviderFailureKind.REQUEST,
+            retryable=False,
+            status_code=status_code,
+        )
+    return GeminiProviderError(
+        kind=GeminiProviderFailureKind.UNKNOWN,
+        retryable=status_code in _RETRYABLE_HTTP_STATUSES,
+        status_code=status_code,
+    )
+
+
+def _provider_status_code(exc: BaseException) -> int | None:
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        for attribute in ("status_code", "code"):
+            value = getattr(current, attribute, None)
+            if isinstance(value, int):
+                return value
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif not current.__suppress_context__:
+            current = current.__context__
+        else:
+            current = None
+    return None
+
+
+def _contains_transport_failure(exc: BaseException) -> bool:
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, (TimeoutError, httpx.TransportError)):
+            return True
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif not current.__suppress_context__:
+            current = current.__context__
+        else:
+            current = None
+    return False
+
+
+__all__ = [
+    "GeminiProviderError",
+    "GeminiProviderFailureKind",
+    "GeminiResponseError",
+    "GoogleGenAiAdapter",
+]
