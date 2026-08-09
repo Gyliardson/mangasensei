@@ -24,7 +24,6 @@ from mangasensei.ocr.adapter.manga_image_translator import (
     _DETECTOR_FLAGS,
     _RECOGNIZER_FLAG,
     MangaImageTranslatorEngine,
-    _decode_rgb,
 )
 from mangasensei.ocr.adapter.recognizer_48px import (
     _copy_quadrilateral,
@@ -154,7 +153,6 @@ def _block_crop(
 async def _run() -> None:
     args = _parse_args()
     output = args.output.resolve()
-    crops_root = output / "crops"
     output.mkdir(parents=True, exist_ok=True)
 
     engine = MangaImageTranslatorEngine(model_cache=args.model_cache, device="cpu")
