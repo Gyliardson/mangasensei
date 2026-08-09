@@ -8,6 +8,7 @@ on:
       - "scripts/ocr_54_target_segmentation.py"
       - "scripts/ocr_54_context_experiment.py"
       - "scripts/ocr_54_detection_size_experiment.py"
+      - "scripts/ocr_54_recognizer_padding_experiment.py"
 
 permissions:
   contents: write
@@ -132,6 +133,13 @@ jobs:
             --page9 .ocr54/artifact/source_page9.jpg \
             --model-cache "${MANGASENSEI_MODEL_CACHE}" \
             --output .ocr54/artifact/detection-size-experiment.json
+
+      - name: Characterize recognizer batch padding on the fragile target line
+        run: |
+          uv run python scripts/ocr_54_recognizer_padding_experiment.py \
+            --page9 .ocr54/artifact/source_page9.jpg \
+            --model-cache "${MANGASENSEI_MODEL_CACHE}" \
+            --output .ocr54/artifact/recognizer-padding-experiment.json
 
       - name: Upload investigation evidence
         if: always()
