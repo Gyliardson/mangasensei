@@ -32,6 +32,12 @@ class FakeInteractions:
         )
 
 
+class SyntheticProviderError(RuntimeError):
+    def __init__(self, status_code: int) -> None:
+        super().__init__("synthetic provider detail must not cross the adapter boundary")
+        self.status_code = status_code
+
+
 class FakeProviderFailureInteractions:
     def __init__(self, status_code: int) -> None:
         self.status_code = status_code
@@ -40,9 +46,7 @@ class FakeProviderFailureInteractions:
     async def create(self, **kwargs: object) -> object:
         del kwargs
         self.calls += 1
-        error = RuntimeError("synthetic provider detail must not cross the adapter boundary")
-        error.status_code = self.status_code  # type: ignore[attr-defined]
-        raise error
+        raise SyntheticProviderError(self.status_code)
 
 
 @pytest.mark.asyncio
@@ -97,6 +101,21 @@ async def test_interactions_adapter_accepts_a_bounded_output_limit_for_smoke_cal
 
 
 @pytest.mark.asyncio
+async def test_interactions_adapter_default_keeps_one_http_attempt_per_accounting_call() -> None:
+    interactions = FakeProviderFailureInteractions(503)
+    client = SimpleNamespace(aio=SimpleNamespace(interactions=interactions))
+    adapter = GoogleGenAiAdapter(client=client, model="gemini-test")
+
+    with pytest.raises(GeminiProviderError) as captured:
+        await adapter.analyze(prompt="synthetic", schema=GeminiPageAnalysis)
+
+    assert interactions.calls == 1
+    assert captured.value.kind is GeminiProviderFailureKind.SERVER
+    assert captured.value.retryable is True
+    assert captured.value.status_code == 503
+
+
+@pytest.mark.asyncio
 async def test_interactions_adapter_preserves_permanent_400_classification() -> None:
     interactions = FakeProviderFailureInteractions(400)
     client = SimpleNamespace(aio=SimpleNamespace(interactions=interactions))
@@ -120,7 +139,7 @@ async def test_interactions_adapter_preserves_permanent_400_classification() -> 
         (503, GeminiProviderFailureKind.SERVER),
     ],
 )
-async def test_interactions_adapter_retries_transient_provider_statuses(
+async def test_interactions_adapter_can_retry_transient_provider_statuses_when_explicitly_bounded(
     monkeypatch: pytest.MonkeyPatch,
     status_code: int,
     kind: GeminiProviderFailureKind,
