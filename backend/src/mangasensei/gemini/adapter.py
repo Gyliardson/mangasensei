@@ -18,7 +18,9 @@ from mangasensei.gemini.errors import (
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
-_UNSUPPORTED_INTERACTIONS_SCHEMA_KEYS = frozenset({"minLength", "maxLength"})
+_INTERACTIONS_PROVIDER_OMITTED_SCHEMA_KEYS = frozenset(
+    {"minLength", "maxLength", "maxItems"}
+)
 _RETRYABLE_HTTP_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 
 
@@ -99,19 +101,19 @@ def _build_google_client(api_key: str) -> Any:
 
 
 def _interactions_json_schema(schema: type[BaseModel]) -> dict[str, Any]:
-    """Return the documented Gemini JSON-Schema subset without weakening local validation."""
-    return cast(dict[str, Any], _strip_unsupported_schema_keys(schema.model_json_schema()))
+    """Return the proven Interactions-compatible schema while preserving local validation."""
+    return cast(dict[str, Any], _strip_provider_omitted_schema_keys(schema.model_json_schema()))
 
 
-def _strip_unsupported_schema_keys(value: Any) -> Any:
+def _strip_provider_omitted_schema_keys(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key: _strip_unsupported_schema_keys(item)
+            key: _strip_provider_omitted_schema_keys(item)
             for key, item in value.items()
-            if key not in _UNSUPPORTED_INTERACTIONS_SCHEMA_KEYS
+            if key not in _INTERACTIONS_PROVIDER_OMITTED_SCHEMA_KEYS
         }
     if isinstance(value, list):
-        return [_strip_unsupported_schema_keys(item) for item in value]
+        return [_strip_provider_omitted_schema_keys(item) for item in value]
     return value
 
 
