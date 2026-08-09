@@ -4,11 +4,11 @@ import numpy as np
 import pytest
 
 from mangasensei.ocr.adapter.recognizer_48px import (
+    RECOGNITION_SHORT_AXIS_PADDING,
     _copy_quadrilateral,
     _copy_recognition,
     _recognition_destination,
     _RecognitionQuadrilateral,
-    RECOGNITION_SHORT_AXIS_PADDING,
 )
 from mangasensei.ocr.vendor.manga_image_translator.manga_translator.utils.generic import (
     Quadrilateral,
