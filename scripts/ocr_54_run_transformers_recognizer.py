@@ -14,6 +14,7 @@ from typing import Any
 from PIL import Image
 
 MODEL_ID = "PaddlePaddle/PP-OCRv6_medium_rec_safetensors"
+MODEL_CACHE_NAME = "models--PaddlePaddle--PP-OCRv6_medium_rec_safetensors"
 
 
 def _parse_args() -> argparse.Namespace:
@@ -61,9 +62,11 @@ def _model_files(model: Any, processor: Any) -> list[dict[str, Any]]:
             if path.exists():
                 candidates.add(path)
         if isinstance(commit_hash, str):
-            cache_root = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"))
-            snapshots = list(cache_root.glob(f"hub/models--PaddlePaddle--PP-OCRv6_medium_rec_safetensors/snapshots/{commit_hash}"))
-            candidates.update(snapshots)
+            default_cache = Path.home() / ".cache" / "huggingface"
+            cache_root = Path(os.environ.get("HF_HOME", default_cache))
+            snapshot = cache_root / "hub" / MODEL_CACHE_NAME / "snapshots" / commit_hash
+            if snapshot.exists():
+                candidates.add(snapshot)
     files: list[dict[str, Any]] = []
     for root in sorted(candidates):
         if root.is_file():
