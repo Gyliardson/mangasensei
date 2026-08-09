@@ -100,11 +100,13 @@ async def _run() -> None:
             line_map[(label, int(line["index"]))] = {**line, "page": label}
 
     rss_start_mb = process.memory_info().rss / (1024 * 1024)
+    peak_start_mb = _peak_rss_mb()
     primary_engine = MangaImageTranslatorEngine(model_cache=args.model_cache, device="cpu")
     primary_load_started = time.perf_counter()
     await primary_engine._ensure_loaded()
     primary_load_seconds = time.perf_counter() - primary_load_started
     rss_primary_loaded_mb = process.memory_info().rss / (1024 * 1024)
+    peak_primary_loaded_mb = _peak_rss_mb()
 
     warm_page = page_map[WARM_PAGE_LABEL]
     fixture_root = (
@@ -130,6 +132,7 @@ async def _run() -> None:
     )
     primary_infer_seconds = time.perf_counter() - primary_infer_started
     rss_primary_warm_mb = process.memory_info().rss / (1024 * 1024)
+    peak_primary_warm_mb = _peak_rss_mb()
 
     secondary_load_started = time.perf_counter()
     processor = AutoImageProcessor.from_pretrained(MODEL_ID)
@@ -137,6 +140,7 @@ async def _run() -> None:
     secondary.eval()
     secondary_load_seconds = time.perf_counter() - secondary_load_started
     rss_both_loaded_mb = process.memory_info().rss / (1024 * 1024)
+    peak_both_loaded_mb = _peak_rss_mb()
 
     selected: list[dict[str, Any]] = []
     for line in line_map.values():
@@ -197,8 +201,9 @@ async def _run() -> None:
         del outputs, results, inputs
         image.close()
 
+    peak_final_mb = _peak_rss_mb()
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "implementation_head": corpus.get("implementation_head"),
         "model_id": MODEL_ID,
         "model_commit_hash": getattr(secondary.config, "_commit_hash", None),
@@ -216,7 +221,12 @@ async def _run() -> None:
         "rss_primary_warm_mb": rss_primary_warm_mb,
         "rss_both_loaded_mb": rss_both_loaded_mb,
         "final_rss_mb": process.memory_info().rss / (1024 * 1024),
-        "peak_rss_mb": _peak_rss_mb(),
+        "peak_start_mb": peak_start_mb,
+        "peak_primary_loaded_mb": peak_primary_loaded_mb,
+        "peak_primary_warm_mb": peak_primary_warm_mb,
+        "peak_both_loaded_mb": peak_both_loaded_mb,
+        "peak_final_mb": peak_final_mb,
+        "secondary_peak_increment_mb": max(0.0, peak_final_mb - peak_primary_warm_mb),
         "max_rss_sample": max_rss_sample,
         "primary_load_seconds": primary_load_seconds,
         "primary_infer_seconds": primary_infer_seconds,
@@ -234,7 +244,10 @@ async def _run() -> None:
         "OCR_COMBINED_MEMORY "
         f"lines={len(line_map)} selected={len(selected)} mismatches={len(mismatches)} "
         f"rss_primary_warm_mb={rss_primary_warm_mb:.1f} "
-        f"rss_both_loaded_mb={rss_both_loaded_mb:.1f} peak_rss_mb={payload['peak_rss_mb']:.1f} "
+        f"rss_both_loaded_mb={rss_both_loaded_mb:.1f} "
+        f"peak_primary_warm_mb={peak_primary_warm_mb:.1f} "
+        f"peak_final_mb={peak_final_mb:.1f} "
+        f"secondary_peak_increment_mb={payload['secondary_peak_increment_mb']:.1f} "
         f"secondary_seconds={secondary_infer_seconds:.3f}"
     )
     if len(selected) != 41:
