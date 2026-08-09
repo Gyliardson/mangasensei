@@ -139,4 +139,4 @@ The full-stack Playwright command is:
 npm run e2e:fullstack
 ```
 
-It assumes PostgreSQL has been migrated and the API plus deterministic worker harness are already running; the CI workflow performs that orchestration. This test is intentionally distinct from the fast mocked browser suite, the heavyweight real-model OCR smoke and paid-provider smoke tests so each layer states exactly what it validates.
+It assumes PostgreSQL has been migrated and the API plus deterministic worker harness are already running; the CI workflow performs that orchestration. This test is intentionally distinct from the fast mocked browser suite and the heavyweight real-model OCR smoke so each layer states exactly what it validates.
