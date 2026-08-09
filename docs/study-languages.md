@@ -10,7 +10,7 @@ Three concepts are intentionally separate:
 | --- | --- |
 | Content / study-target language | `ja` only |
 | Study / explanation language | `pt-BR` (default) or `en` |
-| UI locale | Independent from study language; the current application UI remains Portuguese while UI localization evolves separately |
+| UI locale | Independent from study language; the current application UI remains Portuguese |
 
 The API does not infer study language from browser locale, `Accept-Language`, UI copy, nationality, or any other ambient signal.
 
@@ -67,7 +67,7 @@ Dictionary meaning and contextual translation/explanation are separate concepts:
 - JMdict supplies deterministic local lexical meanings and stable dictionary identifiers;
 - optional Gemini supplies language-dependent contextual translation, explanation, and grammar presentation.
 
-MangaSensei does not introduce or synthesize a Portuguese deterministic dictionary source solely to make the study-language selector appear uniform.
+MangaSensei does not introduce or synthesize a Portuguese deterministic dictionary source solely to make the study-language contract appear uniform.
 
 ## Persistence and migration
 
@@ -81,8 +81,22 @@ This preserves the pre-existing Portuguese study-flow interpretation while retai
 
 Study-language-only results can reference an earlier linguistic run. Page retention remains the governing lifecycle: deleting an expired page still cascades through the related jobs/results and their reused analysis graph according to the existing retention model.
 
+## Backend assurance
+
+The backend contract is covered by deterministic unit/integration tests that verify:
+
+- `pt-BR` is the default and unsupported study-language values are rejected;
+- the Gemini prompt contains the explicit validated study language and its persisted request digest remains tied to the exact prompt;
+- a real pre-language database state with a completed analysis upgrades to `pt-BR` result metadata without losing the existing linguistic run;
+- `pt-BR` → `en` language reprocessing creates a new study result while retaining exactly one OCR run and one linguistic run;
+- the previously completed result and its language remain readable while the new language job is pending;
+- English study metadata remains valid with Gemini disabled and deterministic local JMdict vocabulary still works;
+- normal analysis jobs cannot use the direct state transitions reserved for language-only reuse jobs.
+
+The repository's ordinary full-stack browser gate remains a separate assurance layer. It does not yet prove the final user-driven study-language selection flow; that feature-level browser coverage is required before issue #63 can be closed.
+
 ## Current product boundary
 
-This contract does **not** add English, Portuguese, Spanish, or generic multilingual manga OCR. It also does not automatically localize the application UI. The current feature boundary is Japanese content studied with either Brazilian Portuguese or English learner-facing contextual content.
+This contract does **not** add English, Portuguese, Spanish, or generic multilingual manga OCR. It also does not automatically localize the application UI. The backend currently supports Japanese content with `pt-BR` or `en` learner-facing contextual result metadata and optional Gemini output.
 
-The user-facing study-language selector and browser-local preference are delivered separately from this backend contract so they can integrate with the reader's current control hierarchy without coupling UI locale to study language.
+The current browser UI does not yet expose a study-language selector or browser-local study-language preference. UI locale remains independent from the backend study-language contract, so an eventual UI control does not need to reinterpret existing persisted results or couple explanation language to interface language.
