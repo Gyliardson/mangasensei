@@ -85,6 +85,18 @@ async def _seed_page_job(
         return page.id, job.id
 
 
+async def _advance_claim_to_gemini(
+    sessions: async_sessionmaker[AsyncSession], claim: ClaimedJob
+) -> None:
+    for status in ("processing_ocr", "processing_linguistics", "processing_gemini"):
+        async with sessions.begin() as session:
+            await session.execute(
+                update(JobRecord)
+                .where(JobRecord.id == claim.job_id)
+                .values(status=status, updated_at=func.now())
+            )
+
+
 async def _claim_for_gemini(
     sessions: async_sessionmaker[AsyncSession],
     *,
@@ -92,12 +104,7 @@ async def _claim_for_gemini(
 ) -> ClaimedJob:
     claim = await QueueRepository(sessions).claim(worker_id=worker_id, lease_seconds=60)
     assert claim is not None
-    async with sessions.begin() as session:
-        await session.execute(
-            update(JobRecord)
-            .where(JobRecord.id == claim.job_id)
-            .values(status="processing_gemini", updated_at=func.now())
-        )
+    await _advance_claim_to_gemini(sessions, claim)
     return claim
 
 
@@ -156,9 +163,7 @@ async def _accounting_snapshot(
 ) -> tuple[GeminiCallRecord, GeminiBudgetBucketRecord, list[GeminiCostLedgerRecord]]:
     async with sessions() as session:
         call = await session.get_one(GeminiCallRecord, call_id)
-        bucket = (
-            await session.execute(select(GeminiBudgetBucketRecord))
-        ).scalar_one()
+        bucket = (await session.execute(select(GeminiBudgetBucketRecord))).scalar_one()
         ledger = (
             await session.execute(
                 select(GeminiCostLedgerRecord).where(
@@ -233,18 +238,10 @@ async def test_reserved_lease_loss_does_not_consume_later_page_call_ordinal(
     second = await QueueRepository(sessions).claim(worker_id="worker-b", lease_seconds=60)
     assert second is not None
     assert second.fencing_token == first.fencing_token + 1
+    await _advance_claim_to_gemini(sessions, second)
 
     async with sessions.begin() as session:
-        await session.execute(
-            update(JobRecord)
-            .where(JobRecord.id == job_id)
-            .values(status="processing_gemini", updated_at=func.now())
-        )
-        bucket = (
-            await session.execute(
-                select(GeminiBudgetBucketRecord).with_for_update()
-            )
-        ).scalar_one()
+        bucket = (await session.execute(select(GeminiBudgetBucketRecord).with_for_update())).scalar_one()
         bucket.reserved_amount += _RESERVATION
         replacement = GeminiCallRecord(
             page_id=page_id,
@@ -264,9 +261,7 @@ async def test_reserved_lease_loss_does_not_consume_later_page_call_ordinal(
     async with sessions() as session:
         abandoned = await session.get_one(GeminiCallRecord, abandoned_call_id)
         replacement = await session.get_one(GeminiCallRecord, replacement_call_id)
-        bucket = (
-            await session.execute(select(GeminiBudgetBucketRecord))
-        ).scalar_one()
+        bucket = (await session.execute(select(GeminiBudgetBucketRecord))).scalar_one()
     assert abandoned.state == "failed"
     assert abandoned.page_id is None
     assert replacement.page_id == page_id
