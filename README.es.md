@@ -135,7 +135,7 @@ Genera secretos y configúralos en `.env` antes de ejecutar cualquier cosa que u
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Gemini es opcional. Deja `GOOGLE_API_KEY` sin definir o en blanco para ejecutar el worker solo con OCR y lingüística locales; configura una clave no vacía para habilitar el enriquecimiento de Gemini.
+Gemini es opcional. Deja `GOOGLE_API_KEY` sin definir o en blanco para ejecutar el worker solo con OCR y lingüística locales; configura una clave no vacía para habilitar el enriquecimiento de Gemini. Cuando está habilitado, solo se envían el texto OCR y candidatos léxicos mínimos por región (`id`, `surface`, `lemma`, `reading`) para el enriquecimiento opcional. La imagen original, los significados del diccionario y el dataset JMdict local no se envían.
 
 Ejecuta con Docker Compose:
 
