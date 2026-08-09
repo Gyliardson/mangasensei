@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("keeps the upload index masked and next-step content on the workspace axis", async ({ page }) => {
+test("keeps the upload index as overlapping typography without a rectangular mask", async ({ page }) => {
   await page.goto("/");
 
   const layout = await page.evaluate(() => {
@@ -15,16 +15,29 @@ test("keeps the upload index masked and next-step content on the workspace axis"
     const indexRect = index.getBoundingClientRect();
     const previewRect = preview.getBoundingClientRect();
     const indexStyle = getComputedStyle(index);
+    const beforeStyle = getComputedStyle(index, "::before");
+    const afterStyle = getComputedStyle(index, "::after");
+    const hasGeneratedContour = [beforeStyle, afterStyle].some(
+      (style) => style.content !== "none" && style.content !== "normal" && style.content !== '""',
+    );
+    const hasContourTreatment =
+      indexStyle.textShadow !== "none" ||
+      indexStyle.filter !== "none" ||
+      Number.parseFloat(indexStyle.webkitTextStrokeWidth || "0") > 0 ||
+      hasGeneratedContour;
 
     return {
       workspaceLeft: workspaceRect.left,
       panelTop: panelRect.top,
       indexTop: indexRect.top,
       indexBottom: indexRect.bottom,
+      indexHeight: indexRect.height,
       indexLeft: indexRect.left,
       indexRight: indexRect.right,
       indexBackground: indexStyle.backgroundColor,
-      indexZ: Number(indexStyle.zIndex),
+      indexPaddingLeft: Number.parseFloat(indexStyle.paddingLeft),
+      indexPaddingRight: Number.parseFloat(indexStyle.paddingRight),
+      hasContourTreatment,
       previewLeft: previewRect.left,
       viewportWidth: window.innerWidth,
       documentWidth: document.documentElement.scrollWidth,
@@ -32,10 +45,18 @@ test("keeps the upload index masked and next-step content on the workspace axis"
   });
 
   expect(Math.abs(layout.previewLeft - layout.workspaceLeft)).toBeLessThanOrEqual(1);
+
+  const overlapRatio = (layout.indexBottom - layout.panelTop) / layout.indexHeight;
+  expect(overlapRatio).toBeGreaterThan(0.15);
+  expect(overlapRatio).toBeLessThan(0.65);
+  expect(layout.indexTop).toBeGreaterThanOrEqual(0);
   expect(layout.indexTop).toBeLessThan(layout.panelTop);
-  expect(layout.indexBottom).toBeGreaterThan(layout.panelTop);
-  expect(layout.indexBackground).not.toBe("rgba(0, 0, 0, 0)");
-  expect(layout.indexZ).toBeGreaterThanOrEqual(1);
+
+  expect(layout.indexBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(layout.indexPaddingLeft).toBeLessThanOrEqual(1);
+  expect(layout.indexPaddingRight).toBeLessThanOrEqual(1);
+  expect(layout.hasContourTreatment).toBe(true);
+
   expect(layout.indexLeft).toBeGreaterThanOrEqual(0);
   expect(layout.indexRight).toBeLessThanOrEqual(layout.viewportWidth);
   expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth);
