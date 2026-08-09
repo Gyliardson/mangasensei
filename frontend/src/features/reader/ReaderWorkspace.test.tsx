@@ -37,6 +37,7 @@ function page(regions: readonly StudyRegion[]): StudyPage {
   return {
     pageId: "page-001",
     status: "completed",
+    resultAvailable: true,
     expiresAt: "2026-08-09T00:00:00Z",
     imageUrl: "/image",
     dimensions: { width: 100, height: 100 },
