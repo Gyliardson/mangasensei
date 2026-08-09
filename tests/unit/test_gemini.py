@@ -7,6 +7,7 @@ from mangasensei.gemini.contracts import GeminiPageAnalysis, GeminiRegionAnalysi
 from mangasensei.gemini.service import (
     GeminiAnalysisService,
     GeminiVocabularyCandidate,
+    RegionCompletenessError,
     UnknownRegionError,
     UnknownVocabularyError,
     build_vocabulary_candidates_by_region,
@@ -58,6 +59,16 @@ def token(
     )
 
 
+def region_analysis(region_id: str, *, vocabulary_ids: tuple[str, ...] = ()) -> GeminiRegionAnalysis:
+    return GeminiRegionAnalysis(
+        region_id=region_id,
+        translation=f"translation:{region_id}",
+        explanation=f"explanation:{region_id}",
+        grammar_points=(),
+        vocabulary_ids=vocabulary_ids,
+    )
+
+
 @pytest.mark.asyncio
 async def test_prompt_preserves_region_scoped_vocabulary_mapping() -> None:
     adapter = PromptMappedAdapter()
@@ -105,13 +116,8 @@ async def test_known_page_vocabulary_is_rejected_for_the_wrong_region() -> None:
             del prompt
             return schema(
                 regions=(
-                    GeminiRegionAnalysis(
-                        region_id="region-b",
-                        translation="Dog.",
-                        explanation="Wrong vocabulary association fixture.",
-                        grammar_points=(),
-                        vocabulary_ids=("jmdict-cat",),
-                    ),
+                    region_analysis("region-a", vocabulary_ids=("jmdict-cat",)),
+                    region_analysis("region-b", vocabulary_ids=("jmdict-cat",)),
                 )
             )
 
@@ -124,6 +130,63 @@ async def test_known_page_vocabulary_is_rejected_for_the_wrong_region() -> None:
                 "region-b": (candidate("jmdict-dog", "犬", "犬", "イヌ"),),
             },
         )
+
+
+@pytest.mark.asyncio
+async def test_missing_gemini_region_is_rejected_before_persistence() -> None:
+    class MissingRegionAdapter:
+        async def analyze(
+            self, *, prompt: str, schema: type[GeminiPageAnalysis]
+        ) -> GeminiPageAnalysis:
+            del prompt
+            return schema(regions=(region_analysis("region-a"),))
+
+    service = GeminiAnalysisService(MissingRegionAdapter(), prompt_version="v2")
+    with pytest.raises(RegionCompletenessError):
+        await service.analyze_page(
+            regions={"region-a": "猫", "region-b": "犬"},
+            vocabulary_by_region={"region-a": (), "region-b": ()},
+        )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_gemini_region_is_rejected_before_persistence() -> None:
+    class DuplicateRegionAdapter:
+        async def analyze(
+            self, *, prompt: str, schema: type[GeminiPageAnalysis]
+        ) -> GeminiPageAnalysis:
+            del prompt
+            return schema(
+                regions=(region_analysis("region-a"), region_analysis("region-a"))
+            )
+
+    service = GeminiAnalysisService(DuplicateRegionAdapter(), prompt_version="v2")
+    with pytest.raises(RegionCompletenessError):
+        await service.analyze_page(
+            regions={"region-a": "猫", "region-b": "犬"},
+            vocabulary_by_region={"region-a": (), "region-b": ()},
+        )
+
+
+@pytest.mark.asyncio
+async def test_complete_gemini_regions_can_be_returned_in_any_order() -> None:
+    class ReorderedRegionAdapter:
+        async def analyze(
+            self, *, prompt: str, schema: type[GeminiPageAnalysis]
+        ) -> GeminiPageAnalysis:
+            del prompt
+            return schema(
+                regions=(region_analysis("region-b"), region_analysis("region-a"))
+            )
+
+    result = await GeminiAnalysisService(
+        ReorderedRegionAdapter(), prompt_version="v2"
+    ).analyze_page(
+        regions={"region-a": "猫", "region-b": "犬"},
+        vocabulary_by_region={"region-a": (), "region-b": ()},
+    )
+
+    assert [analysis.region_id for analysis in result.regions] == ["region-b", "region-a"]
 
 
 def test_vocabulary_candidates_dedupe_within_region_but_remain_region_scoped() -> None:
@@ -195,17 +258,7 @@ async def test_unknown_gemini_region_is_rejected() -> None:
             self, *, prompt: str, schema: type[GeminiPageAnalysis]
         ) -> GeminiPageAnalysis:
             del prompt
-            return schema(
-                regions=(
-                    GeminiRegionAnalysis(
-                        region_id="region-999",
-                        translation="?",
-                        explanation="?",
-                        grammar_points=(),
-                        vocabulary_ids=(),
-                    ),
-                )
-            )
+            return schema(regions=(region_analysis("region-999"),))
 
     service = GeminiAnalysisService(UnknownAdapter(), prompt_version="v2")
     with pytest.raises(UnknownRegionError):
