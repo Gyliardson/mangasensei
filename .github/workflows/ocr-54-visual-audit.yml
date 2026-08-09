@@ -1,0 +1,56 @@
+name: OCR 54 Visual Audit
+
+on:
+  push:
+    branches: [investigate/54-page9-overlay3]
+    paths:
+      - "scripts/ocr_54_visual_audit.py"
+      - ".github/workflows/ocr-54-visual-audit.yml"
+      - "backend/src/mangasensei/ocr/**"
+      - "tests/fixtures/ocr/real_manga/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ocr-54-visual-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Licensed corpus visual audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
+      MANGASENSEI_OCR_AUDIT_DIR: ${{ github.workspace }}/var/ocr54-audit
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install locked OCR dependencies
+        run: uv sync --frozen --extra ocr
+
+      - name: Download reviewed OCR models
+        run: uv run mangasensei models download
+
+      - name: Verify reviewed OCR models
+        run: uv run mangasensei models verify
+
+      - name: Render stage and corpus audit artifacts
+        run: uv run python scripts/ocr_54_visual_audit.py
+
+      - name: Upload visual audit
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-visual-audit
+          path: var/ocr54-audit
+          if-no-files-found: error
+          retention-days: 7
