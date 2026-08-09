@@ -1,31 +1,38 @@
-name: OCR 54 Visual Audit
+name: OCR 54 Exact Head Deep Validation
 
 on:
   push:
     branches: [investigate/54-page9-overlay3]
     paths:
-      - "scripts/ocr_54_recognition_context_corpus.py"
       - ".github/workflows/ocr-54-visual-audit.yml"
-      - "backend/src/mangasensei/ocr/**"
-      - "tests/fixtures/ocr/real_manga/**"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ocr-54-visual-audit-${{ github.ref }}
+  group: ocr-54-exact-head-deep-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   audit:
-    name: Recognition context corpus audit
+    name: Exact PR head deep OCR and visual audit
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
+      EXPECTED_SHA: 258ca0dda056a9d3243a6f74e3b55254a9eda65c
       MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
-      MANGASENSEI_OCR_AUDIT_DIR: ${{ github.workspace }}/var/ocr54-context-corpus
+      MANGASENSEI_RUN_OCR_SMOKE: "1"
+      MANGASENSEI_OCR_REPEAT_RUNS: "3"
+      MANGASENSEI_OCR_FULL_CORPUS: "1"
+      MANGASENSEI_OCR_ARTIFACT_DIR: ${{ github.workspace }}/var/ocr-visual-audit
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 258ca0dda056a9d3243a6f74e3b55254a9eda65c
+
+      - name: Assert exact implementation SHA
+        run: test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
 
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -43,14 +50,14 @@ jobs:
       - name: Verify reviewed OCR models
         run: uv run mangasensei models verify
 
-      - name: Compare recognizer-only crop context across corpus
-        run: uv run python scripts/ocr_54_recognition_context_corpus.py
+      - name: Run deep real OCR assurance
+        run: uv run pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv -s --maxfail=1
 
-      - name: Upload recognition context audit
+      - name: Upload exact-head visual audit
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ocr-54-context-corpus
-          path: var/ocr54-context-corpus
+          name: ocr-54-exact-head-visual-audit
+          path: var/ocr-visual-audit
           if-no-files-found: error
           retention-days: 7
