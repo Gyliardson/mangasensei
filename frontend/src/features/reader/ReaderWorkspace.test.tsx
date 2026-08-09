@@ -106,9 +106,11 @@ describe("ReaderWorkspace", () => {
       "Região 3: 下右",
     ]);
 
-    controls[0].focus();
+    const firstControl = screen.getByRole("button", { name: "Região 1: 上右" });
+    const secondControl = screen.getByRole("button", { name: "Região 2: 上左" });
+    firstControl.focus();
     await user.tab();
-    expect(controls[1]).toHaveFocus();
+    expect(secondControl).toHaveFocus();
     await user.keyboard("{Enter}");
     expect(screen.getByRole("heading", { name: /上左/ })).toBeVisible();
   });
