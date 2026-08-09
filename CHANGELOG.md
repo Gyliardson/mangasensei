@@ -62,6 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expired worker leases and 24-hour retention now reconcile abandoned Gemini reservations before ownership or page data is discarded; unsent reservations are released and uncertain sent calls are conservatively charged exactly once.
 - Gemini enrichment now receives and validates minimal region-scoped local vocabulary candidates instead of a page-global list of opaque JMdict identifiers.
 - Gemini-enabled jobs now require exactly one structured analysis per non-empty OCR region; incomplete or duplicate responses retry without partial Gemini persistence, while zero-region OCR completes without an external call.
+- Gemini Interactions now sends the production page-analysis contract through the provider-supported JSON Schema subset while retaining full local Pydantic validation, preventing production-schema HTTP 400 rejection.
+- Permanent Gemini request/auth failures and exhausted Gemini budgets now fail the job once instead of consuming identical retry attempts; transient provider failures remain retryable, and unsent reservations reuse the durable accounting reconciler so they do not burn a page-call ordinal.
 - CodeQL pull-request analysis no longer relies on default-setup configuration matching that could skip Dependabot heads or produce neutral missing-configuration summaries.
 - OCR runs now persist provenance supplied by the engine from the verified model manifest and effective configuration instead of worker-side literals or zero-region fallbacks.
 - Normal worker logging no longer emits recognized manga text from the vendored OCR recognizer at INFO level.
