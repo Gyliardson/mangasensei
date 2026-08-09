@@ -51,7 +51,7 @@ describe("ReaderWorkspace", () => {
   it("shows an explicit empty state and resets to a new page", async () => {
     const onReset = vi.fn();
     const user = userEvent.setup();
-    render(<ReaderWorkspace page={page([])} imageUrl="blob:image" onReset={onReset} />);
+    render(<ReaderWorkspace page={page([])} imageUrl="fixture-image" onReset={onReset} />);
 
     expect(screen.getByText("Nenhuma região de texto foi reconhecida nesta página.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Nova página" }));
@@ -63,7 +63,7 @@ describe("ReaderWorkspace", () => {
     render(
       <ReaderWorkspace
         page={page([region("first", "猫", 0), region("second", "犬", 1)])}
-        imageUrl="blob:image"
+        imageUrl="fixture-image"
         onReset={vi.fn()}
       />,
     );
@@ -82,6 +82,32 @@ describe("ReaderWorkspace", () => {
     second.focus();
     await user.keyboard(" ");
     expect(second).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("suppresses ruby when a kana-only surface differs only by script", () => {
+    const kanaRegion: StudyRegion = {
+      ...region("kana", "です", 0),
+      tokens: [
+        {
+          surface: "です",
+          lemma: "です",
+          reading: "デス",
+          partOfSpeech: "助動詞",
+          dictionaryId: null,
+        },
+      ],
+    };
+
+    render(
+      <ReaderWorkspace
+        page={page([kanaRegion])}
+        imageUrl="fixture-image"
+        onReset={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "です" })).toBeVisible();
+    expect(document.querySelector("rt")).not.toBeInTheDocument();
   });
 
   it("shows local dictionary vocabulary when contextual AI is unavailable", () => {
@@ -112,11 +138,12 @@ describe("ReaderWorkspace", () => {
     render(
       <ReaderWorkspace
         page={page([localOnlyRegion])}
-        imageUrl="blob:image"
+        imageUrl="fixture-image"
         onReset={vi.fn()}
       />,
     );
 
+    expect(screen.getByText("ねこ", { selector: "rt" })).toBeVisible();
     expect(screen.getByText("Análise contextual indisponível.")).toBeVisible();
     expect(screen.getByText("cat")).toBeVisible();
     expect(screen.getByText("JMdict · JLPT N5 não oficial")).toBeVisible();
