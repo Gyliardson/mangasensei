@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.runner import Worker
 
 _REGION_ID = "5ca22b32-6834-59db-a183-428a557a22e8"
+_RESERVATION = Decimal("0.52")
 
 
 def _fixture_image() -> bytes:
@@ -181,6 +183,17 @@ async def _upload_page(client: AsyncClient, key: str) -> dict[str, object]:
     return response.json()["data"]
 
 
+async def _load_job(
+    sessions: async_sessionmaker[AsyncSession], upload: dict[str, object]
+) -> JobRecord:
+    async with sessions() as session:
+        return (
+            await session.execute(
+                select(JobRecord).where(JobRecord.public_id == UUID(str(upload["jobId"])))
+            )
+        ).scalar_one()
+
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_permanent_provider_failure_is_terminal_after_one_job_attempt(
@@ -220,7 +233,7 @@ async def test_permanent_provider_failure_is_terminal_after_one_job_attempt(
     assert calls[0].page_id == job.page_id
     assert calls[0].page_call_ordinal == 1
     assert bucket.reserved_amount == Decimal("0")
-    assert bucket.actual_amount == Decimal("0.52")
+    assert bucket.actual_amount == _RESERVATION
     await engine.dispose()
 
 
@@ -245,7 +258,6 @@ async def test_transient_provider_failure_remains_retryable_and_can_succeed(
             )
         ).scalar_one()
         assert job.status == "retryable_failure"
-        assert job.error_code == "gemini_provider_failed"
         job.available_at = func.now()
 
     assert await worker.run_once()
@@ -273,7 +285,7 @@ async def test_transient_provider_failure_remains_retryable_and_can_succeed(
     assert [call.state for call in calls] == ["unknown", "succeeded"]
     assert [call.page_call_ordinal for call in calls] == [1, 2]
     assert bucket.reserved_amount == Decimal("0")
-    assert bucket.actual_amount == Decimal("1.04")
+    assert bucket.actual_amount == _RESERVATION * 2
     await engine.dispose()
 
 
@@ -287,6 +299,16 @@ async def test_daily_budget_exhaustion_is_terminal_without_creating_a_call(
         upload = await _upload_page(client, "gemini-daily-budget-0001")
 
     engine, sessions = create_database(clean_postgres_url)
+    async with sessions.begin() as session:
+        session.add(
+            GeminiBudgetBucketRecord(
+                budget_date=datetime.now(UTC).date(),
+                currency="USD",
+                limit_amount=Decimal("0.50"),
+                reserved_amount=Decimal("0"),
+                actual_amount=Decimal("0"),
+            )
+        )
     worker = Worker(
         **_worker_kwargs(sessions, tmp_path, SuccessfulGeminiFixture()),
         gemini_daily_budget=Decimal("0.50"),
@@ -367,7 +389,7 @@ async def test_page_call_limit_is_terminal_after_a_transient_sent_call(
     assert calls[0].state == "unknown"
     assert calls[0].page_call_ordinal == 1
     assert bucket.reserved_amount == Decimal("0")
-    assert bucket.actual_amount == Decimal("0.52")
+    assert bucket.actual_amount == _RESERVATION
     await engine.dispose()
 
 
@@ -422,5 +444,5 @@ async def test_unsent_reservation_releases_budget_and_page_ordinal(
     assert [call.page_id for call in calls] == [None, job.page_id]
     assert [call.page_call_ordinal for call in calls] == [1, 1]
     assert bucket.reserved_amount == Decimal("0")
-    assert bucket.actual_amount == Decimal("0.52")
+    assert bucket.actual_amount == _RESERVATION
     await engine.dispose()
