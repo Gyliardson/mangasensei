@@ -215,8 +215,14 @@ def safe_comparison_summary(comparison: Mapping[str, object]) -> str:
         "baseline_opencv",
         "candidate_opencv",
         "fixture_count",
+        "recognizer_text_change_count",
+        "merge_text_change_count",
         "semantic_text_change_count",
         "unmatched_detector_candidates",
+        "unmatched_recognizer_candidates",
+        "unmatched_recognizer_crops",
+        "unmatched_recognizer_inputs",
+        "unmatched_merge_regions",
         "unmatched_final_regions",
     )
     return " ".join(f"{key}={comparison.get(key)!s}" for key in keys)
@@ -322,8 +328,14 @@ def compare_probe_roots(baseline_root: Path, candidate_root: Path) -> dict[str, 
         raise ValueError("probe fixture inventories differ")
 
     fixture_comparisons: list[dict[str, Any]] = []
+    recognizer_text_changes: list[dict[str, Any]] = []
+    merge_text_changes: list[dict[str, Any]] = []
     text_changes: list[dict[str, Any]] = []
     unmatched_detector_candidates = 0
+    unmatched_recognizer_candidates = 0
+    unmatched_recognizer_crops = 0
+    unmatched_recognizer_inputs = 0
+    unmatched_merge_regions = 0
     unmatched_final_regions = 0
     for fixture_file in sorted(baseline_entries):
         baseline_entry = baseline_entries[fixture_file]
@@ -341,6 +353,24 @@ def compare_probe_roots(baseline_root: Path, candidate_root: Path) -> dict[str, 
             score_key="score",
         )
         unmatched_detector_candidates += int(detector_comparison["unmatched_count"])
+
+        recognizer_comparison, fixture_recognizer_changes = _compare_text_stage(
+            fixture_file,
+            "recognizer",
+            _nested_records(baseline_record, "recognizer", "accepted"),
+            _nested_records(candidate_record, "recognizer", "accepted"),
+        )
+        recognizer_text_changes.extend(fixture_recognizer_changes)
+        unmatched_recognizer_candidates += int(recognizer_comparison["unmatched_count"])
+
+        merge_comparison, fixture_merge_changes = _compare_text_stage(
+            fixture_file,
+            "merge",
+            _nested_records(baseline_record, "merge", "regions"),
+            _nested_records(candidate_record, "merge", "regions"),
+        )
+        merge_text_changes.extend(fixture_merge_changes)
+        unmatched_merge_regions += int(merge_comparison["unmatched_count"])
 
         final_comparison, fixture_text_changes = _compare_final_regions(
             fixture_file,
@@ -362,10 +392,14 @@ def compare_probe_roots(baseline_root: Path, candidate_root: Path) -> dict[str, 
             baseline_arrays,
             candidate_arrays,
         )
+        unmatched_recognizer_crops += int(crop_comparisons["unmatched_count"])
+        unmatched_recognizer_inputs += int(input_comparisons["unmatched_count"])
         fixture_comparisons.append(
             {
                 "file": fixture_file,
                 "detector": detector_comparison,
+                "recognizer_accepted": recognizer_comparison,
+                "merge": merge_comparison,
                 "final_regions": final_comparison,
                 "recognizer_crops": crop_comparisons,
                 "recognizer_inputs": input_comparisons,
@@ -384,9 +418,17 @@ def compare_probe_roots(baseline_root: Path, candidate_root: Path) -> dict[str, 
         "baseline_opencv": _opencv_distribution(baseline_manifest),
         "candidate_opencv": _opencv_distribution(candidate_manifest),
         "fixture_count": len(fixture_comparisons),
+        "recognizer_text_change_count": len(recognizer_text_changes),
+        "recognizer_text_changes": recognizer_text_changes,
+        "merge_text_change_count": len(merge_text_changes),
+        "merge_text_changes": merge_text_changes,
         "semantic_text_change_count": len(text_changes),
         "text_changes": text_changes,
         "unmatched_detector_candidates": unmatched_detector_candidates,
+        "unmatched_recognizer_candidates": unmatched_recognizer_candidates,
+        "unmatched_recognizer_crops": unmatched_recognizer_crops,
+        "unmatched_recognizer_inputs": unmatched_recognizer_inputs,
+        "unmatched_merge_regions": unmatched_merge_regions,
         "unmatched_final_regions": unmatched_final_regions,
         "fixtures": fixture_comparisons,
     }
@@ -413,6 +455,18 @@ def _compare_spatial_stage(
             baseline_score = _as_float(baseline[match.baseline_index][score_key])
             candidate_score = _as_float(candidate[match.candidate_index][score_key])
             item["score_delta"] = candidate_score - baseline_score
+        geometry: dict[str, Any] = {}
+        for key in ("points", "lines", "polygon"):
+            baseline_geometry = baseline[match.baseline_index].get(key)
+            candidate_geometry = candidate[match.candidate_index].get(key)
+            if isinstance(baseline_geometry, (list, tuple)) and isinstance(
+                candidate_geometry, (list, tuple)
+            ):
+                geometry[key] = array_delta(
+                    np.asarray(baseline_geometry), np.asarray(candidate_geometry)
+                )
+        if geometry:
+            item["geometry"] = geometry
         matches.append(item)
     unmatched_count = len(spatial.unmatched_baseline) + len(spatial.unmatched_candidate)
     return {
@@ -431,6 +485,31 @@ def _compare_final_regions(
     baseline: Sequence[Mapping[str, object]],
     candidate: Sequence[Mapping[str, object]],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    comparison, text_changes = _compare_text_stage(
+        fixture_file, "final", baseline, candidate
+    )
+    reading_order_change_count = 0
+    for match in comparison["matches"]:
+        baseline_index = int(match["baseline_index"])
+        candidate_index = int(match["candidate_index"])
+        baseline_region = baseline[baseline_index]
+        candidate_region = candidate[candidate_index]
+        reading_order_equal = candidate_region.get("reading_order") == baseline_region.get(
+            "reading_order"
+        )
+        match["reading_order_equal"] = reading_order_equal
+        reading_order_change_count += int(not reading_order_equal)
+        match["id_equal"] = candidate_region.get("id") == baseline_region.get("id")
+    comparison["reading_order_change_count"] = reading_order_change_count
+    return comparison, text_changes
+
+
+def _compare_text_stage(
+    fixture_file: str,
+    stage: str,
+    baseline: Sequence[Mapping[str, object]],
+    candidate: Sequence[Mapping[str, object]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     comparison = _compare_spatial_stage(baseline, candidate)
     text_changes: list[dict[str, Any]] = []
     for match in comparison["matches"]:
@@ -445,13 +524,11 @@ def _compare_final_regions(
         match["confidence_delta"] = _as_float(candidate_region["confidence"]) - _as_float(
             baseline_region["confidence"]
         )
-        match["reading_order_equal"] = candidate_region.get(
-            "reading_order"
-        ) == baseline_region.get("reading_order")
         if not text_equal:
             text_changes.append(
                 {
                     "file": fixture_file,
+                    "stage": stage,
                     "baseline_index": baseline_index,
                     "candidate_index": candidate_index,
                     "baseline_text": baseline_text,
@@ -467,7 +544,7 @@ def _compare_array_backed_spatial_stage(
     candidate: Sequence[Mapping[str, object]],
     baseline_arrays: Mapping[str, np.ndarray],
     candidate_arrays: Mapping[str, np.ndarray],
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     spatial = spatially_match(baseline, candidate)
     comparisons: list[dict[str, Any]] = []
     for match in spatial.matches:
@@ -485,7 +562,15 @@ def _compare_array_backed_spatial_stage(
                 ),
             }
         )
-    return comparisons
+    return {
+        "baseline_count": len(baseline),
+        "candidate_count": len(candidate),
+        "matched_count": len(spatial.matches),
+        "unmatched_count": len(spatial.unmatched_baseline) + len(spatial.unmatched_candidate),
+        "unmatched_baseline": list(spatial.unmatched_baseline),
+        "unmatched_candidate": list(spatial.unmatched_candidate),
+        "matches": comparisons,
+    }
 
 
 def _compare_named_array_stages(
