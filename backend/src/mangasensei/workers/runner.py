@@ -266,19 +266,16 @@ class Worker:
             raise ValueError("OCR result belongs to a different image")
         async with self._sessions.begin() as session:
             job = await _lock_owned_job(session, claim, "processing_ocr")
+            provenance = result.provenance
             run = OcrRunRecord(
                 job_id=job.id,
                 fencing_token=claim.fencing_token,
-                detector=result.regions[0].detector if result.regions else "default",
-                recognizer=result.regions[0].recognizer if result.regions else "48px",
-                model_manifest_version="2026-08-07",
-                config_digest=hashlib.sha256(b"default:48px:v1").digest(),
-                upstream_repository="https://github.com/zyddnys/manga-image-translator",
-                upstream_commit=(
-                    result.regions[0].upstream_commit
-                    if result.regions
-                    else "95227a2bb0fd306cd4f0c104d57284026f991b3a"
-                ),
+                detector=provenance.detector,
+                recognizer=provenance.recognizer,
+                model_manifest_version=provenance.model_manifest_version,
+                config_digest=provenance.config_digest,
+                upstream_repository=provenance.upstream_repository,
+                upstream_commit=provenance.upstream_commit,
                 input_sha256=blob.sha256,
                 width=blob.width,
                 height=blob.height,
