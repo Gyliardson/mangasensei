@@ -33,22 +33,6 @@ def upgrade() -> None:
         "study_language IN ('pt-BR','en')",
         schema="mangasensei",
     )
-    op.add_column(
-        "linguistic_runs",
-        sa.Column(
-            "dictionary_language",
-            sa.String(length=8),
-            server_default="en",
-            nullable=False,
-        ),
-        schema="mangasensei",
-    )
-    op.create_check_constraint(
-        op.f("ck_linguistic_runs_dictionary_language"),
-        "linguistic_runs",
-        "dictionary_language = 'en'",
-        schema="mangasensei",
-    )
     op.create_table(
         "study_results",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
@@ -56,6 +40,7 @@ def upgrade() -> None:
         sa.Column("linguistic_run_id", sa.BigInteger(), nullable=False),
         sa.Column("content_language", sa.String(length=8), nullable=False),
         sa.Column("study_language", sa.String(length=8), nullable=False),
+        sa.Column("dictionary_language", sa.String(length=8), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -69,6 +54,10 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "study_language IN ('pt-BR','en')",
             name=op.f("ck_study_results_study_language"),
+        ),
+        sa.CheckConstraint(
+            "dictionary_language = 'en'",
+            name=op.f("ck_study_results_dictionary_language"),
         ),
         sa.ForeignKeyConstraint(
             ["job_id"],
@@ -89,12 +78,20 @@ def upgrade() -> None:
     op.execute(
         """
         INSERT INTO mangasensei.study_results
-            (job_id, linguistic_run_id, content_language, study_language, created_at)
+            (
+                job_id,
+                linguistic_run_id,
+                content_language,
+                study_language,
+                dictionary_language,
+                created_at
+            )
         SELECT DISTINCT ON (jobs.id)
             jobs.id,
             linguistic_runs.id,
             'ja',
             'pt-BR',
+            'en',
             COALESCE(jobs.finished_at, jobs.updated_at, jobs.created_at)
         FROM mangasensei.jobs AS jobs
         JOIN mangasensei.linguistic_runs AS linguistic_runs
@@ -107,13 +104,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("study_results", schema="mangasensei")
-    op.drop_constraint(
-        op.f("ck_linguistic_runs_dictionary_language"),
-        "linguistic_runs",
-        type_="check",
-        schema="mangasensei",
-    )
-    op.drop_column("linguistic_runs", "dictionary_language", schema="mangasensei")
     op.drop_constraint(
         op.f("ck_jobs_study_language"),
         "jobs",
