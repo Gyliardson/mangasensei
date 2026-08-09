@@ -4,11 +4,14 @@ import numpy as np
 import pytest
 
 from mangasensei.ocr.adapter.recognizer_48px import (
-    RECOGNITION_SHORT_AXIS_PADDING,
     _copy_quadrilateral,
     _copy_recognition,
-    _recognition_destination,
+    _expand_short_axis,
     _RecognitionQuadrilateral,
+)
+from mangasensei.ocr.adapter.recognizer_contract import (
+    RECOGNITION_SHORT_AXIS_CONTEXT,
+    RECOGNITION_SHORT_EDGE_PAD_RATIO,
 )
 from mangasensei.ocr.vendor.manga_image_translator.manga_translator.utils.generic import (
     Quadrilateral,
@@ -19,23 +22,23 @@ def _quadrilateral(points: list[list[int]]) -> Quadrilateral:
     return Quadrilateral(np.asarray(points, dtype=np.int64), "", 0.9)
 
 
-def test_recognizer_crop_keeps_detector_edge_inside_real_source_context() -> None:
-    image = np.full((9, 9, 3), 255, dtype=np.uint8)
+def test_recognizer_crop_keeps_maximum_detector_pixel_in_source() -> None:
+    image = np.full((5, 5, 3), 255, dtype=np.uint8)
     line = _RecognitionQuadrilateral(
-        np.asarray([[2, 2], [6, 2], [6, 6], [2, 6]], dtype=np.int64),
+        np.asarray([[1, 1], [3, 1], [3, 3], [1, 3]], dtype=np.int64),
         "",
         0.9,
     )
 
-    crop = line.get_transformed_region(image, "h", 48)
+    crop = line.get_transformed_region(image, "h", 3)
 
-    assert crop.shape == (48, 42, 3)
+    assert crop.shape == (3, 3, 3)
     assert np.all(crop == 255), (
-        "the recognizer warp introduced a synthetic border around valid detector geometry"
+        "the perspective crop sampled outside the detector quadrilateral's inclusive pixel bounds"
     )
 
 
-def test_recognizer_crop_clips_detector_points_to_last_valid_pixel() -> None:
+def test_recognizer_crop_clips_points_to_last_valid_image_pixel() -> None:
     image = np.full((5, 5, 3), 255, dtype=np.uint8)
     line = _RecognitionQuadrilateral(
         np.asarray([[3, 1], [5, 1], [5, 3], [3, 3]], dtype=np.int64),
@@ -43,7 +46,7 @@ def test_recognizer_crop_clips_detector_points_to_last_valid_pixel() -> None:
         0.9,
     )
 
-    crop = line.get_transformed_region(image, "h", 48)
+    crop = line.get_transformed_region(image, "h", 3)
 
     assert crop.size > 0
     assert np.all(crop == 255), (
@@ -51,26 +54,27 @@ def test_recognizer_crop_clips_detector_points_to_last_valid_pixel() -> None:
     )
 
 
-def test_recognizer_destination_reserves_first_convolution_radius() -> None:
-    line = _quadrilateral([[10, 10], [30, 10], [30, 20], [10, 20]])
-
-    horizontal, _, horizontal_height = _recognition_destination(
-        line,
-        direction="h",
-        textheight=48,
-        padding=RECOGNITION_SHORT_AXIS_PADDING,
-    )
-    vertical, vertical_width, _ = _recognition_destination(
-        line,
-        direction="v",
-        textheight=48,
-        padding=RECOGNITION_SHORT_AXIS_PADDING,
+def test_recognizer_context_contract_is_symmetric_short_edge_padding() -> None:
+    assert RECOGNITION_SHORT_EDGE_PAD_RATIO == pytest.approx(0.08)
+    assert RECOGNITION_SHORT_AXIS_CONTEXT == pytest.approx(
+        1.0 + 2.0 * RECOGNITION_SHORT_EDGE_PAD_RATIO
     )
 
-    assert horizontal_height == 48
-    assert horizontal[:, 1].tolist() == [3.0, 3.0, 44.0, 44.0]
-    assert vertical_width == 48
-    assert vertical[:, 0].tolist() == [3.0, 44.0, 44.0, 3.0]
+
+def test_recognizer_context_expands_only_local_short_axis() -> None:
+    source = _quadrilateral([[100, 100], [120, 100], [120, 300], [100, 300]])
+
+    expanded = _expand_short_axis(
+        source,
+        factor=RECOGNITION_SHORT_AXIS_CONTEXT,
+        image_width=1000,
+        image_height=1000,
+    )
+
+    assert expanded.xyxy[1] == source.xyxy[1]
+    assert expanded.xyxy[3] == source.xyxy[3]
+    assert expanded.xyxy[0] < source.xyxy[0]
+    assert expanded.xyxy[2] > source.xyxy[2]
 
 
 def test_crop_safe_copy_preserves_detector_geometry() -> None:
@@ -80,6 +84,7 @@ def test_crop_safe_copy_preserves_detector_geometry() -> None:
 
     assert copied.xyxy == source.xyxy
     assert np.array_equal(copied.pts, source.pts)
+    assert isinstance(copied, _RecognitionQuadrilateral)
 
 
 def test_recognition_result_is_copied_back_without_geometry_change() -> None:
