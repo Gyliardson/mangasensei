@@ -10,9 +10,14 @@ import numpy as np
 from ..vendor.manga_image_translator.manga_translator.ocr.model_48px import Model48pxOCR
 from ..vendor.manga_image_translator.manga_translator.utils.generic import Quadrilateral
 
+# The recognizer's first convolution is 7x7 with radius 3. Keep that radius as
+# real source-image context around a detector-tight line in the normalized 48px
+# short axis instead of letting glyph strokes sit against synthetic CNN padding.
+RECOGNITION_SHORT_AXIS_PADDING = 3
+
 
 class MangaSenseiModel48pxOCR(Model48pxOCR):
-    """Recognize detector geometry with an inclusive, pixel-valid perspective crop."""
+    """Recognize detector geometry with a pixel-valid, context-preserving warp."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[no-untyped-call]
@@ -49,7 +54,7 @@ class MangaSenseiModel48pxOCR(Model48pxOCR):
 
 
 class _RecognitionQuadrilateral(Quadrilateral):
-    """Quadrilateral whose recognizer crop keeps every referenced source pixel valid."""
+    """Quadrilateral whose warp uses valid source pixels plus bounded real context."""
 
     def get_transformed_region(
         self,
@@ -57,58 +62,88 @@ class _RecognitionQuadrilateral(Quadrilateral):
         direction: str,
         textheight: int,
     ) -> np.ndarray:
-        [l1a, l1b, l2a, l2b] = [point.astype(np.float32) for point in self.structure]
-        vertical_vector = l1b - l1a
-        horizontal_vector = l2b - l2a
-        ratio = float(np.linalg.norm(vertical_vector) / np.linalg.norm(horizontal_vector))
-
-        source_points = self.pts.astype(np.int64).copy()
         image_height, image_width = img.shape[:2]
         if image_width <= 0 or image_height <= 0:
             raise ValueError("recognizer source image must be non-empty")
 
-        source_points[:, 0] = np.clip(source_points[:, 0], 0, image_width - 1)
-        source_points[:, 1] = np.clip(source_points[:, 1], 0, image_height - 1)
-        x1 = int(source_points[:, 0].min())
-        y1 = int(source_points[:, 1].min())
-        x2 = int(source_points[:, 0].max())
-        y2 = int(source_points[:, 1].max())
+        source = np.asarray(self.pts, dtype=np.float32).copy()
+        source[:, 0] = np.clip(source[:, 0], 0, image_width - 1)
+        source[:, 1] = np.clip(source[:, 1], 0, image_height - 1)
+        destination, width, height = _recognition_destination(
+            self,
+            direction=direction,
+            textheight=textheight,
+            padding=RECOGNITION_SHORT_AXIS_PADDING,
+        )
 
-        # Detector points are pixel coordinates and therefore include their maximum
-        # coordinate. NumPy's upper slice bound is exclusive, so include x2/y2 here.
-        # Otherwise the homography can reference x == crop_width or y == crop_height,
-        # forcing warpPerspective to extrapolate beyond the source crop.
-        cropped = img[y1 : y2 + 1, x1 : x2 + 1]
-        source_points[:, 0] -= x1
-        source_points[:, 1] -= y1
-        source = source_points.astype(np.float32)
-
-        if direction == "h":
-            height = max(int(textheight), 2)
-            width = max(int(round(textheight / ratio)), 2)
-            destination = np.asarray(
-                [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
-                dtype=np.float32,
-            )
-            matrix, _ = cv2.findHomography(source, destination, cv2.RANSAC, 5.0)
-            if matrix is None:
-                raise RuntimeError("could not construct recognizer perspective transform")
-            return cv2.warpPerspective(cropped, matrix, (width, height))
-
+        # Warp from the full source image. The upstream implementation first slices
+        # to [y1:y2, x1:x2] but keeps homography points at x2/y2, so those inclusive
+        # detector coordinates can become one-past-the-end of the sliced image.
+        # Full-image coordinates remove that mismatch. BORDER_REPLICATE is reached
+        # only when requested recognition context extends beyond the actual page.
+        matrix = cv2.getPerspectiveTransform(source, destination)
+        region = cv2.warpPerspective(
+            img,
+            matrix,
+            (width, height),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
         if direction == "v":
-            width = max(int(textheight), 2)
-            height = max(int(round(textheight * ratio)), 2)
-            destination = np.asarray(
-                [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
-                dtype=np.float32,
-            )
-            matrix, _ = cv2.findHomography(source, destination, cv2.RANSAC, 5.0)
-            if matrix is None:
-                raise RuntimeError("could not construct recognizer perspective transform")
-            region = cv2.warpPerspective(cropped, matrix, (width, height))
             return cv2.rotate(region, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        return region
 
-        raise ValueError(f"unsupported recognizer direction: {direction}")
+
+def _recognition_destination(
+    line: Quadrilateral,
+    *,
+    direction: str,
+    textheight: int,
+    padding: int,
+) -> tuple[np.ndarray, int, int]:
+    if padding < 0 or padding * 2 >= textheight:
+        raise ValueError("recognizer padding must leave a positive inner short axis")
+
+    [l1a, l1b, l2a, l2b] = [point.astype(np.float32) for point in line.structure]
+    vertical_vector = l1b - l1a
+    horizontal_vector = l2b - l2a
+    horizontal_norm = float(np.linalg.norm(horizontal_vector))
+    if horizontal_norm == 0:
+        raise ValueError("recognizer quadrilateral has zero short-axis extent")
+    ratio = float(np.linalg.norm(vertical_vector) / horizontal_norm)
+    if ratio <= 0:
+        raise ValueError("recognizer quadrilateral has invalid aspect ratio")
+
+    inner_short = textheight - 2 * padding
+    if direction == "h":
+        width = max(int(round(inner_short / ratio)), 2)
+        height = textheight
+        destination = np.asarray(
+            [
+                [0, padding],
+                [width - 1, padding],
+                [width - 1, padding + inner_short - 1],
+                [0, padding + inner_short - 1],
+            ],
+            dtype=np.float32,
+        )
+        return destination, width, height
+
+    if direction == "v":
+        width = textheight
+        height = max(int(round(inner_short * ratio)), 2)
+        destination = np.asarray(
+            [
+                [padding, 0],
+                [padding + inner_short - 1, 0],
+                [padding + inner_short - 1, height - 1],
+                [padding, height - 1],
+            ],
+            dtype=np.float32,
+        )
+        return destination, width, height
+
+    raise ValueError(f"unsupported recognizer direction: {direction}")
 
 
 def _copy_quadrilateral(line: Quadrilateral) -> _RecognitionQuadrilateral:
