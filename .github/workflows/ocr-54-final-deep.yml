@@ -1,0 +1,56 @@
+name: OCR 54 Final Deep Validation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ocr-54-final-deep.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ocr-54-final-deep-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deep:
+    name: Exact-head deep OCR corpus (CPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FIX_SHA: 5078810b00176e8dc76bbdd7cbb81f7e9fb025d2
+      MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
+      MANGASENSEI_RUN_OCR_SMOKE: "1"
+      MANGASENSEI_OCR_REPEAT_RUNS: "3"
+      MANGASENSEI_OCR_FULL_CORPUS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.FIX_SHA }}
+
+      - name: Assert exact final head
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual=$(git rev-parse HEAD)
+          echo "Expected final head: ${FIX_SHA}"
+          echo "Checked out head: ${actual}"
+          test "${actual}" = "${FIX_SHA}"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install locked OCR dependencies
+        run: uv sync --frozen --extra ocr
+
+      - name: Download and verify reviewed OCR models
+        run: |
+          uv run mangasensei models download
+          uv run mangasensei models verify
+
+      - name: Run repeated reviewed targets and full licensed corpus
+        run: uv run pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv -s --maxfail=1
