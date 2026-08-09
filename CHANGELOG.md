@@ -73,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The upload landing page now masks the section index over the card border and anchors the next-step block to the same workspace axis on desktop and mobile layouts.
 - OCR regions now follow deterministic manga page tiers from top to bottom and right to left within each tier instead of globally prioritizing vertical text by X position.
 - 48px OCR recognition no longer depends on unrelated wider crops in the same batch; batch padding now matches the recognizer feature mask, with a licensed page-9 regression protecting the affected two-line region.
-- Detector-complete text lines no longer disappear or truncate a merged dialogue solely because the 48px recognizer crop is too tight after ordinary resampling; recognition gets bounded short-axis source context while detector and final region geometry remain unchanged.
+- Detector-complete text lines no longer disappear or truncate after ordinary resampling because the 48px recognizer perspective crop now keeps maximum detector pixel coordinates inside its source image instead of warping against an exclusive upper crop bound; detector and final region geometry remain unchanged.
 
 ## [0.1.0] - 2026-08-07
 
