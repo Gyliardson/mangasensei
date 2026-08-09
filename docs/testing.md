@@ -28,7 +28,9 @@ Metadata agreement is not considered sufficient by itself. The same command writ
 
 The normalized dictionary itself remains a locally derived artifact and is not committed or uploaded by the workflow. The `mangasensei-jmdict-v3` contract uses the same canonical form key as the runtime loader. Script-equivalent forms that map to one runtime `(lemma, reading)` key are consolidated deterministically after JMdict spelling/reading and sense restrictions have been applied, and all legitimate meanings for that representable key are preserved. The runtime loader still rejects duplicate canonical forms in malformed v3 data.
 
-The workflow also starts the production Docker Compose stack from clean named volumes and requires the JMdict bootstrap container to exit successfully and the production worker container to become healthy. This keeps clean-environment prerequisite failures from being detectable only through a browser waiting indefinitely for a worker.
+The workflow also starts the production Docker Compose stack from clean named volumes. It explicitly requires the `models`, `jmdict`, and `migrate` one-shot services to complete with exit code 0, requires the real API `/ready` endpoint to succeed (thereby checking the current Alembic revision and storage probe), and requires the production worker to become healthy. The stack and named volumes are destroyed after the check. This makes clean-environment prerequisite, migration, API-readiness and worker-startup failures explicit instead of allowing them to surface only as a browser waiting indefinitely for a worker.
+
+The workflow is reusable with `workflow_call`. Tagged releases invoke the same exact-tag source→consumer and clean-Compose contract before publishing, alongside the deep OCR gate. Release publishing therefore cannot rely only on an older branch run of the JMdict/bootstrap contract.
 
 Maintainers can reproduce the metadata update with:
 
@@ -42,7 +44,7 @@ After committing the derived manifest values, verify both metadata and the compl
 uv run python scripts/update_jmdict_manifest.py --check
 ```
 
-Both commands verify the manifest-pinned source before accepting derived metadata. The workflow runs automatically only for relevant JMdict/Docker contract changes and can also be started manually.
+Both commands verify the manifest-pinned source before accepting derived metadata. The workflow runs automatically for relevant JMdict/Docker contract changes, can be started manually, and is reused by tagged release validation.
 
 ## Real OCR model smoke
 
