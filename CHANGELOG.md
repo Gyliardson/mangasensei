@@ -76,6 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OCR regions now follow deterministic manga page tiers from top to bottom and right to left within each tier instead of globally prioritizing vertical text by X position.
 - 48px OCR recognition no longer depends on unrelated wider crops in the same batch; batch padding now matches the recognizer feature mask, with a licensed page-9 regression protecting the affected two-line region.
 - Detector-complete text lines no longer disappear after ordinary resampling because the 48px recognizer now keeps maximum detector/context coordinates inside its source crop instead of warping against NumPy's exclusive upper bound; its separately calibrated recognizer-only short-edge source context remains isolated from detector and final-region geometry.
+- Marginal 48px recognitions below `0.5` must now survive the same unchanged confidence boundary when rerun in isolation before merge; this removes batch-only graphic-texture false positives while retaining the original batch text and confidence for stable low-confidence manga text.
 
 ## [0.1.0] - 2026-08-07
 
