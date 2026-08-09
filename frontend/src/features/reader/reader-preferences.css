@@ -123,7 +123,20 @@
   margin-inline: auto;
 }
 
-@media (max-width: 1080px) {
+.reader-layout > .study-panel {
+  position: static;
+  top: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+@media (min-width: 721px) and (max-width: 1080px) {
+  main.reader-layout {
+    width: min(920px, calc(100% - 2.5rem));
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+
   .reader-header-actions {
     max-width: 28rem;
   }
