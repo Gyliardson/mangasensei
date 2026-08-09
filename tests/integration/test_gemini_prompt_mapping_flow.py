@@ -25,6 +25,7 @@ from mangasensei.infrastructure.database.analysis_models import (
 from mangasensei.infrastructure.database.session import create_database
 from mangasensei.linguistics.service import DictionaryEntry, LinguisticService
 from mangasensei.ocr.contracts import OcrImage, OcrRegionResult, OcrResult
+from mangasensei.ocr.fake import DEFAULT_FAKE_PROVENANCE
 from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.runner import Worker
 
@@ -45,6 +46,7 @@ class TwoRegionOcrFixture:
         dog_bbox = BoundingBox(x=10, y=65, width=40, height=40)
         return OcrResult(
             image_sha256=image.sha256,
+            provenance=DEFAULT_FAKE_PROVENANCE,
             regions=(
                 OcrRegionResult(
                     id=_REGION_CAT,
