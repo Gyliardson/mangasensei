@@ -7,6 +7,7 @@ on:
       - "scripts/ocr_54_page9_diagnostic.py"
       - "scripts/ocr_54_target_segmentation.py"
       - "scripts/ocr_54_context_experiment.py"
+      - "scripts/ocr_54_detection_size_experiment.py"
 
 permissions:
   contents: write
@@ -124,6 +125,13 @@ jobs:
             --fixture-root tests/fixtures/ocr/real_manga/black_jack \
             --model-cache "${MANGASENSEI_MODEL_CACHE}" \
             --output .ocr54/artifact/context-experiment.json
+
+      - name: Sweep detector resolution on the persistent target
+        run: |
+          uv run python scripts/ocr_54_detection_size_experiment.py \
+            --page9 .ocr54/artifact/source_page9.jpg \
+            --model-cache "${MANGASENSEI_MODEL_CACHE}" \
+            --output .ocr54/artifact/detection-size-experiment.json
 
       - name: Upload investigation evidence
         if: always()
