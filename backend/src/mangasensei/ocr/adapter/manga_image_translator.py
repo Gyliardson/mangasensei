@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import io
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import median
@@ -25,6 +26,7 @@ _CONFIG_SCHEMA_VERSION = "manga-image-translator-v1"
 _READING_ORDER_VERSION = "manga-tiers-v1"
 _DETECTOR_FLAGS = (False, False, False, False, False)
 _RECOGNIZER_FLAG = False
+_UPSTREAM_RECOGNIZER_LOGGER = "manga-translator.Model48pxOCR"
 _MIN_TIER_BAND_PAGE_FRACTION = 0.02
 _MAX_TIER_BAND_PAGE_FRACTION = 0.12
 _TIER_BAND_REGION_HEIGHT_FRACTION = 0.5
@@ -112,6 +114,7 @@ class MangaImageTranslatorEngine:
         unclip_ratio: float = 2.3,
         minimum_confidence: float = 0.2,
     ) -> None:
+        _configure_upstream_logging()
         self._model_cache = model_cache.resolve()
         self._device = device
         self._detection_size = detection_size
@@ -216,6 +219,13 @@ class MangaImageTranslatorEngine:
         ):
             verify_model(self._model_cache / subdirectory / filename, manifest.artifact(filename))
         return manifest
+
+
+def _configure_upstream_logging() -> None:
+    """Keep recognized manga text out of normal worker logs."""
+    recognizer_logger = logging.getLogger(_UPSTREAM_RECOGNIZER_LOGGER)
+    if recognizer_logger.level == logging.NOTSET or recognizer_logger.level < logging.WARNING:
+        recognizer_logger.setLevel(logging.WARNING)
 
 
 def _decode_rgb(content: bytes) -> Any:
