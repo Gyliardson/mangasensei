@@ -36,6 +36,7 @@ class JobRecord(Base):
     __table_args__ = (
         UniqueConstraint("page_id", "job_kind", "idempotency_digest"),
         CheckConstraint(f"status IN ({ALL_STATUSES_SQL})", name="status"),
+        CheckConstraint("study_language IN ('pt-BR','en')", name="study_language"),
         CheckConstraint(
             "attempt_count >= 0 AND attempt_count <= max_attempts", name="attempt_range"
         ),
@@ -92,6 +93,7 @@ class JobRecord(Base):
     job_kind: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default="page_analysis"
     )
+    study_language: Mapped[str] = mapped_column(String(8), nullable=False, server_default="pt-BR")
     idempotency_digest: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
     request_digest: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="pending")

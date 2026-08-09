@@ -8,17 +8,20 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from mangasensei.domain.languages import CONTENT_LANGUAGE, LOCAL_DICTIONARY_LANGUAGE
 from mangasensei.infrastructure.database.analysis_models import (
     GeminiAnalysisRecord,
     GeminiGrammarPointRecord,
     GeminiRegionAnalysisRecord,
     LinguisticMeaningRecord,
+    LinguisticRunRecord,
     LinguisticTokenRecord,
     OcrRegionRecord,
     OcrRegionVertexRecord,
     OcrRunRecord,
 )
 from mangasensei.infrastructure.database.job_models import JobRecord
+from mangasensei.infrastructure.database.study_models import StudyResultRecord
 
 
 class PageQueryService:
@@ -35,30 +38,74 @@ class PageQueryService:
                     .limit(1)
                 )
             ).scalar_one()
-            run = (
+            study_result = (
                 await session.execute(
-                    select(OcrRunRecord)
-                    .join(JobRecord, JobRecord.id == OcrRunRecord.job_id)
+                    select(StudyResultRecord)
+                    .join(JobRecord, JobRecord.id == StudyResultRecord.job_id)
                     .where(
                         JobRecord.page_id == page_id,
                         JobRecord.status == "completed",
                     )
-                    .order_by(
-                        JobRecord.created_at.desc(),
-                        JobRecord.id.desc(),
-                        OcrRunRecord.fencing_token.desc(),
-                        OcrRunRecord.id.desc(),
-                    )
+                    .order_by(JobRecord.created_at.desc(), JobRecord.id.desc())
                     .limit(1)
                 )
             ).scalar_one_or_none()
-            if run is None:
-                return {
-                    "status": latest_job.status,
-                    "resultAvailable": False,
-                    "regions": [],
-                    "error": _public_error(latest_job),
-                }
+
+            if study_result is not None:
+                linguistic_run = await session.get_one(
+                    LinguisticRunRecord, study_result.linguistic_run_id
+                )
+                run = await session.get_one(OcrRunRecord, linguistic_run.ocr_run_id)
+                result_job_id = study_result.job_id
+                content_language = study_result.content_language
+                study_language = study_result.study_language
+                dictionary_language = study_result.dictionary_language
+            else:
+                # Defensive compatibility for records created by the pre-language schema.
+                legacy_run = (
+                    await session.execute(
+                        select(OcrRunRecord)
+                        .join(JobRecord, JobRecord.id == OcrRunRecord.job_id)
+                        .where(
+                            JobRecord.page_id == page_id,
+                            JobRecord.status == "completed",
+                        )
+                        .order_by(
+                            JobRecord.created_at.desc(),
+                            JobRecord.id.desc(),
+                            OcrRunRecord.fencing_token.desc(),
+                            OcrRunRecord.id.desc(),
+                        )
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if legacy_run is None:
+                    return {
+                        "status": latest_job.status,
+                        "resultAvailable": False,
+                        "contentLanguage": CONTENT_LANGUAGE.value,
+                        "studyLanguage": latest_job.study_language,
+                        "dictionaryLanguage": LOCAL_DICTIONARY_LANGUAGE.value,
+                        "regions": [],
+                        "error": _public_error(latest_job),
+                    }
+                run = legacy_run
+                linguistic_run = (
+                    await session.execute(
+                        select(LinguisticRunRecord)
+                        .where(LinguisticRunRecord.ocr_run_id == run.id)
+                        .order_by(
+                            LinguisticRunRecord.fencing_token.desc(),
+                            LinguisticRunRecord.id.desc(),
+                        )
+                        .limit(1)
+                    )
+                ).scalar_one()
+                result_job = await session.get_one(JobRecord, run.job_id)
+                result_job_id = run.job_id
+                content_language = CONTENT_LANGUAGE.value
+                study_language = result_job.study_language
+                dictionary_language = LOCAL_DICTIONARY_LANGUAGE.value
 
             regions = tuple(
                 (
@@ -75,7 +122,10 @@ class PageQueryService:
                     (
                         await session.execute(
                             select(LinguisticTokenRecord)
-                            .where(LinguisticTokenRecord.region_id.in_(region_ids))
+                            .where(
+                                LinguisticTokenRecord.linguistic_run_id == linguistic_run.id,
+                                LinguisticTokenRecord.region_id.in_(region_ids),
+                            )
                             .order_by(
                                 LinguisticTokenRecord.region_id,
                                 LinguisticTokenRecord.token_ordinal,
@@ -127,7 +177,7 @@ class PageQueryService:
                             GeminiAnalysisRecord,
                             GeminiAnalysisRecord.id == GeminiRegionAnalysisRecord.analysis_id,
                         )
-                        .where(GeminiAnalysisRecord.job_id == run.job_id)
+                        .where(GeminiAnalysisRecord.job_id == result_job_id)
                     )
                 ).scalars()
             )
@@ -209,6 +259,9 @@ class PageQueryService:
         return {
             "status": latest_job.status,
             "resultAvailable": True,
+            "contentLanguage": content_language,
+            "studyLanguage": study_language,
+            "dictionaryLanguage": dictionary_language,
             "dimensions": {"width": run.width, "height": run.height},
             "ocr": {
                 "detector": run.detector,

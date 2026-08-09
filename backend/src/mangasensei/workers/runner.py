@@ -8,6 +8,7 @@ import json
 import logging
 import pathlib
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -17,12 +18,18 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from mangasensei.domain.languages import (
+    CONTENT_LANGUAGE,
+    LOCAL_DICTIONARY_LANGUAGE,
+    StudyLanguage,
+)
 from mangasensei.domain.models import PageDimensions
 from mangasensei.gemini.contracts import GeminiPageAnalysis
 from mangasensei.gemini.service import (
     PAGE_STUDY_PROMPT_VERSION,
     GeminiAdapter,
     GeminiAnalysisService,
+    GeminiVocabularyCandidate,
     RegionCompletenessError,
     build_page_prompt,
     build_vocabulary_candidates_by_region,
@@ -45,6 +52,7 @@ from mangasensei.infrastructure.database.analysis_models import (
 from mangasensei.infrastructure.database.job_models import JobAttemptRecord, JobRecord
 from mangasensei.infrastructure.database.queue_repository import ClaimedJob, QueueRepository
 from mangasensei.infrastructure.database.storage_models import ImageBlobRecord, PageRecord
+from mangasensei.infrastructure.database.study_models import StudyResultRecord
 from mangasensei.linguistics.service import LinguisticService, LinguisticToken
 from mangasensei.ocr.contracts import OcrEngine, OcrImage, OcrResult
 from mangasensei.storage.local import LocalFilesystemStorage
@@ -60,6 +68,16 @@ class StaleLeaseError(RuntimeError):
 
 class GeminiBudgetExceededError(RuntimeError):
     """The configured daily Gemini budget cannot reserve another call."""
+
+
+@dataclass(frozen=True, slots=True)
+class ReusableAnalysis:
+    page: PageRecord
+    linguistic_run_id: int
+    regions: dict[str, str]
+    vocabulary_by_region: dict[str, tuple[GeminiVocabularyCandidate, ...]]
+    region_ids: dict[str, int]
+    token_ids: dict[tuple[str, str], int]
 
 
 def _public_error_code(exc: BaseException) -> str:
@@ -140,8 +158,15 @@ class Worker:
         if claim is None:
             return False
         heartbeat = asyncio.create_task(self._heartbeat_loop(claim))
-        stage = "claim_transition"
+        stage = "load_job_contract"
         try:
+            job_kind, study_language = await self._load_job_contract(claim)
+            if job_kind == "study_language_reprocess":
+                stage = "study_language_reprocess"
+                await self._run_study_language_reprocess(claim, study_language)
+                return True
+
+            stage = "claim_transition"
             await self._transition(claim, "claimed", "processing_ocr")
             stage = "load_image"
             page, blob, content = await self._load_image(claim)
@@ -162,7 +187,7 @@ class Worker:
                 for region in ocr_result.regions
             }
             stage = "persist_linguistics"
-            token_ids = await self._persist_linguistics(
+            linguistic_run_id, token_ids = await self._persist_linguistics(
                 claim, ocr_result, region_ids, linguistic_by_region
             )
             if self._gemini is None or not ocr_result.regions:
@@ -174,6 +199,7 @@ class Worker:
                 prompt_version=PAGE_STUDY_PROMPT_VERSION,
                 regions=regions,
                 vocabulary_by_region=vocabulary_by_region,
+                study_language=study_language,
             )
             stage = "reserve_gemini"
             call_id = await self._reserve_gemini_call(claim, page, prompt)
@@ -185,12 +211,14 @@ class Worker:
             ).analyze_page(
                 regions=regions,
                 vocabulary_by_region=vocabulary_by_region,
+                study_language=study_language,
             )
             stage = "persist_gemini"
             await self._persist_gemini_and_complete(
                 claim,
                 call_id,
                 analysis,
+                linguistic_run_id,
                 region_ids,
                 token_ids,
             )
@@ -215,6 +243,154 @@ class Worker:
             with suppress(asyncio.CancelledError, StaleLeaseError):
                 await heartbeat
         return True
+
+    async def _load_job_contract(self, claim: ClaimedJob) -> tuple[str, StudyLanguage]:
+        async with self._sessions() as session:
+            row = (
+                await session.execute(
+                    select(JobRecord.job_kind, JobRecord.study_language).where(
+                        *_owned_job_predicates(claim, "claimed")
+                    )
+                )
+            ).one_or_none()
+        if row is None:
+            raise StaleLeaseError
+        return row.job_kind, StudyLanguage(row.study_language)
+
+    async def _run_study_language_reprocess(
+        self,
+        claim: ClaimedJob,
+        study_language: StudyLanguage,
+    ) -> None:
+        reusable = await self._load_reusable_analysis(claim)
+        if self._gemini is None or not reusable.regions:
+            await self._complete_reused_without_gemini(claim, reusable.linguistic_run_id)
+            return
+        await self._transition(claim, "claimed", "processing_gemini")
+        prompt = build_page_prompt(
+            prompt_version=PAGE_STUDY_PROMPT_VERSION,
+            regions=reusable.regions,
+            vocabulary_by_region=reusable.vocabulary_by_region,
+            study_language=study_language,
+        )
+        call_id = await self._reserve_gemini_call(claim, reusable.page, prompt)
+        await self._mark_call_sent(call_id)
+        analysis = await GeminiAnalysisService(
+            self._gemini, prompt_version=PAGE_STUDY_PROMPT_VERSION
+        ).analyze_page(
+            regions=reusable.regions,
+            vocabulary_by_region=reusable.vocabulary_by_region,
+            study_language=study_language,
+        )
+        await self._persist_gemini_and_complete(
+            claim,
+            call_id,
+            analysis,
+            reusable.linguistic_run_id,
+            reusable.region_ids,
+            reusable.token_ids,
+        )
+
+    async def _load_reusable_analysis(self, claim: ClaimedJob) -> ReusableAnalysis:
+        async with self._sessions() as session:
+            page = (
+                await session.execute(
+                    select(PageRecord).where(
+                        PageRecord.id == claim.page_id,
+                        PageRecord.expires_at > func.now(),
+                    )
+                )
+            ).scalar_one_or_none()
+            if page is None:
+                raise StaleLeaseError
+            source = (
+                await session.execute(
+                    select(StudyResultRecord)
+                    .join(JobRecord, JobRecord.id == StudyResultRecord.job_id)
+                    .where(
+                        JobRecord.page_id == claim.page_id,
+                        JobRecord.status == "completed",
+                    )
+                    .order_by(JobRecord.created_at.desc(), JobRecord.id.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if source is None:
+                raise RuntimeError("study-language reprocess requires a completed analysis")
+            linguistic_run = await session.get_one(
+                LinguisticRunRecord, source.linguistic_run_id
+            )
+            regions = (
+                await session.execute(
+                    select(OcrRegionRecord)
+                    .where(OcrRegionRecord.ocr_run_id == linguistic_run.ocr_run_id)
+                    .order_by(OcrRegionRecord.reading_order, OcrRegionRecord.id)
+                )
+            ).scalars().all()
+            region_public_by_id = {region.id: str(region.public_id) for region in regions}
+            region_ids = {str(region.public_id): region.id for region in regions}
+            region_text = {
+                str(region.public_id): region.corrected_text or region.raw_text
+                for region in regions
+            }
+            tokens = (
+                await session.execute(
+                    select(LinguisticTokenRecord)
+                    .where(LinguisticTokenRecord.linguistic_run_id == linguistic_run.id)
+                    .order_by(
+                        LinguisticTokenRecord.region_id,
+                        LinguisticTokenRecord.token_ordinal,
+                        LinguisticTokenRecord.id,
+                    )
+                )
+            ).scalars().all()
+
+        vocabulary_lists: dict[str, list[GeminiVocabularyCandidate]] = {
+            region_id: [] for region_id in region_text
+        }
+        seen_ids: dict[str, set[str]] = {region_id: set() for region_id in region_text}
+        token_ids: dict[tuple[str, str], int] = {}
+        for token in tokens:
+            region_id = region_public_by_id[token.region_id]
+            dictionary_id = token.dictionary_entry_id
+            if dictionary_id is None:
+                continue
+            token_ids[(region_id, dictionary_id)] = token.id
+            if dictionary_id in seen_ids[region_id]:
+                continue
+            seen_ids[region_id].add(dictionary_id)
+            vocabulary_lists[region_id].append(
+                GeminiVocabularyCandidate(
+                    id=dictionary_id,
+                    surface=token.surface,
+                    lemma=token.lemma,
+                    reading=token.reading,
+                )
+            )
+        vocabulary_by_region = {
+            region_id: tuple(candidates)
+            for region_id, candidates in vocabulary_lists.items()
+        }
+        return ReusableAnalysis(
+            page=page,
+            linguistic_run_id=linguistic_run.id,
+            regions=region_text,
+            vocabulary_by_region=vocabulary_by_region,
+            region_ids=region_ids,
+            token_ids=token_ids,
+        )
+
+    async def _complete_reused_without_gemini(
+        self,
+        claim: ClaimedJob,
+        linguistic_run_id: int,
+    ) -> None:
+        async with self._sessions.begin() as session:
+            job = await _lock_owned_job(session, claim, "claimed")
+            _add_study_result(session, job, linguistic_run_id)
+            job.status = "completed"
+            _finish_job(job)
+            await _finish_attempt(session, claim, "completed_reused_analysis")
 
     async def _heartbeat_loop(self, claim: ClaimedJob) -> None:
         interval = max(0.1, min(self._lease_seconds / 3, 30.0))
@@ -327,7 +503,7 @@ class Worker:
         result: OcrResult,
         region_ids: dict[str, int],
         tokens_by_region: dict[str, tuple[LinguisticToken, ...]],
-    ) -> dict[tuple[str, str], int]:
+    ) -> tuple[int, dict[tuple[str, str], int]]:
         input_digest = hashlib.sha256(
             json.dumps(
                 [(region.id, region.japanese_text) for region in result.regions],
@@ -401,10 +577,11 @@ class Worker:
             use_gemini = self._gemini is not None and bool(result.regions)
             job.status = "processing_gemini" if use_gemini else "completed"
             if not use_gemini:
+                _add_study_result(session, job, run.id)
                 _finish_job(job)
                 await _finish_attempt(session, claim, "completed_without_gemini")
             job.updated_at = func.now()
-            return token_ids
+            return run.id, token_ids
 
     async def _reserve_gemini_call(
         self,
@@ -485,6 +662,7 @@ class Worker:
         claim: ClaimedJob,
         call_id: int,
         analysis: GeminiPageAnalysis,
+        linguistic_run_id: int,
         region_ids: dict[str, int],
         token_ids: dict[tuple[str, str], int],
     ) -> None:
@@ -492,14 +670,6 @@ class Worker:
         today = datetime.now(UTC).date()
         async with self._sessions.begin() as session:
             job = await _lock_owned_job(session, claim, "processing_gemini")
-            linguistic_run_id = (
-                await session.execute(
-                    select(LinguisticRunRecord.id).where(
-                        LinguisticRunRecord.job_id == job.id,
-                        LinguisticRunRecord.fencing_token == claim.fencing_token,
-                    )
-                )
-            ).scalar_one()
             call = await session.get_one(GeminiCallRecord, call_id, with_for_update=True)
             persisted = GeminiAnalysisRecord(
                 job_id=job.id,
@@ -563,6 +733,7 @@ class Worker:
                     amount=call.reserved_cost,
                 )
             )
+            _add_study_result(session, job, linguistic_run_id)
             job.status = "completed"
             _finish_job(job)
             await _finish_attempt(session, claim, "completed")
@@ -629,6 +800,22 @@ async def _lock_owned_job(session: AsyncSession, claim: ClaimedJob, expected: st
     if job is None:
         raise StaleLeaseError
     return job
+
+
+def _add_study_result(
+    session: AsyncSession,
+    job: JobRecord,
+    linguistic_run_id: int,
+) -> None:
+    session.add(
+        StudyResultRecord(
+            job_id=job.id,
+            linguistic_run_id=linguistic_run_id,
+            content_language=CONTENT_LANGUAGE.value,
+            study_language=job.study_language,
+            dictionary_language=LOCAL_DICTIONARY_LANGUAGE.value,
+        )
+    )
 
 
 def _finish_job(job: JobRecord) -> None:

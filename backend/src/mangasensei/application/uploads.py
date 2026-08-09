@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mangasensei.application.idempotency import idempotency_digest
 from mangasensei.domain.capabilities import CapabilityScope
+from mangasensei.domain.languages import DEFAULT_STUDY_LANGUAGE, StudyLanguage
 from mangasensei.infrastructure.capabilities import CapabilityService
 from mangasensei.infrastructure.database.job_models import JobRecord
 from mangasensei.infrastructure.database.storage_locks import acquire_image_blob_lock
@@ -52,6 +53,7 @@ class UploadResult:
     media_type: str
     expires_at: datetime
     capabilities: CapabilityTokens
+    study_language: str
     created: bool
 
 
@@ -75,6 +77,7 @@ class UploadService:
         image: ValidatedImage,
         original_filename: str,
         idempotency_key: str,
+        study_language: StudyLanguage = DEFAULT_STUDY_LANGUAGE,
     ) -> UploadResult:
         upload_digest = idempotency_digest(
             pepper=self._idempotency_pepper,
@@ -105,10 +108,26 @@ class UploadService:
                     page_id=page.id,
                     idempotency_digest=job_digest,
                     request_digest=request_digest,
+                    study_language=study_language.value,
                 )
                 session.add(job)
                 await session.flush()
             else:
+                initial_job = (
+                    await session.execute(
+                        select(JobRecord)
+                        .where(
+                            JobRecord.page_id == page.id,
+                            JobRecord.job_kind == "page_analysis",
+                        )
+                        .order_by(JobRecord.created_at, JobRecord.id)
+                        .limit(1)
+                    )
+                ).scalar_one()
+                if initial_job.study_language != study_language.value:
+                    raise IdempotencyConflictError(
+                        "idempotency key is bound to another study language"
+                    )
                 job = (
                     await session.execute(
                         select(JobRecord)
@@ -128,6 +147,7 @@ class UploadService:
                 media_type=image.media_type,
                 expires_at=page.expires_at,
                 capabilities=tokens,
+                study_language=job.study_language,
                 created=created,
             )
 
