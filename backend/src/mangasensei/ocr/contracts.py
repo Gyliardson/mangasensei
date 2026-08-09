@@ -20,6 +20,15 @@ class OcrImage(OcrContract):
     dimensions: PageDimensions
 
 
+class OcrProvenance(OcrContract):
+    detector: str = Field(min_length=1, max_length=64)
+    recognizer: str = Field(min_length=1, max_length=64)
+    model_manifest_version: str = Field(min_length=1, max_length=64)
+    config_digest: bytes = Field(min_length=32, max_length=32)
+    upstream_repository: str = Field(min_length=1)
+    upstream_commit: str = Field(min_length=1, max_length=128)
+
+
 class OcrRegionResult(OcrContract):
     id: str
     dimensions: PageDimensions
@@ -37,6 +46,7 @@ class OcrRegionResult(OcrContract):
 
 class OcrResult(OcrContract):
     image_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    provenance: OcrProvenance
     regions: tuple[OcrRegionResult, ...] = Field(max_length=128)
 
 
