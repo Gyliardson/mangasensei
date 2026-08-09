@@ -1,36 +1,177 @@
+import json
+
 import pytest
 from pydantic import ValidationError
 
 from mangasensei.gemini.contracts import GeminiPageAnalysis, GeminiRegionAnalysis
-from mangasensei.gemini.service import GeminiAnalysisService, UnknownRegionError
+from mangasensei.gemini.service import (
+    GeminiAnalysisService,
+    GeminiVocabularyCandidate,
+    UnknownRegionError,
+    UnknownVocabularyError,
+    build_vocabulary_candidates_by_region,
+)
+from mangasensei.linguistics.service import LinguisticToken
 
 
-class FakeGeminiAdapter:
+class PromptMappedAdapter:
+    def __init__(self) -> None:
+        self.payload: dict[str, object] | None = None
+
     async def analyze(self, *, prompt: str, schema: type[GeminiPageAnalysis]) -> GeminiPageAnalysis:
-        assert "region-001" in prompt
+        payload = json.loads(prompt)
+        self.payload = payload
         return schema(
-            regions=(
+            regions=tuple(
                 GeminiRegionAnalysis(
-                    region_id="region-001",
-                    translation="É um gato.",
-                    explanation="Frase copulativa simples.",
-                    grammar_points=("です",),
-                    vocabulary_ids=("jmdict-1467640",),
-                ),
+                    region_id=region["region_id"],
+                    translation=f"translation:{region['region_id']}",
+                    explanation=f"explanation:{region['region_id']}",
+                    grammar_points=(),
+                    vocabulary_ids=tuple(
+                        candidate["id"] for candidate in region["vocabulary_candidates"]
+                    ),
+                )
+                for region in payload["regions"]
             )
         )
 
 
-@pytest.mark.asyncio
-async def test_gemini_can_only_associate_known_region_and_vocabulary_ids() -> None:
-    service = GeminiAnalysisService(FakeGeminiAdapter(), prompt_version="v1")
+def candidate(id_: str, surface: str, lemma: str, reading: str) -> GeminiVocabularyCandidate:
+    return GeminiVocabularyCandidate(id=id_, surface=surface, lemma=lemma, reading=reading)
 
-    result = await service.analyze_page(
-        regions={"region-001": "猫です"},
-        vocabulary_ids=frozenset({"jmdict-1467640"}),
+
+def token(
+    *, region_id: str, index: int, id_: str | None, surface: str, lemma: str, reading: str
+) -> LinguisticToken:
+    return LinguisticToken(
+        id=f"{region_id}:token:{index}",
+        surface=surface,
+        lemma=lemma,
+        reading=reading,
+        part_of_speech="名詞",
+        dictionary_id=id_,
+        meanings=("not sent to Gemini",) if id_ is not None else (),
+        source="fixture" if id_ is not None else None,
+        jlpt_level="N5" if id_ is not None else None,
+        jlpt_official=False if id_ is not None else None,
     )
 
-    assert result.regions[0].translation == "É um gato."
+
+@pytest.mark.asyncio
+async def test_prompt_preserves_region_scoped_vocabulary_mapping() -> None:
+    adapter = PromptMappedAdapter()
+    service = GeminiAnalysisService(adapter, prompt_version="v2")
+    vocabulary = {
+        "region-a": (candidate("jmdict-cat", "猫", "猫", "ネコ"),),
+        "region-b": (candidate("jmdict-dog", "犬", "犬", "イヌ"),),
+    }
+
+    result = await service.analyze_page(
+        regions={"region-a": "猫です", "region-b": "犬です"},
+        vocabulary_by_region=vocabulary,
+    )
+
+    assert [region.vocabulary_ids for region in result.regions] == [
+        ("jmdict-cat",),
+        ("jmdict-dog",),
+    ]
+    assert adapter.payload is not None
+    prompt_regions = adapter.payload["regions"]
+    assert prompt_regions == [
+        {
+            "region_id": "region-a",
+            "japanese_text": "猫です",
+            "vocabulary_candidates": [
+                {"id": "jmdict-cat", "surface": "猫", "lemma": "猫", "reading": "ネコ"}
+            ],
+        },
+        {
+            "region_id": "region-b",
+            "japanese_text": "犬です",
+            "vocabulary_candidates": [
+                {"id": "jmdict-dog", "surface": "犬", "lemma": "犬", "reading": "イヌ"}
+            ],
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_known_page_vocabulary_is_rejected_for_the_wrong_region() -> None:
+    class WrongRegionVocabularyAdapter:
+        async def analyze(
+            self, *, prompt: str, schema: type[GeminiPageAnalysis]
+        ) -> GeminiPageAnalysis:
+            del prompt
+            return schema(
+                regions=(
+                    GeminiRegionAnalysis(
+                        region_id="region-b",
+                        translation="Dog.",
+                        explanation="Wrong vocabulary association fixture.",
+                        grammar_points=(),
+                        vocabulary_ids=("jmdict-cat",),
+                    ),
+                )
+            )
+
+    service = GeminiAnalysisService(WrongRegionVocabularyAdapter(), prompt_version="v2")
+    with pytest.raises(UnknownVocabularyError, match="jmdict-cat"):
+        await service.analyze_page(
+            regions={"region-a": "猫", "region-b": "犬"},
+            vocabulary_by_region={
+                "region-a": (candidate("jmdict-cat", "猫", "猫", "ネコ"),),
+                "region-b": (candidate("jmdict-dog", "犬", "犬", "イヌ"),),
+            },
+        )
+
+
+def test_vocabulary_candidates_dedupe_within_region_but_remain_region_scoped() -> None:
+    candidates = build_vocabulary_candidates_by_region(
+        {
+            "region-a": (
+                token(
+                    region_id="region-a",
+                    index=0,
+                    id_="jmdict-cat",
+                    surface="猫",
+                    lemma="猫",
+                    reading="ネコ",
+                ),
+                token(
+                    region_id="region-a",
+                    index=1,
+                    id_="jmdict-cat",
+                    surface="猫",
+                    lemma="猫",
+                    reading="ネコ",
+                ),
+            ),
+            "region-b": (
+                token(
+                    region_id="region-b",
+                    index=0,
+                    id_="jmdict-cat",
+                    surface="猫",
+                    lemma="猫",
+                    reading="ネコ",
+                ),
+                token(
+                    region_id="region-b",
+                    index=1,
+                    id_=None,
+                    surface="です",
+                    lemma="です",
+                    reading="デス",
+                ),
+            ),
+        }
+    )
+
+    assert candidates == {
+        "region-a": (candidate("jmdict-cat", "猫", "猫", "ネコ"),),
+        "region-b": (candidate("jmdict-cat", "猫", "猫", "ネコ"),),
+    }
 
 
 def test_gemini_contract_is_strict() -> None:
@@ -49,10 +190,11 @@ def test_gemini_contract_is_strict() -> None:
 
 @pytest.mark.asyncio
 async def test_unknown_gemini_region_is_rejected() -> None:
-    class UnknownAdapter(FakeGeminiAdapter):
+    class UnknownAdapter:
         async def analyze(
             self, *, prompt: str, schema: type[GeminiPageAnalysis]
         ) -> GeminiPageAnalysis:
+            del prompt
             return schema(
                 regions=(
                     GeminiRegionAnalysis(
@@ -65,6 +207,9 @@ async def test_unknown_gemini_region_is_rejected() -> None:
                 )
             )
 
-    service = GeminiAnalysisService(UnknownAdapter(), prompt_version="v1")
+    service = GeminiAnalysisService(UnknownAdapter(), prompt_version="v2")
     with pytest.raises(UnknownRegionError):
-        await service.analyze_page(regions={"region-001": "猫"}, vocabulary_ids=frozenset())
+        await service.analyze_page(
+            regions={"region-001": "猫"},
+            vocabulary_by_region={"region-001": ()},
+        )
