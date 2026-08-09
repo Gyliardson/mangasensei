@@ -50,7 +50,7 @@ class FakeProviderFailureInteractions:
 
 
 @pytest.mark.asyncio
-async def test_interactions_adapter_disables_storage_and_uses_supported_json_schema() -> None:
+async def test_interactions_adapter_disables_storage_and_uses_provider_compatibility_schema() -> None:
     interactions = FakeInteractions()
     client = SimpleNamespace(aio=SimpleNamespace(interactions=interactions))
     adapter = GoogleGenAiAdapter(client=client, model="gemini-test", timeout_seconds=15)
@@ -69,12 +69,13 @@ async def test_interactions_adapter_disables_storage_and_uses_supported_json_sch
     serialized_provider_schema = json.dumps(provider_schema, sort_keys=True)
     assert "minLength" not in serialized_provider_schema
     assert "maxLength" not in serialized_provider_schema
-    assert "maxItems" in serialized_provider_schema
+    assert "maxItems" not in serialized_provider_schema
     assert "additionalProperties" in serialized_provider_schema
 
     raw_schema = json.dumps(GeminiPageAnalysis.model_json_schema(), sort_keys=True)
     assert "minLength" in raw_schema
     assert "maxLength" in raw_schema
+    assert "maxItems" in raw_schema
     assert interactions.request["generation_config"] == {
         "thinking_level": "low",
         "max_output_tokens": 16_384,
