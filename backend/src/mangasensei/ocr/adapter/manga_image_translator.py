@@ -22,11 +22,10 @@ from mangasensei.ocr.models.manifest import ModelManifest, verify_model
 DETECTOR_NAME = "default"
 RECOGNIZER_NAME = "48px"
 UPSTREAM_REPOSITORY = "https://github.com/zyddnys/manga-image-translator"
-_CONFIG_SCHEMA_VERSION = "manga-image-translator-v3"
+_CONFIG_SCHEMA_VERSION = "manga-image-translator-v4"
 _READING_ORDER_VERSION = "manga-tiers-v1"
 _DETECTOR_FLAGS = (False, False, False, False, False)
 _RECOGNIZER_FLAG = False
-_RECOGNITION_SHORT_AXIS_CONTEXT = 1.16
 _UPSTREAM_RECOGNIZER_LOGGER = "manga-translator.Model48pxOCR"
 _MIN_TIER_BAND_PAGE_FRACTION = 0.02
 _MAX_TIER_BAND_PAGE_FRACTION = 0.12
@@ -176,7 +175,6 @@ class MangaImageTranslatorEngine:
             "ignore_bubble": self._ocr_config.ignore_bubble,
             "detector_flags": _DETECTOR_FLAGS,
             "recognizer_flag": _RECOGNIZER_FLAG,
-            "recognition_short_axis_context": _RECOGNITION_SHORT_AXIS_CONTEXT,
             "reading_order": _READING_ORDER_VERSION,
         }
         canonical_config = json.dumps(config, sort_keys=True, separators=(",", ":"))
@@ -205,9 +203,7 @@ class MangaImageTranslatorEngine:
             await self._detector.load(self._device)
         if self._recognizer is None:
             MangaSenseiModel48pxOCR._MODEL_DIR = str(self._model_cache)
-            self._recognizer = MangaSenseiModel48pxOCR(
-                short_axis_context=_RECOGNITION_SHORT_AXIS_CONTEXT
-            )
+            self._recognizer = MangaSenseiModel48pxOCR()
             await self._recognizer.load(self._device)
         return self._detector, self._recognizer, dispatch, manifest
 
