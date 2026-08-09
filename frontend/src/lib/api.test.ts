@@ -61,7 +61,7 @@ describe("API client", () => {
   });
 
   it("reprocesses study language with the page capability and a distinct idempotency key", async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       envelope(
         {
           jobId: "job-002",
