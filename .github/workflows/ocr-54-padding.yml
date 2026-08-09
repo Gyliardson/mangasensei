@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/ocr-54-padding.yml"
       - "scripts/ocr_54_recognizer_padding_experiment.py"
+      - "scripts/ocr_54_recognizer_context_sweep.py"
 
 permissions:
   contents: read
@@ -82,11 +83,18 @@ jobs:
             --model-cache "${MANGASENSEI_MODEL_CACHE}" \
             --output .ocr54/artifact/recognizer-padding-experiment.json
 
+      - name: Sweep deterministic right context
+        run: |
+          uv run python scripts/ocr_54_recognizer_context_sweep.py \
+            --page9 .ocr54/artifact/source_page9.jpg \
+            --model-cache "${MANGASENSEI_MODEL_CACHE}" \
+            --output .ocr54/artifact/recognizer-context-sweep.json
+
       - name: Upload privacy-safe evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ocr-54-recognizer-padding
-          path: .ocr54/artifact/recognizer-padding-experiment.json
+          path: .ocr54/artifact/*.json
           if-no-files-found: warn
           retention-days: 3
