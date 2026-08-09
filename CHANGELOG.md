@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OCR runs now persist provenance supplied by the engine from the verified model manifest and effective configuration instead of worker-side literals or zero-region fallbacks.
 - API metadata, `/health` and the frontend footer now derive the synchronized package/workspace release version instead of independent hardcoded literals.
 - Reader furigana now suppresses kana-only script-equivalent annotations and presents useful canonical katakana readings in learner-facing hiragana without altering API token data.
+- The upload drop target now accepts the advertised single-file drag-and-drop gesture while rejecting multi-file drops explicitly; server-side image validation remains authoritative.
 
 ## [0.1.0] - 2026-08-07
 
