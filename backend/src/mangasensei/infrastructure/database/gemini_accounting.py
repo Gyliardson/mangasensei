@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from mangasensei.infrastructure.database.analysis_models import (
     GeminiBudgetBucketRecord,
@@ -37,7 +38,9 @@ async def reconcile_abandoned_gemini_calls(
     if attempt_selector and (job_id is None or fencing_token is None):
         raise ValueError("job_id and fencing_token must be supplied together")
 
-    predicates = [GeminiCallRecord.state.in_(("reserved", "sent"))]
+    predicates: list[ColumnElement[bool]] = [
+        GeminiCallRecord.state.in_(("reserved", "sent"))
+    ]
     if attempt_selector:
         predicates.extend(
             (
