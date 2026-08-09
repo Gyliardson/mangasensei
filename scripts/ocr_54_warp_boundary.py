@@ -7,7 +7,7 @@ import logging
 import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 import cv2
 import numpy as np
@@ -31,8 +31,8 @@ PAGE9_ZONE = (130, 285, 455, 745)
 PAGE171_ZONE = (70, 180, 650, 1750)
 PAGE9_SCALE = 0.9
 TEXT_HEIGHT = 48
-NORMALIZED_PADS = (0, 1, 2, 3, 4, 5, 6)
 OUT = Path(os.environ.get("MANGASENSEI_OCR_WARP_ARTIFACT_DIR", "var/ocr-54-warp-boundary"))
+CropFn = Callable[[Quadrilateral, np.ndarray, str, int], np.ndarray]
 
 
 def _center_in_zone(line: Any, zone: tuple[int, int, int, int]) -> bool:
@@ -47,23 +47,39 @@ def _scale_zone(zone: tuple[int, int, int, int], factor: float) -> tuple[int, in
     return tuple(round(value * factor) for value in zone)  # type: ignore[return-value]
 
 
+def _destination(line: Quadrilateral, direction: str, textheight: int) -> tuple[np.ndarray, int, int]:
+    structure = [np.asarray(point, dtype=np.float32) for point in line.structure]
+    l1a, l1b, l2a, l2b = structure
+    ratio = float(np.linalg.norm(l1b - l1a) / np.linalg.norm(l2b - l2a))
+    if direction == "h":
+        height = max(int(textheight), 2)
+        width = max(int(round(textheight / ratio)), 2)
+    else:
+        width = max(int(textheight), 2)
+        height = max(int(round(textheight * ratio)), 2)
+    destination = np.asarray(
+        [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
+        dtype=np.float32,
+    )
+    return destination, width, height
+
+
+def _orient(region: np.ndarray, direction: str) -> np.ndarray:
+    if direction == "v":
+        return cv2.rotate(region, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return region
+
+
 def _crop_inclusive(
     line: Quadrilateral,
     img: np.ndarray,
     direction: str,
     textheight: int,
 ) -> np.ndarray:
-    structure = [np.asarray(point, dtype=np.float32) for point in line.structure]
-    l1a, l1b, l2a, l2b = structure
-    vertical_vector = l1b - l1a
-    horizontal_vector = l2b - l2a
-    ratio = float(np.linalg.norm(vertical_vector) / np.linalg.norm(horizontal_vector))
-
     source_points = np.asarray(line.pts, dtype=np.int64).copy()
     image_height, image_width = img.shape[:2]
     source_points[:, 0] = np.clip(source_points[:, 0], 0, image_width - 1)
     source_points[:, 1] = np.clip(source_points[:, 1], 0, image_height - 1)
-
     x1 = int(source_points[:, 0].min())
     y1 = int(source_points[:, 1].min())
     x2 = int(source_points[:, 0].max())
@@ -71,49 +87,58 @@ def _crop_inclusive(
     cropped = img[y1 : y2 + 1, x1 : x2 + 1]
     source_points[:, 0] -= x1
     source_points[:, 1] -= y1
-    source = source_points.astype(np.float32)
-
-    if direction == "h":
-        height = max(int(textheight), 2)
-        width = max(int(round(textheight / ratio)), 2)
-        destination = np.asarray(
-            [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
-            dtype=np.float32,
-        )
-        matrix, _ = cv2.findHomography(source, destination, cv2.RANSAC, 5.0)
-        if matrix is None:
-            raise RuntimeError("could not construct horizontal homography")
-        return cv2.warpPerspective(cropped, matrix, (width, height))
-
-    width = max(int(textheight), 2)
-    height = max(int(round(textheight * ratio)), 2)
-    destination = np.asarray(
-        [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
-        dtype=np.float32,
-    )
-    matrix, _ = cv2.findHomography(source, destination, cv2.RANSAC, 5.0)
+    destination, width, height = _destination(line, direction, textheight)
+    matrix, _ = cv2.findHomography(source_points.astype(np.float32), destination, cv2.RANSAC, 5.0)
     if matrix is None:
-        raise RuntimeError("could not construct vertical homography")
-    region = cv2.warpPerspective(cropped, matrix, (width, height))
-    return cv2.rotate(region, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        raise RuntimeError("could not construct tight-crop homography")
+    return _orient(cv2.warpPerspective(cropped, matrix, (width, height)), direction)
+
+
+def _warp_full_image(
+    line: Quadrilateral,
+    img: np.ndarray,
+    direction: str,
+    textheight: int,
+) -> np.ndarray:
+    source_points = np.asarray(line.pts, dtype=np.float32).copy()
+    image_height, image_width = img.shape[:2]
+    source_points[:, 0] = np.clip(source_points[:, 0], 0, image_width - 1)
+    source_points[:, 1] = np.clip(source_points[:, 1], 0, image_height - 1)
+    destination, width, height = _destination(line, direction, textheight)
+    matrix, _ = cv2.findHomography(source_points, destination, cv2.RANSAC, 5.0)
+    if matrix is None:
+        raise RuntimeError("could not construct full-image homography")
+    return _orient(cv2.warpPerspective(img, matrix, (width, height)), direction)
+
+
+def _warp_full_image_cubic(
+    line: Quadrilateral,
+    img: np.ndarray,
+    direction: str,
+    textheight: int,
+) -> np.ndarray:
+    source_points = np.asarray(line.pts, dtype=np.float32).copy()
+    image_height, image_width = img.shape[:2]
+    source_points[:, 0] = np.clip(source_points[:, 0], 0, image_width - 1)
+    source_points[:, 1] = np.clip(source_points[:, 1], 0, image_height - 1)
+    destination, width, height = _destination(line, direction, textheight)
+    matrix, _ = cv2.findHomography(source_points, destination, cv2.RANSAC, 5.0)
+    if matrix is None:
+        raise RuntimeError("could not construct cubic full-image homography")
+    return _orient(
+        cv2.warpPerspective(img, matrix, (width, height), flags=cv2.INTER_CUBIC),
+        direction,
+    )
 
 
 @contextmanager
-def _patched_crop() -> Iterator[None]:
+def _patched_crop(fn: CropFn) -> Iterator[None]:
     original = Quadrilateral.get_transformed_region
-    Quadrilateral.get_transformed_region = _crop_inclusive  # type: ignore[method-assign]
+    Quadrilateral.get_transformed_region = fn  # type: ignore[method-assign]
     try:
         yield
     finally:
         Quadrilateral.get_transformed_region = original  # type: ignore[method-assign]
-
-
-def _factor_for_normalized_pad(pad: int) -> float:
-    if pad == 0:
-        return 1.0
-    if pad * 2 >= TEXT_HEIGHT:
-        raise ValueError("normalized pad must leave positive text width")
-    return TEXT_HEIGHT / (TEXT_HEIGHT - 2 * pad)
 
 
 async def _detect_targets(
@@ -136,7 +161,6 @@ async def _detect_targets(
     else:
         pixels = _decode_rgb(source.read_bytes())
         effective_zone = zone
-
     detector, _, _, _ = await engine._ensure_loaded()
     lines, _, _ = await detector.detect(
         pixels,
@@ -146,53 +170,38 @@ async def _detect_targets(
         engine._unclip_ratio,
         *_DETECTOR_FLAGS,
     )
-    targets = [line for line in lines if _center_in_zone(line, effective_zone)]
-    return pixels, targets
+    return pixels, [line for line in lines if _center_in_zone(line, effective_zone)]
 
 
-async def _sweep_page(
+async def _observe(
     *,
     label: str,
+    recognizer: MangaSenseiModel48pxOCR,
     pixels: np.ndarray,
     targets: list[Quadrilateral],
     config_type: type[Any],
-    recognizer: MangaSenseiModel48pxOCR,
+    crop_fn: CropFn,
 ) -> dict[str, Any]:
-    if not targets:
-        raise RuntimeError(f"{label}: no detector targets selected")
-
+    recognizer._short_axis_context = 1.0
     zero = config_type(prob=0.0, ignore_bubble=0)
     prod = config_type(prob=0.2, ignore_bubble=0)
-    observations: dict[str, Any] = {}
-    with _patched_crop():
-        for pad in NORMALIZED_PADS:
-            factor = _factor_for_normalized_pad(pad)
-            recognizer._short_axis_context = factor
-            zero_lines = await recognizer.recognize(
-                pixels, copy.deepcopy(targets), zero, _RECOGNIZER_FLAG
-            )
-            prod_lines = await recognizer.recognize(
-                pixels, copy.deepcopy(targets), prod, _RECOGNIZER_FLAG
-            )
-            record = {
-                "normalized_pad_per_side": pad,
-                "factor": factor,
-                "zero_count": len(zero_lines),
-                "probabilities": [float(line.prob) for line in zero_lines],
-                "production_count": len(prod_lines),
-            }
-            observations[str(pad)] = record
-            print(
-                "PAD_SWEEP "
-                f"page={label} normalized_pad={pad} factor={factor:.6f} "
-                f"production_count={len(prod_lines)} "
-                f"probabilities={[round(float(line.prob), 6) for line in zero_lines]}"
-            )
-    return {
-        "detector_count": len(targets),
-        "detector_xyxy": [[int(v) for v in line.xyxy] for line in targets],
-        "observations": observations,
+    with _patched_crop(crop_fn):
+        zero_lines = await recognizer.recognize(
+            pixels, copy.deepcopy(targets), zero, _RECOGNIZER_FLAG
+        )
+        prod_lines = await recognizer.recognize(
+            pixels, copy.deepcopy(targets), prod, _RECOGNIZER_FLAG
+        )
+    record = {
+        "production_count": len(prod_lines),
+        "probabilities": [float(line.prob) for line in zero_lines],
     }
+    print(
+        "FULL_WARP "
+        f"page={label} variant={crop_fn.__name__} production_count={len(prod_lines)} "
+        f"probabilities={[round(float(line.prob), 6) for line in zero_lines]}"
+    )
+    return record
 
 
 async def main() -> None:
@@ -207,46 +216,39 @@ async def main() -> None:
     )
     if len(page9_targets) != 3:
         raise RuntimeError(f"page9 expected 3 targets, got {len(page9_targets)}")
-
-    page171_pixels, page171_targets = await _detect_targets(
-        engine, PAGE171, PAGE171_ZONE
-    )
+    page171_pixels, page171_targets = await _detect_targets(engine, PAGE171, PAGE171_ZONE)
     page171_targets = [
-        line
-        for line in page171_targets
-        if (float(line.xyxy[3]) - float(line.xyxy[1])) >= 500
+        line for line in page171_targets if float(line.xyxy[3]) - float(line.xyxy[1]) >= 500
     ]
     if len(page171_targets) != 2:
-        raise RuntimeError(
-            "page171 expected 2 long footnote detector targets, "
-            f"got {len(page171_targets)}: {[list(map(int, line.xyxy)) for line in page171_targets]}"
-        )
+        raise RuntimeError(f"page171 expected 2 long targets, got {len(page171_targets)}")
 
     recognizer = MangaSenseiModel48pxOCR(short_axis_context=1.0)
     MangaSenseiModel48pxOCR._MODEL_DIR = str(model_cache)
     await recognizer.load("cpu")
 
-    payload = {
-        "normalization_height": TEXT_HEIGHT,
-        "page9_scale": PAGE9_SCALE,
-        "pages": {
-            "page9-scale-090": await _sweep_page(
-                label="page9-scale-090",
-                pixels=page9_pixels,
-                targets=page9_targets,
-                config_type=config_type,
+    variants = (_crop_inclusive, _warp_full_image, _warp_full_image_cubic)
+    payload: dict[str, Any] = {"pages": {}}
+    for page_label, pixels, targets in (
+        ("page9-scale-090", page9_pixels, page9_targets),
+        ("page171", page171_pixels, page171_targets),
+    ):
+        page_record = {
+            "detector_xyxy": [[int(v) for v in line.xyxy] for line in targets],
+            "variants": {},
+        }
+        for variant in variants:
+            page_record["variants"][variant.__name__] = await _observe(
+                label=page_label,
                 recognizer=recognizer,
-            ),
-            "page171": await _sweep_page(
-                label="page171",
-                pixels=page171_pixels,
-                targets=page171_targets,
+                pixels=pixels,
+                targets=targets,
                 config_type=config_type,
-                recognizer=recognizer,
-            ),
-        },
-    }
-    (OUT / "padding-sweep.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                crop_fn=variant,
+            )
+        payload["pages"][page_label] = page_record
+
+    (OUT / "full-warp.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":
