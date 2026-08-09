@@ -157,7 +157,8 @@ def create_app(settings: Settings) -> FastAPI:
     @app.exception_handler(IdempotencyConflictError)
     async def idempotency_error(_: Request, __: IdempotencyConflictError) -> JSONResponse:
         return JSONResponse(
-            status_code=409, content=_error("idempotency_conflict", "A chave já foi usada por outro arquivo.")
+            status_code=409,
+            content=_error("idempotency_conflict", "A chave já foi usada por outro arquivo."),
         )
 
     @app.exception_handler(InvalidIdempotencyKeyError)
