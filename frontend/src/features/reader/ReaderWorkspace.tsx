@@ -2,6 +2,11 @@ import { BookOpenText, Minus, Plus, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { StudyPage, StudyRegion, StudyToken } from "../../lib/api";
+import {
+  type StudyLanguage,
+  isStudyLanguage,
+  studyLanguageLabel,
+} from "../../lib/studyLanguage";
 import { type FuriganaMode, furiganaReading, isFuriganaMode } from "./furigana";
 import { loadFuriganaPreference, saveFuriganaPreference } from "./furiganaPreference";
 import { toSvgBox } from "./overlay";
@@ -26,10 +31,22 @@ import "./reader-preferences.css";
 interface ReaderWorkspaceProps {
   readonly page: StudyPage;
   readonly imageUrl: string;
+  readonly preferredStudyLanguage: StudyLanguage;
+  readonly studyLanguageUpdating: boolean;
+  readonly studyLanguageError: string | null;
+  readonly onStudyLanguageChange: (language: StudyLanguage) => void;
   readonly onReset: () => void;
 }
 
-export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProps) {
+export function ReaderWorkspace({
+  page,
+  imageUrl,
+  preferredStudyLanguage,
+  studyLanguageUpdating,
+  studyLanguageError,
+  onStudyLanguageChange,
+  onReset,
+}: ReaderWorkspaceProps) {
   const [selectedId, setSelectedId] = useState(page.regions[0]?.id ?? null);
   const [furiganaMode, setFuriganaMode] = useState<FuriganaMode>(() => loadFuriganaPreference());
   const [viewportPreference, setViewportPreference] = useState<ReaderViewportPreference>(() =>
@@ -102,6 +119,11 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
     saveFuriganaPreference(value);
   };
 
+  const changeStudyLanguage = (value: string) => {
+    if (!isStudyLanguage(value)) return;
+    onStudyLanguageChange(value);
+  };
+
   const changeFitMode = (value: string) => {
     if (!isReaderFitMode(value)) return;
     setViewportPreference((current) => {
@@ -128,7 +150,24 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
             <h1 id="reader-title">Selecione uma região</h1>
           </div>
           <div className="reader-header-actions">
-            <div className="reader-study-actions" role="group" aria-label="Preferências de estudo">
+            <div
+              className="reader-study-actions"
+              role="group"
+              aria-label="Preferências de estudo"
+              aria-busy={studyLanguageUpdating}
+            >
+              <label className="reader-preference">
+                <span>Idioma de estudo</span>
+                <select
+                  aria-label="Idioma de estudo"
+                  value={preferredStudyLanguage}
+                  disabled={studyLanguageUpdating}
+                  onChange={(event) => changeStudyLanguage(event.currentTarget.value)}
+                >
+                  <option value="pt-BR">Português (Brasil)</option>
+                  <option value="en">Inglês</option>
+                </select>
+              </label>
               <label className="reader-preference">
                 <span>Furigana na leitura</span>
                 <select
@@ -149,6 +188,18 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
             </div>
           </div>
         </div>
+
+        {studyLanguageUpdating && preferredStudyLanguage !== page.studyLanguage ? (
+          <p className="study-language-feedback" role="status">
+            Atualizando explicações para {studyLanguageLabel(preferredStudyLanguage)}. O resultado
+            exibido continua em {studyLanguageLabel(page.studyLanguage)} até a nova análise concluir.
+          </p>
+        ) : null}
+        {studyLanguageError ? (
+          <p className="study-language-feedback study-language-error" role="alert">
+            {studyLanguageError} O resultado em {studyLanguageLabel(page.studyLanguage)} foi mantido.
+          </p>
+        ) : null}
 
         <div className="page-presentation-toolbar" role="group" aria-label="Apresentação da página">
           <label className="reader-preference page-fit-preference">
@@ -230,11 +281,16 @@ export function ReaderWorkspace({ page, imageUrl, onReset }: ReaderWorkspaceProp
           </div>
         </div>
         <p className="reader-meta">
-          {page.regions.length} regiões · OCR {page.ocr.detector}/{page.ocr.recognizer} · exclusão em 24 horas
+          {page.regions.length} regiões · estudo {studyLanguageLabel(page.studyLanguage)} · OCR {page.ocr.detector}/{page.ocr.recognizer} · exclusão em 24 horas
         </p>
       </section>
 
-      <StudyPanel region={selected} furiganaMode={furiganaMode} />
+      <StudyPanel
+        region={selected}
+        furiganaMode={furiganaMode}
+        studyLanguage={page.studyLanguage}
+        dictionaryLanguage={page.dictionaryLanguage}
+      />
     </main>
   );
 }
@@ -278,9 +334,13 @@ function RegionShape({ region, index, selected, dimensions, onSelect }: RegionSh
 function StudyPanel({
   region,
   furiganaMode,
+  studyLanguage,
+  dictionaryLanguage,
 }: {
   readonly region: StudyRegion | undefined;
   readonly furiganaMode: FuriganaMode;
+  readonly studyLanguage: StudyLanguage;
+  readonly dictionaryLanguage: "en";
 }) {
   if (!region) {
     return (
@@ -307,12 +367,20 @@ function StudyPanel({
 
       <section aria-labelledby="translation-title">
         <p className="panel-label" id="translation-title">Tradução contextual</p>
-        <p className="translation">{region.translation ?? "Análise contextual indisponível."}</p>
-        {region.explanation ? <p className="explanation">{region.explanation}</p> : null}
+        {region.translation ? (
+          <p className="translation" lang={studyLanguage}>{region.translation}</p>
+        ) : (
+          <p className="translation">Análise contextual indisponível.</p>
+        )}
+        {region.explanation ? (
+          <p className="explanation" lang={studyLanguage}>{region.explanation}</p>
+        ) : null}
       </section>
 
       <section aria-labelledby="vocabulary-title">
-        <p className="panel-label" id="vocabulary-title">Vocabulário</p>
+        <p className="panel-label" id="vocabulary-title">
+          Vocabulário <span className="panel-language-note">significados locais em inglês</span>
+        </p>
         {region.vocabulary.length > 0 ? (
           <ul className="vocabulary-list">
             {region.vocabulary.map((item) => (
@@ -321,7 +389,7 @@ function StudyPanel({
                   <strong lang="ja">{item.lemma}</strong>
                   <span lang="ja">{item.reading}</span>
                 </div>
-                <p>{item.meanings.join("; ")}</p>
+                <p lang={dictionaryLanguage}>{item.meanings.join("; ")}</p>
                 <small>{item.source}{item.jlpt ? ` · JLPT ${item.jlpt.level} não oficial` : ""}</small>
               </li>
             ))}
