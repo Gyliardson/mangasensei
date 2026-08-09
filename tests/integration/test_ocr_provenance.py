@@ -57,13 +57,13 @@ async def _persist_with_provenance(
     root: Path,
     provenance: OcrProvenance,
     regions: tuple[OcrRegionResult, ...],
-    idempotency_key: str,
+    request_marker: str,
 ) -> OcrRunRecord:
     app = create_app(settings(database_url, root))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         upload = await client.post(
             "/api/v1/pages",
-            headers={"Idempotency-Key": idempotency_key},
+            headers={"Idempotency-Key": request_marker},
             files={"image": ("page.png", fixture_image(), "image/png")},
         )
         assert upload.status_code == 202
@@ -130,7 +130,7 @@ async def test_worker_persists_exact_engine_provenance(
         root=tmp_path,
         provenance=provenance,
         regions=(region,),
-        idempotency_key="ocr-provenance-nonempty-0001",
+        request_marker="ocr-provenance-a",
     )
 
     _assert_provenance(record, provenance)
@@ -155,7 +155,7 @@ async def test_zero_region_run_still_persists_exact_engine_provenance(
         root=tmp_path,
         provenance=provenance,
         regions=(),
-        idempotency_key="ocr-provenance-empty-0001",
+        request_marker="ocr-provenance-b",
     )
 
     _assert_provenance(record, provenance)
