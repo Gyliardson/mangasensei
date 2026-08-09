@@ -1,0 +1,69 @@
+name: OCR 54 Direct Transformers Benchmark
+
+on:
+  push:
+    branches: [investigate/54-ocr-ensemble-benchmark]
+    paths:
+      - ".github/workflows/ocr-54-transformers-direct.yml"
+      - "scripts/ocr_54_run_transformers_recognizer.py"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  compare:
+    name: Compare direct Transformers with PaddleOCR wrapper
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HF_HOME: ${{ github.workspace }}/var/hf-transformers-direct
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TRANSFORMERS_VERBOSITY: error
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - name: Lint direct Transformers benchmark
+        run: uvx --from ruff==0.16.2 ruff check scripts/ocr_54_run_transformers_recognizer.py
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-router-prepared
+          path: var/ocr-54-transformers/prepared
+          github-token: ${{ github.token }}
+          run-id: 31332104710
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-router-paddle
+          path: var/ocr-54-transformers/reference
+          github-token: ${{ github.token }}
+          run-id: 31332104710
+      - run: uv venv .bench-transformers-direct --python 3.11
+      - name: Install direct Transformers runtime
+        run: >-
+          uv pip install --python .bench-transformers-direct/bin/python
+          "transformers==5.14.1" "pillow==12.3.0" "psutil==7.2.2"
+      - name: Install project-matched CPU Torch
+        run: >-
+          uv pip install --python .bench-transformers-direct/bin/python
+          --index https://download.pytorch.org/whl/cpu
+          "torch==2.13.0" "torchvision==0.28.0"
+      - name: Run direct PP-OCRv6 and compare all 474 crops
+        run: >-
+          .bench-transformers-direct/bin/python scripts/ocr_54_run_transformers_recognizer.py
+          --input var/ocr-54-transformers/prepared
+          --reference var/ocr-54-transformers/reference/paddle-corpus.json
+          --output var/ocr-54-transformers/output
+          --batch-size 16
+      - name: Upload direct Transformers observations
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-transformers-direct
+          path: var/ocr-54-transformers/output/transformers-direct.json
+          if-no-files-found: error
+          retention-days: 7
