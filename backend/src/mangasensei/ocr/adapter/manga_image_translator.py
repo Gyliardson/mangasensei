@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,10 +14,15 @@ from uuid import NAMESPACE_URL, uuid5
 from PIL import Image
 
 from mangasensei.domain.models import BoundingBox, PageDimensions
-from mangasensei.ocr.contracts import OcrImage, OcrRegionResult, OcrResult
+from mangasensei.ocr.contracts import OcrImage, OcrProvenance, OcrRegionResult, OcrResult
 from mangasensei.ocr.models.manifest import ModelManifest, verify_model
 
-UPSTREAM_COMMIT = "95227a2bb0fd306cd4f0c104d57284026f991b3a"
+DETECTOR_NAME = "default"
+RECOGNIZER_NAME = "48px"
+UPSTREAM_REPOSITORY = "https://github.com/zyddnys/manga-image-translator"
+_CONFIG_SCHEMA_VERSION = "manga-image-translator-v1"
+_DETECTOR_FLAGS = (False, False, False, False, False)
+_RECOGNIZER_FLAG = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +37,7 @@ def region_from_upstream(
     image_sha256: str,
     dimensions: PageDimensions,
     reading_order: int,
+    upstream_commit: str,
 ) -> OcrRegionResult:
     x1, y1, x2, y2 = (int(value) for value in region.xyxy)
     x1 = max(0, min(x1, dimensions.width - 1))
@@ -70,9 +78,9 @@ def region_from_upstream(
         confidence=confidence,
         japanese_text=str(region.text).strip(),
         reading_order=reading_order,
-        detector="default",
-        recognizer="48px",
-        upstream_commit=UPSTREAM_COMMIT,
+        detector=DETECTOR_NAME,
+        recognizer=RECOGNIZER_NAME,
+        upstream_commit=upstream_commit,
     )
 
 
@@ -103,7 +111,8 @@ class MangaImageTranslatorEngine:
 
     async def analyze(self, image: OcrImage) -> OcrResult:
         async with self._lock:
-            detector, recognizer, merge = await self._ensure_loaded()
+            detector, recognizer, merge, manifest = await self._ensure_loaded()
+            provenance = self.provenance_for_manifest(manifest)
             pixels = _decode_rgb(image.content)
             textlines, _, _ = await detector.detect(
                 pixels,
@@ -111,13 +120,11 @@ class MangaImageTranslatorEngine:
                 self._text_threshold,
                 self._box_threshold,
                 self._unclip_ratio,
-                False,
-                False,
-                False,
-                False,
-                False,
+                *_DETECTOR_FLAGS,
             )
-            recognized = await recognizer.recognize(pixels, textlines, self._ocr_config, False)
+            recognized = await recognizer.recognize(
+                pixels, textlines, self._ocr_config, _RECOGNIZER_FLAG
+            )
             recognized = [line for line in recognized if str(line.text).strip()]
             merged = await merge(recognized, image.dimensions.width, image.dimensions.height)
             ordered = _simple_reading_order(merged)
@@ -127,13 +134,43 @@ class MangaImageTranslatorEngine:
                     image_sha256=image.sha256,
                     dimensions=image.dimensions,
                     reading_order=index,
+                    upstream_commit=manifest.upstream_commit,
                 )
                 for index, region in enumerate(ordered[:128])
                 if str(region.text).strip()
             )
-            return OcrResult(image_sha256=image.sha256, regions=regions)
+            return OcrResult(
+                image_sha256=image.sha256,
+                provenance=provenance,
+                regions=regions,
+            )
 
-    async def _ensure_loaded(self) -> tuple[Any, Any, Any]:
+    def provenance_for_manifest(self, manifest: ModelManifest) -> OcrProvenance:
+        """Describe the reviewed manifest and effective output-affecting OCR configuration."""
+        config = {
+            "schema_version": _CONFIG_SCHEMA_VERSION,
+            "device": self._device,
+            "detection_size": self._detection_size,
+            "text_threshold": self._text_threshold,
+            "box_threshold": self._box_threshold,
+            "unclip_ratio": self._unclip_ratio,
+            "minimum_confidence": self._ocr_config.prob,
+            "ignore_bubble": self._ocr_config.ignore_bubble,
+            "detector_flags": _DETECTOR_FLAGS,
+            "recognizer_flag": _RECOGNIZER_FLAG,
+            "reading_order": "simple-v1",
+        }
+        canonical_config = json.dumps(config, sort_keys=True, separators=(",", ":"))
+        return OcrProvenance(
+            detector=DETECTOR_NAME,
+            recognizer=RECOGNIZER_NAME,
+            model_manifest_version=manifest.version,
+            config_digest=hashlib.sha256(canonical_config.encode()).digest(),
+            upstream_repository=UPSTREAM_REPOSITORY,
+            upstream_commit=manifest.upstream_commit,
+        )
+
+    async def _ensure_loaded(self) -> tuple[Any, Any, Any, ModelManifest]:
         from ..vendor.manga_image_translator.manga_translator.detection.default import (
             DefaultDetector,
         )
@@ -144,7 +181,7 @@ class MangaImageTranslatorEngine:
             dispatch,
         )
 
-        self._verify_required_models()
+        manifest = self._verify_required_models()
         if self._detector is None:
             DefaultDetector._MODEL_DIR = str(self._model_cache)
             self._detector = DefaultDetector()  # type: ignore[no-untyped-call]
@@ -153,9 +190,9 @@ class MangaImageTranslatorEngine:
             Model48pxOCR._MODEL_DIR = str(self._model_cache)
             self._recognizer = Model48pxOCR()  # type: ignore[no-untyped-call]
             await self._recognizer.load(self._device)
-        return self._detector, self._recognizer, dispatch
+        return self._detector, self._recognizer, dispatch, manifest
 
-    def _verify_required_models(self) -> None:
+    def _verify_required_models(self) -> ModelManifest:
         manifest_path = Path(__file__).parents[1] / "models" / "manifest.json"
         manifest = ModelManifest.load(manifest_path)
         for filename, subdirectory in (
@@ -164,6 +201,7 @@ class MangaImageTranslatorEngine:
             ("alphabet-all-v7.txt", "ocr"),
         ):
             verify_model(self._model_cache / subdirectory / filename, manifest.artifact(filename))
+        return manifest
 
 
 def _decode_rgb(content: bytes) -> Any:
