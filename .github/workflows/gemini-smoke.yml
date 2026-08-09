@@ -1,0 +1,79 @@
+name: Gemini Smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gemini-smoke:
+    name: Real Gemini provider smoke
+    runs-on: ubuntu-latest
+    environment:
+      name: gemini-smoke
+      deployment: false
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install dependencies from lockfile
+        run: uv sync --frozen
+
+      - name: Check Gemini smoke configuration
+        id: preflight
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        shell: bash
+        run: |
+          if [[ -z "${GOOGLE_API_KEY:-}" ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Gemini Smoke"
+              echo
+              echo "**NOT CONFIGURED / NOT EXECUTED**"
+              echo
+              echo "The gemini-smoke environment does not expose GOOGLE_API_KEY to this run."
+              echo "No real provider request was made, so this run is not provider validation."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run real Gemini provider smoke
+        id: provider
+        if: steps.preflight.outputs.configured == 'true'
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: uv run pytest tests/test_gemini_smoke.py -m gemini_smoke -q
+
+      - name: Record real provider pass
+        if: steps.preflight.outputs.configured == 'true' && steps.provider.outcome == 'success'
+        shell: bash
+        run: |
+          {
+            echo "## Gemini Smoke"
+            echo
+            echo "**REAL PROVIDER PASS**"
+            echo
+            echo "The credential was configured and the real structured-output smoke executed successfully."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record real provider failure
+        if: failure() && steps.preflight.outputs.configured == 'true'
+        shell: bash
+        run: |
+          {
+            echo "## Gemini Smoke"
+            echo
+            echo "**REAL PROVIDER FAILED**"
+            echo
+            echo "The credential was configured and the real provider smoke did not pass."
+          } >> "$GITHUB_STEP_SUMMARY"
