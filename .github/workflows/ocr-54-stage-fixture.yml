@@ -1,0 +1,88 @@
+name: OCR 54 Stage Fixture
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ocr-54-stage-fixture.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ocr-54-stage-fixture-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stage:
+    name: Stage checksum-verified page 9 JPEG
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_ARCHIVE_SHA256: ec7bbb4ce4f719536a2d58f29eb2c665d19b0769303efe009b4d98cccad699e1
+      SOURCE_PDF_SHA256: a2ad133db82a21cefce1acccb5548de10d2d74118c1519d86ede8566b02ca8b4
+      PAGE9_SHA256: 072e3d9c2b54628a6de0c18a0ebe078817f30de545259ab3bcd0eb16974210dd
+      HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Exit if verified blob is already staged
+        id: already
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f tmp/ocr54/black_jack_v01_pdf009.jpg ]] \
+            && echo "${PAGE9_SHA256}  tmp/ocr54/black_jack_v01_pdf009.jpg" | sha256sum --check --strict; then
+            echo "present=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "present=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Download, verify and extract exact embedded JPEG
+        if: steps.already.outputs.present != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ocr54/source/unpacked .ocr54/source/page9 tmp/ocr54
+          curl --proto '=https' --tlsv1.2 --fail --location --retry 3 \
+            --output .ocr54/source/001bj.zip \
+            https://densho810.com/free/dl/001bj.zip
+          echo "${SOURCE_ARCHIVE_SHA256}  .ocr54/source/001bj.zip" | sha256sum --check --strict
+          unzip -q .ocr54/source/001bj.zip -d .ocr54/source/unpacked
+          mapfile -t pdfs < <(find .ocr54/source/unpacked -type f -name '001bj.pdf' -print)
+          if [[ ${#pdfs[@]} -ne 1 ]]; then
+            printf 'expected exactly one 001bj.pdf, found %s\n' "${#pdfs[@]}" >&2
+            exit 1
+          fi
+          echo "${SOURCE_PDF_SHA256}  ${pdfs[0]}" | sha256sum --check --strict
+          if ! command -v pdfimages >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y poppler-utils
+          fi
+          pdfimages -f 9 -l 9 -j "${pdfs[0]}" .ocr54/source/page9/extract
+          page9_matches=()
+          while IFS= read -r -d '' candidate; do
+            digest=$(sha256sum "${candidate}" | cut -d' ' -f1)
+            if [[ "${digest}" == "${PAGE9_SHA256}" ]]; then
+              page9_matches+=("${candidate}")
+            fi
+          done < <(find .ocr54/source/page9 -type f -name '*.jpg' -print0)
+          if [[ ${#page9_matches[@]} -ne 1 ]]; then
+            printf 'expected exactly one checksum-matching page 9 JPEG, found %s\n' \
+              "${#page9_matches[@]}" >&2
+            exit 1
+          fi
+          cp "${page9_matches[0]}" tmp/ocr54/black_jack_v01_pdf009.jpg
+          echo "${PAGE9_SHA256}  tmp/ocr54/black_jack_v01_pdf009.jpg" | sha256sum --check --strict
+
+      - name: Commit staged fixture blob to diagnostic branch
+        if: steps.already.outputs.present != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f tmp/ocr54/black_jack_v01_pdf009.jpg
+          git commit -m "test(ocr): stage verified page 9 fixture bytes"
+          git push origin "HEAD:${HEAD_BRANCH}"
