@@ -40,6 +40,8 @@ jobs:
     env:
       MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
       MANGASENSEI_RUN_OCR_SMOKE: "1"
+      MANGASENSEI_OCR_REPEAT_RUNS: "3"
+      MANGASENSEI_OCR_FULL_CORPUS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -60,4 +62,4 @@ jobs:
         run: uv run mangasensei models verify
 
       - name: Run synthetic and licensed real-manga OCR smoke
-        run: uv run pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv --maxfail=1
+        run: uv run pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv -s --maxfail=1
