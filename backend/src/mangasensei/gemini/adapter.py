@@ -27,7 +27,7 @@ class GoogleGenAiAdapter:
         *,
         model: str,
         timeout_seconds: float = 60,
-        max_attempts: int = 2,
+        max_attempts: int = 1,
         max_output_tokens: int = 16_384,
         api_key: str | None = None,
         client: Any | None = None,
