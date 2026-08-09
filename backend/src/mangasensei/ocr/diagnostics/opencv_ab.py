@@ -133,8 +133,10 @@ def source_zone_statistics(
         raise ValueError("source and detector dimensions must be positive")
     if resize_ratio <= 0:
         raise ValueError("resize_ratio must be positive")
-    squeezed = np.squeeze(probability_map)
-    if squeezed.ndim != 2:
+    probability_plane = np.asarray(probability_map)
+    while probability_plane.ndim > 2 and probability_plane.shape[0] > 0:
+        probability_plane = probability_plane[0]
+    if probability_plane.ndim != 2:
         raise ValueError("probability map must have one two-dimensional plane")
 
     source_x1, source_y1, source_x2, source_y2 = source_zone
@@ -142,7 +144,7 @@ def source_zone_statistics(
     source_y1 = max(0, min(source_y1, source_height - 1))
     source_x2 = max(source_x1 + 1, min(source_x2, source_width))
     source_y2 = max(source_y1 + 1, min(source_y2, source_height))
-    map_height, map_width = squeezed.shape
+    map_height, map_width = probability_plane.shape
     map_scale_x = map_width / detector_input_width
     map_scale_y = map_height / detector_input_height
     map_x1 = max(0, min(math.floor(source_x1 * resize_ratio * map_scale_x), map_width - 1))
@@ -152,7 +154,9 @@ def source_zone_statistics(
         map_y1 + 1,
         min(math.ceil(source_y2 * resize_ratio * map_scale_y), map_height),
     )
-    selected = squeezed[map_y1:map_y2, map_x1:map_x2].astype(np.float64, copy=False)
+    selected = probability_plane[map_y1:map_y2, map_x1:map_x2].astype(
+        np.float64, copy=False
+    )
     return {
         "source_zone": list(source_zone),
         "map_bounds": [map_x1, map_y1, map_x2, map_y2],
@@ -352,12 +356,19 @@ def compare_probe_roots(baseline_root: Path, candidate_root: Path) -> dict[str, 
             baseline_arrays,
             candidate_arrays,
         )
+        input_comparisons = _compare_array_backed_spatial_stage(
+            _nested_records(baseline_record, "recognizer", "inputs"),
+            _nested_records(candidate_record, "recognizer", "inputs"),
+            baseline_arrays,
+            candidate_arrays,
+        )
         fixture_comparisons.append(
             {
                 "file": fixture_file,
                 "detector": detector_comparison,
                 "final_regions": final_comparison,
                 "recognizer_crops": crop_comparisons,
+                "recognizer_inputs": input_comparisons,
                 "arrays": _compare_named_array_stages(
                     baseline_record,
                     candidate_record,
