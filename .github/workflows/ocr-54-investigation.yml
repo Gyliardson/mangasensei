@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/ocr-54-investigation.yml"
       - "scripts/ocr_54_page9_diagnostic.py"
+      - "scripts/ocr_54_target_segmentation.py"
 
 permissions:
   contents: read
@@ -107,6 +108,13 @@ jobs:
             --page10 .ocr54/artifact/source_page10.jpg \
             --model-cache "${MANGASENSEI_MODEL_CACHE}" \
             --output .ocr54/artifact/trace
+
+      - name: Trace persistent page 9 target through DBNet and recognizer
+        run: |
+          uv run python scripts/ocr_54_target_segmentation.py \
+            --page9 .ocr54/artifact/source_page9.jpg \
+            --model-cache "${MANGASENSEI_MODEL_CACHE}" \
+            --output .ocr54/artifact/target-segmentation.json
 
       - name: Upload investigation evidence
         if: always()
