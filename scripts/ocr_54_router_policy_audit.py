@@ -119,7 +119,10 @@ def _lexical_score(text: str, sudachi: Any) -> tuple[float, int, int]:
     return ratio, -oov_chars, -len(morphemes)
 
 
-def _secondary_view(line: dict[str, Any], observations: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _secondary_view(
+    line: dict[str, Any],
+    observations: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
     page = str(line["page"])
     index = int(line["index"])
     view = "context" if line["direction"] == "v" else "tight"
