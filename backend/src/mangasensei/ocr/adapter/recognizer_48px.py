@@ -9,11 +9,7 @@ import numpy as np
 
 from ..vendor.manga_image_translator.manga_translator.ocr.model_48px import Model48pxOCR
 from ..vendor.manga_image_translator.manga_translator.utils.generic import Quadrilateral
-
-# The recognizer's first convolution is 7x7 with radius 3. Keep that radius as
-# real source-image context around a detector-tight line in the normalized 48px
-# short axis instead of letting glyph strokes sit against synthetic CNN padding.
-RECOGNITION_SHORT_AXIS_PADDING = 3
+from .recognizer_contract import RECOGNITION_SHORT_AXIS_PADDING
 
 
 class MangaSenseiModel48pxOCR(Model48pxOCR):
