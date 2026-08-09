@@ -2,6 +2,7 @@ import { BookOpenText, RotateCcw } from "lucide-react";
 import { useState } from "react";
 
 import type { StudyPage, StudyRegion, StudyToken } from "../../lib/api";
+import { furiganaReading } from "./furigana";
 import { toSvgBox } from "./overlay";
 
 interface ReaderWorkspaceProps {
@@ -148,8 +149,9 @@ function StudyPanel({ region }: { readonly region: StudyRegion | undefined }) {
 }
 
 function RubyToken({ token }: { readonly token: StudyToken }) {
-  if (!token.reading || token.reading === token.surface) {
+  const reading = furiganaReading(token.surface, token.reading);
+  if (!reading) {
     return <span>{token.surface}</span>;
   }
-  return <ruby>{token.surface}<rp>（</rp><rt>{token.reading}</rt><rp>）</rp></ruby>;
+  return <ruby>{token.surface}<rp>（</rp><rt>{reading}</rt><rp>）</rp></ruby>;
 }
