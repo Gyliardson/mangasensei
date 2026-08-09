@@ -24,10 +24,10 @@ def _quadrilateral(points: list[list[int]]) -> Quadrilateral:
 
 @pytest.mark.parametrize(
     ("points", "direction"),
-    (
+    [
         ([[1, 1], [3, 1], [3, 3], [1, 3]], "h"),
         ([[1, 1], [3, 1], [3, 4], [1, 4]], "v"),
-    ),
+    ],
 )
 def test_recognizer_crop_keeps_maximum_detector_pixel_in_source(
     points: list[list[int]],
@@ -61,10 +61,10 @@ def test_recognizer_crop_clips_points_to_last_valid_image_pixel() -> None:
 
 
 def test_recognizer_context_contract_is_symmetric_short_edge_padding() -> None:
-    assert RECOGNITION_SHORT_EDGE_PAD_RATIO == pytest.approx(0.08)
-    assert RECOGNITION_SHORT_AXIS_CONTEXT == pytest.approx(
+    assert pytest.approx(0.08) == RECOGNITION_SHORT_EDGE_PAD_RATIO
+    assert pytest.approx(
         1.0 + 2.0 * RECOGNITION_SHORT_EDGE_PAD_RATIO
-    )
+    ) == RECOGNITION_SHORT_AXIS_CONTEXT
 
 
 def test_recognizer_context_expands_only_local_short_axis() -> None:
