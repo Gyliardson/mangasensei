@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Explicit SHA-pinned CodeQL advanced workflow for Actions, JavaScript/TypeScript and Python on pull requests, `main` pushes and weekly scans.
 - Reader-local furigana display preferences for Hiragana, canonical Katakana and hidden ruby, persisted safely in browser storage.
 - Adaptive reader fit and zoom controls for portrait and landscape pages, with local preferences and contained pan/scroll behavior.
+- Explicit Japanese-content study-language backend contract for `pt-BR` and `en`, including persisted effective-language metadata, structured Gemini language input, backward-compatible `pt-BR` migration, and language-only reprocessing that reuses completed OCR and Japanese linguistic analysis.
 
 ### Changed
 
