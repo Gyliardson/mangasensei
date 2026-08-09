@@ -16,6 +16,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--prepared", type=Path, required=True)
     parser.add_argument("--manga-ocr", type=Path, required=True)
     parser.add_argument("--paddle-v6", type=Path, required=True)
+    parser.add_argument("--baberu", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
@@ -50,7 +51,6 @@ def _anchor_cer(expected: str, actual: str) -> float:
         return 0.0
     if expected_norm in actual_norm:
         return 0.0
-    # For longer surrounding text, compare the expected string with every similarly sized window.
     if len(actual_norm) >= len(expected_norm):
         window_size = len(expected_norm)
         best = min(
@@ -124,6 +124,13 @@ def _combined_external(
     return "".join(parts)
 
 
+def _block_external(
+    case_name: str,
+    observations: dict[str, dict[str, Any]],
+) -> str:
+    return str(observations.get(f"{case_name}--block", {}).get("text", ""))
+
+
 def _median_seconds(observations: dict[str, dict[str, Any]], case_name: str) -> float | None:
     values = [
         float(item["seconds"])
@@ -157,8 +164,10 @@ def main() -> None:
     benchmark = json.loads((prepared_root / "benchmark.json").read_text(encoding="utf-8"))
     manga_payload = json.loads(args.manga_ocr.read_text(encoding="utf-8"))
     paddle_payload = json.loads(args.paddle_v6.read_text(encoding="utf-8"))
+    baberu_payload = json.loads(args.baberu.read_text(encoding="utf-8"))
     manga = _observation_map(manga_payload)
     paddle = _observation_map(paddle_payload)
+    baberu = _observation_map(baberu_payload)
 
     case_reports: list[dict[str, Any]] = []
     for case in benchmark["cases"]:
@@ -169,11 +178,10 @@ def main() -> None:
             "48px-context": _combined_48px(case, "context_48px"),
             "manga-ocr-tight-lines": _combined_external(case, manga, "tight"),
             "manga-ocr-context-lines": _combined_external(case, manga, "context"),
-            "manga-ocr-block": str(
-                manga.get(f"{name}--block", {}).get("text", "")
-            ),
+            "manga-ocr-block": _block_external(name, manga),
             "paddle-v6-tight": _combined_external(case, paddle, "tight"),
             "paddle-v6-context": _combined_external(case, paddle, "context"),
+            "baberu-block": _block_external(name, baberu),
         }
         evaluations = {
             recognizer: {
@@ -187,6 +195,7 @@ def main() -> None:
             "48px-context": predictions["48px-context"],
             "manga-ocr-block": predictions["manga-ocr-block"],
             "paddle-v6-context": predictions["paddle-v6-context"],
+            "baberu-block": predictions["baberu-block"],
         }
         case_reports.append(
             {
@@ -207,6 +216,7 @@ def main() -> None:
                 "median_seconds": {
                     "manga-ocr": _median_seconds(manga, name),
                     "paddle-v6": _median_seconds(paddle, name),
+                    "baberu": _median_seconds(baberu, name),
                 },
             }
         )
@@ -230,7 +240,7 @@ def main() -> None:
         }
 
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source_head": benchmark.get("source_head"),
         "aggregate": aggregate,
         "manga_ocr_runtime": {
@@ -252,6 +262,16 @@ def main() -> None:
                 "transformers_version",
                 "model_name",
                 "engine",
+                "load_seconds",
+                "peak_rss_mb",
+            )
+        },
+        "baberu_runtime": {
+            key: baberu_payload.get(key)
+            for key in (
+                "model_revision",
+                "tier",
+                "verified_files",
                 "load_seconds",
                 "peak_rss_mb",
             )
