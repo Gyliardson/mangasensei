@@ -90,7 +90,8 @@ def test_array_descriptor_records_stable_aggregate_evidence() -> None:
 
 
 def test_source_zone_statistics_maps_source_pixels_into_raw_detector_map() -> None:
-    probability_map = np.arange(64 * 32, dtype=np.float32).reshape(1, 1, 64, 32)
+    first_channel = np.arange(64 * 32, dtype=np.float32).reshape(64, 32)
+    probability_map = np.stack((first_channel, first_channel + 10_000))[None, ...]
 
     statistics = source_zone_statistics(
         probability_map,
@@ -209,6 +210,7 @@ def test_probe_artifacts_compare_spatial_stages_and_numeric_arrays(tmp_path: Pat
     assert fixture_comparison["detector"]["matched_count"] == 2
     assert fixture_comparison["arrays"]["detector_db"]["changed_values"] == 1
     assert fixture_comparison["recognizer_crops"][0]["delta"]["changed_values"] == 1
+    assert fixture_comparison["recognizer_inputs"][0]["delta"]["changed_values"] == 1
 
 
 def test_probe_comparison_rejects_different_source_or_model_inputs(tmp_path: Path) -> None:
@@ -278,7 +280,8 @@ def _fixture_record(
         "image_sha256": "fixture-sha",
         "detector": {"candidates": detector_candidates},
         "recognizer": {
-            "crops": [{"bbox": crop_bbox, "array_key": "recognizer_crop_000"}]
+            "crops": [{"bbox": crop_bbox, "array_key": "recognizer_crop_000"}],
+            "inputs": [{"bbox": crop_bbox, "array_key": "recognizer_crop_000"}],
         },
         "final_regions": [
             {
