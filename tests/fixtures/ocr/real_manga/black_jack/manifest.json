@@ -29,6 +29,18 @@
       ]
     },
     {
+      "file": "v01/black_jack_v01_pdf009.jpg",
+      "sourcePdfPage": 9,
+      "sha256": "072e3d9c2b54628a6de0c18a0ebe078817f30de545259ab3bcd0eb16974210dd",
+      "width": 1414,
+      "height": 2000,
+      "purposes": [
+        "regressão real de perda de linha por batching do reconhecedor",
+        "duas linhas verticais adjacentes sensíveis à composição do batch",
+        "protege sobrevivência detector -> reconhecedor -> merge"
+      ]
+    },
+    {
       "file": "v01/black_jack_v01_pdf021.jpg",
       "sourcePdfPage": 21,
       "sha256": "d49630fc36f2c33f1946309257cf132a223c1cd79ba9bec35a60eb38daf00b40",

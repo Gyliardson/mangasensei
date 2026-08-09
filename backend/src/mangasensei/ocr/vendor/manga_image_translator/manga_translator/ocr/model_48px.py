@@ -87,7 +87,10 @@ class Model48pxOCR(OfflineOCR):
         for indices in chunks(perm, max_chunk_size):
             N = len(indices)
             widths = [region_imgs[i].shape[1] for i in indices]
-            max_width = 4 * (max(widths) + 7) // 4
+            # The beam mask treats each crop as ceil(width / 4) + 2 valid features.
+            # ConvNeXt reduces width by four, so the batch tensor must expose at least
+            # that many features even for the widest crop in the batch.
+            max_width = 4 * (((max(widths) + 3) // 4) + 2)
             region = np.zeros((N, text_height, max_width, 3), dtype = np.uint8)
             for i, idx in enumerate(indices):
                 W = region_imgs[idx].shape[1]

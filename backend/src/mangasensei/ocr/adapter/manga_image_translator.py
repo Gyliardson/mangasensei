@@ -22,7 +22,7 @@ from mangasensei.ocr.models.manifest import ModelManifest, verify_model
 DETECTOR_NAME = "default"
 RECOGNIZER_NAME = "48px"
 UPSTREAM_REPOSITORY = "https://github.com/zyddnys/manga-image-translator"
-_CONFIG_SCHEMA_VERSION = "manga-image-translator-v1"
+_CONFIG_SCHEMA_VERSION = "manga-image-translator-v2"
 _READING_ORDER_VERSION = "manga-tiers-v1"
 _DETECTOR_FLAGS = (False, False, False, False, False)
 _RECOGNIZER_FLAG = False

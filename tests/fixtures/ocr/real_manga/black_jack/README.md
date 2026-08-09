@@ -10,8 +10,8 @@ MangaSensei maintains these selected images to validate OCR regressions and edge
 
 The corpus is actively used by the `OCR Smoke` workflow:
 
-- **PR / `main` OCR gate:** pages 73 and 90 protect reviewed short vertical text targets (`うむ` and the `はい` core of `はい‼`) using broad target areas and region-count bounds.
-- **Scheduled / release / deep manual gate:** the same two reviewed targets run three identical CPU passes to detect unexpected present/absent instability. The remaining manifest pages are also processed once with a broad catastrophic region-count guard; these pages do not claim transcript-level ground truth.
+- **PR / `main` OCR gate:** pages 73 and 90 protect reviewed short vertical text targets (`うむ` and the `はい` core of `はい‼`) using broad target areas and region-count bounds. Page 9 protects a separate reviewed recognizer batching defect: two adjacent detector lines in a broad source-page area must both survive when recognized as their complete narrow batch, merge into geometry spanning the reviewed two-column extent, and remain represented by the full production adapter.
+- **Scheduled / release / deep manual gate:** pages 73 and 90 repeat their full reviewed short-text inference three times. Page 9 repeats its narrow recognizer/merge boundary three times and also runs the full production path once. The remaining nine manifest pages are processed once with a broad catastrophic region-count guard; those wider characterization pages do not claim transcript-level ground truth.
 - **Fast deterministic CI:** a manifest contract verifies that the complete committed JPG inventory exactly matches `manifest.json`, including SHA-256, dimensions and decoder validity. No OCR models are loaded for this check.
 
 The wider pages intentionally remain characterization cases until a stable, reviewable assertion is established for a specific regression. In particular, page 66 is a candidate for a future real-fixture reading-order relationship, but no semantic ordering claim is encoded merely because the fixture exists.
