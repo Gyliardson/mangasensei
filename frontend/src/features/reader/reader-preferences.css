@@ -1,0 +1,38 @@
+.reader-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.reader-preference {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.reader-preference select {
+  min-height: 44px;
+  padding: 0.55rem 2rem 0.55rem 0.7rem;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+}
+
+.reader-preference select:focus-visible {
+  outline: 3px solid var(--red);
+  outline-offset: 3px;
+}
+
+@media (max-width: 720px) {
+  .reader-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
