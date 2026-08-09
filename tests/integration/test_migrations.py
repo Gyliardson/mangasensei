@@ -52,7 +52,10 @@ def test_language_migration_backfills_existing_completed_analysis_as_pt_br(
     postgres_url: str,
 ) -> None:
     config = alembic_config(postgres_url)
-    command.upgrade(config, "a17e52c4d908")
+    # This fixture is session-shared with the migration round-trip test above. Establish
+    # the exact pre-language schema regardless of prior test order/state.
+    command.upgrade(config, "head")
+    command.downgrade(config, "a17e52c4d908")
     engine = create_engine(postgres_url)
     digest = hashlib.sha256(b"pre-language-analysis").digest()
     config_digest = hashlib.sha256(b"pre-language-config").digest()
