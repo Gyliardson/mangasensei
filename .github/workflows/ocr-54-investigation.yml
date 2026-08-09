@@ -6,6 +6,7 @@ on:
       - ".github/workflows/ocr-54-investigation.yml"
       - "scripts/ocr_54_page9_diagnostic.py"
       - "scripts/ocr_54_target_segmentation.py"
+      - "scripts/ocr_54_context_experiment.py"
 
 permissions:
   contents: write
@@ -115,6 +116,14 @@ jobs:
             --page9 .ocr54/artifact/source_page9.jpg \
             --model-cache "${MANGASENSEI_MODEL_CACHE}" \
             --output .ocr54/artifact/target-segmentation.json
+
+      - name: Characterize short-axis recognition context margin
+        run: |
+          uv run python scripts/ocr_54_context_experiment.py \
+            --page9 .ocr54/artifact/source_page9.jpg \
+            --fixture-root tests/fixtures/ocr/real_manga/black_jack \
+            --model-cache "${MANGASENSEI_MODEL_CACHE}" \
+            --output .ocr54/artifact/context-experiment.json
 
       - name: Upload investigation evidence
         if: always()
