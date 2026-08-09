@@ -9,7 +9,10 @@ import numpy as np
 
 from ..vendor.manga_image_translator.manga_translator.ocr.model_48px import Model48pxOCR
 from ..vendor.manga_image_translator.manga_translator.utils.generic import Quadrilateral
-from .recognizer_contract import RECOGNITION_SHORT_AXIS_CONTEXT
+from .recognizer_contract import (
+    RECOGNITION_BATCH_CONFIRMATION_CEILING,
+    RECOGNITION_SHORT_AXIS_CONTEXT,
+)
 
 
 class MangaSenseiModel48pxOCR(Model48pxOCR):
@@ -19,11 +22,15 @@ class MangaSenseiModel48pxOCR(Model48pxOCR):
         self,
         *args: Any,
         short_axis_context: float = RECOGNITION_SHORT_AXIS_CONTEXT,
+        batch_confirmation_ceiling: float = RECOGNITION_BATCH_CONFIRMATION_CEILING,
         **kwargs: Any,
     ) -> None:
         if short_axis_context < 1.0:
             raise ValueError("short_axis_context must be at least 1.0")
+        if not 0.0 <= batch_confirmation_ceiling <= 1.0:
+            raise ValueError("batch_confirmation_ceiling must be between 0.0 and 1.0")
         self._short_axis_context = short_axis_context
+        self._batch_confirmation_ceiling = batch_confirmation_ceiling
         super().__init__(*args, **kwargs)  # type: ignore[no-untyped-call]
 
     async def recognize(
@@ -46,6 +53,7 @@ class MangaSenseiModel48pxOCR(Model48pxOCR):
             )
             for line in textlines
         ]
+        confirmation_inputs = [_copy_quadrilateral(line) for line in expanded]
         source_index_by_object = {id(line): index for index, line in enumerate(expanded)}
         source_index_by_geometry = {
             _geometry_key(line): index for index, line in enumerate(expanded)
@@ -59,6 +67,16 @@ class MangaSenseiModel48pxOCR(Model48pxOCR):
                 source_index = source_index_by_geometry.get(_geometry_key(recognized_line))
             if source_index is None:
                 raise RuntimeError("recognized line no longer matches a detector candidate")
+
+            if float(recognized_line.prob) < self._batch_confirmation_ceiling:
+                confirmation = await super().recognize(
+                    image,
+                    [confirmation_inputs[source_index]],
+                    config,
+                    False,
+                )
+                if not confirmation:
+                    continue
 
             original = textlines[source_index]
             _copy_recognition(recognized_line, original)
