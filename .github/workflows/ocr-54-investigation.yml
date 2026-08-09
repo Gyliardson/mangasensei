@@ -8,7 +8,7 @@ on:
       - "scripts/ocr_54_target_segmentation.py"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ocr-54-investigation-${{ github.ref }}
@@ -124,3 +124,25 @@ jobs:
           path: .ocr54/artifact/
           if-no-files-found: error
           retention-days: 3
+
+      - name: Materialize verified page 9 bytes for final fixture transfer
+        if: success()
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "${HEAD_BRANCH}"
+          git checkout "${HEAD_BRANCH}"
+          if [[ -f tmp/ocr54/black_jack_v01_pdf009.jpg ]]; then
+            echo "temporary verified fixture blob already exists"
+            exit 0
+          fi
+          mkdir -p tmp/ocr54
+          cp .ocr54/artifact/source_page9.jpg tmp/ocr54/black_jack_v01_pdf009.jpg
+          echo "${PAGE9_SHA256}  tmp/ocr54/black_jack_v01_pdf009.jpg" | sha256sum --check --strict
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tmp/ocr54/black_jack_v01_pdf009.jpg
+          git commit -m "test(ocr): stage verified page 9 fixture bytes"
+          git push origin "HEAD:${HEAD_BRANCH}"
