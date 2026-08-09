@@ -214,8 +214,10 @@ def test_probe_artifacts_compare_spatial_stages_and_numeric_arrays(tmp_path: Pat
     assert fixture_comparison["merge"]["matched_count"] == 1
     assert fixture_comparison["final_regions"]["reading_order_change_count"] == 0
     assert fixture_comparison["arrays"]["detector_db"]["changed_values"] == 1
-    assert fixture_comparison["recognizer_crops"][0]["delta"]["changed_values"] == 1
-    assert fixture_comparison["recognizer_inputs"][0]["delta"]["changed_values"] == 1
+    assert fixture_comparison["recognizer_crops"]["unmatched_count"] == 0
+    assert fixture_comparison["recognizer_crops"]["matches"][0]["delta"]["changed_values"] == 1
+    assert fixture_comparison["recognizer_inputs"]["unmatched_count"] == 0
+    assert fixture_comparison["recognizer_inputs"]["matches"][0]["delta"]["changed_values"] == 1
 
 
 def test_probe_comparison_rejects_different_source_or_model_inputs(tmp_path: Path) -> None:
