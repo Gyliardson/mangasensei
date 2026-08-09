@@ -16,11 +16,11 @@ from PIL import Image, ImageDraw
 from mangasensei.domain.models import PageDimensions
 from mangasensei.ocr.adapter.manga_image_translator import (
     _DETECTOR_FLAGS,
-    _OcrConfig,
     _RECOGNIZER_FLAG,
+    MangaImageTranslatorEngine,
     _decode_rgb,
     _manga_reading_order,
-    MangaImageTranslatorEngine,
+    _OcrConfig,
     region_from_upstream,
 )
 from mangasensei.ocr.vendor.manga_image_translator.manga_translator.detection.default import (
@@ -32,7 +32,6 @@ from mangasensei.ocr.vendor.manga_image_translator.manga_translator.detection.de
     imgproc,
 )
 from mangasensei.ocr.vendor.manga_image_translator.manga_translator.utils.generic import (
-    Quadrilateral,
     det_rearrange_forward,
 )
 
@@ -135,7 +134,7 @@ def _trace_representer(pixels: np.ndarray) -> dict[str, Any]:
 
     raw_candidates: list[dict[str, Any]] = []
     valid_indices: list[int] = []
-    for index, (box, score) in enumerate(zip(boxes, scores)):
+    for index, (box, score) in enumerate(zip(boxes, scores, strict=True)):
         nonzero = bool(np.asarray(box).reshape(-1).sum() > 0)
         raw_candidates.append(
             {
@@ -153,7 +152,9 @@ def _trace_representer(pixels: np.ndarray) -> dict[str, Any]:
         mapped = boxes[valid_indices].astype(np.float64)
         mapped = craft_utils.adjustResultCoordinates(mapped, ratio_w, ratio_h, ratio_net=1)
         mapped = mapped.astype(np.int64)
-        for output_index, (source_index, polygon) in enumerate(zip(valid_indices, mapped)):
+        for output_index, (source_index, polygon) in enumerate(
+            zip(valid_indices, mapped, strict=True)
+        ):
             polygon_area = _area(polygon)
             mapped_candidates.append(
                 {
@@ -253,7 +254,9 @@ def _serialize_final(regions: tuple[Any, ...]) -> list[dict[str, Any]]:
     ]
 
 
-def _crop_dimensions(recognizer: Any, pixels: np.ndarray, textlines: list[Any]) -> list[dict[str, Any]]:
+def _crop_dimensions(
+    recognizer: Any, pixels: np.ndarray, textlines: list[Any]
+) -> list[dict[str, Any]]:
     source = copy.deepcopy(textlines)
     directions = list(recognizer._generate_text_direction(source))
     source_index_by_geometry = {
@@ -273,7 +276,9 @@ def _crop_dimensions(recognizer: Any, pixels: np.ndarray, textlines: list[Any]) 
     return output
 
 
-def _draw_overlay(image: np.ndarray, items: list[tuple[list[list[int]], int]], path: Path) -> None:
+def _draw_overlay(
+    image: np.ndarray, items: list[tuple[list[list[int]], int]], path: Path
+) -> None:
     pil = Image.fromarray(image)
     draw = ImageDraw.Draw(pil)
     for points, index in items:
