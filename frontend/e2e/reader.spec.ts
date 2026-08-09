@@ -120,7 +120,7 @@ test("uploads a page and opens its study region by keyboard", async ({ page }, t
   await region.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByText("É um gato.")).toBeVisible();
-  await expect(page.locator("rt", { hasText: "ネコ" })).toBeVisible();
+  await expect(page.locator("rt", { hasText: "ねこ" })).toBeVisible();
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
