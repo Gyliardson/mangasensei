@@ -52,43 +52,32 @@ def _reference_map(path: Path) -> dict[str, dict[str, Any]]:
     return {str(item["id"]): item for item in observations}
 
 
-def _model_files(model: Any, processor: Any) -> list[dict[str, Any]]:
-    candidates: set[Path] = set()
-    for item in (model, processor):
-        commit_hash = getattr(item, "_commit_hash", None)
-        name_or_path = getattr(item, "name_or_path", None)
-        if isinstance(name_or_path, str):
-            path = Path(name_or_path)
-            if path.exists():
-                candidates.add(path)
-        if isinstance(commit_hash, str):
-            default_cache = Path.home() / ".cache" / "huggingface"
-            cache_root = Path(os.environ.get("HF_HOME", default_cache))
-            snapshot = cache_root / "hub" / MODEL_CACHE_NAME / "snapshots" / commit_hash
-            if snapshot.exists():
-                candidates.add(snapshot)
+def _model_files(commit_hash: str | None) -> list[dict[str, Any]]:
+    if not commit_hash:
+        return []
+    default_cache = Path.home() / ".cache" / "huggingface"
+    cache_root = Path(os.environ.get("HF_HOME", default_cache))
+    snapshot = cache_root / "hub" / MODEL_CACHE_NAME / "snapshots" / commit_hash
+    if not snapshot.exists():
+        return []
+
     files: list[dict[str, Any]] = []
-    for root in sorted(candidates):
-        if root.is_file():
-            paths = [root]
-        else:
-            paths = sorted(path for path in root.rglob("*") if path.is_file())
-        for path in paths:
-            resolved = path.resolve()
-            if any(entry["path"] == str(resolved) for entry in files):
-                continue
-            files.append(
-                {
-                    "path": str(resolved),
-                    "size": resolved.stat().st_size,
-                    "sha256": _sha256(resolved),
-                }
-            )
+    for path in sorted(item for item in snapshot.rglob("*") if item.is_file()):
+        resolved = path.resolve()
+        files.append(
+            {
+                "path": str(resolved),
+                "size": resolved.stat().st_size,
+                "sha256": _sha256(resolved),
+            }
+        )
     return files
 
 
 def main() -> None:
     args = _parse_args()
+    import psutil
+    import torch
     from transformers import AutoImageProcessor, AutoModelForTextRecognition
 
     output = args.output.resolve()
@@ -98,23 +87,29 @@ def main() -> None:
     if not isinstance(raw_inputs, list):
         raise TypeError("prepared corpus inputs must be a list")
     reference = _reference_map(args.reference)
+    process = psutil.Process(os.getpid())
 
     load_started = time.perf_counter()
     processor = AutoImageProcessor.from_pretrained(MODEL_ID)
     model = AutoModelForTextRecognition.from_pretrained(MODEL_ID)
     model.eval()
     load_seconds = time.perf_counter() - load_started
+    rss_after_load_mb = process.memory_info().rss / (1024 * 1024)
 
     observations: list[dict[str, Any]] = []
+    memory_samples: list[dict[str, Any]] = []
     infer_seconds = 0.0
     for start in range(0, len(raw_inputs), args.batch_size):
         batch = raw_inputs[start : start + args.batch_size]
         images = [Image.open(args.input / item["path"]).convert("RGB") for item in batch]
+        image_sizes = [list(image.size) for image in images]
         inputs = processor(images=images, return_tensors="pt")
         started = time.perf_counter()
-        outputs = model(**inputs)
-        results = processor.post_process_text_recognition(outputs)
-        infer_seconds += time.perf_counter() - started
+        with torch.inference_mode():
+            outputs = model(**inputs)
+            results = processor.post_process_text_recognition(outputs)
+        elapsed = time.perf_counter() - started
+        infer_seconds += elapsed
         if len(results) != len(batch):
             raise RuntimeError("Transformers result count does not match input batch")
         for item, result in zip(batch, results, strict=True):
@@ -126,6 +121,18 @@ def main() -> None:
                     "confidence": confidence,
                 }
             )
+        memory_samples.append(
+            {
+                "start_index": start,
+                "ids": [str(item["id"]) for item in batch],
+                "image_sizes": image_sizes,
+                "input_shape": list(inputs["pixel_values"].shape),
+                "seconds": elapsed,
+                "rss_mb": process.memory_info().rss / (1024 * 1024),
+                "peak_rss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024,
+            }
+        )
+        del outputs, results, inputs
         for image in images:
             image.close()
 
@@ -149,21 +156,27 @@ def main() -> None:
             abs(float(item["confidence"]) - float(reference_item.get("confidence", 0.0)))
         )
 
-    model_files = _model_files(model, processor)
+    model_commit_hash = getattr(model.config, "_commit_hash", None)
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "model_id": MODEL_ID,
-        "model_commit_hash": getattr(model.config, "_commit_hash", None),
+        "model_commit_hash": model_commit_hash,
         "processor_commit_hash": getattr(processor, "_commit_hash", None),
         "input_count": len(observations),
+        "batch_size": args.batch_size,
+        "inference_mode": True,
         "load_seconds": load_seconds,
         "inference_seconds": infer_seconds,
         "seconds_per_crop": infer_seconds / max(len(observations), 1),
+        "rss_after_load_mb": rss_after_load_mb,
+        "final_rss_mb": process.memory_info().rss / (1024 * 1024),
         "peak_rss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024,
+        "max_sample_rss_mb": max((item["rss_mb"] for item in memory_samples), default=0.0),
+        "memory_samples": memory_samples,
         "text_mismatch_count": len(text_mismatches),
         "text_mismatches": text_mismatches,
         "max_confidence_delta": max(confidence_deltas, default=0.0),
-        "model_files": model_files,
+        "model_files": _model_files(model_commit_hash),
         "observations": observations,
     }
     (output / "transformers-direct.json").write_text(
@@ -173,6 +186,7 @@ def main() -> None:
         "OCR_TRANSFORMERS_DIRECT "
         f"inputs={len(observations)} mismatches={len(text_mismatches)} "
         f"load_seconds={load_seconds:.3f} infer_seconds={infer_seconds:.3f} "
+        f"rss_after_load_mb={rss_after_load_mb:.1f} "
         f"peak_rss_mb={payload['peak_rss_mb']:.1f}"
     )
     if text_mismatches:
