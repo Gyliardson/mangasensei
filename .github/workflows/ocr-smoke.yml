@@ -62,6 +62,7 @@ jobs:
     env:
       MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
       MANGASENSEI_RUN_OCR_SMOKE: "1"
+      MANGASENSEI_OCR_ARTIFACT_DIR: ${{ github.workspace }}/var/ocr-visual-audit
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -110,3 +111,12 @@ jobs:
 
       - name: Run synthetic and licensed real-manga OCR smoke
         run: uv run pytest tests/test_ocr_smoke.py tests/test_ocr_real_manga.py -m ocr_smoke -vv -s --maxfail=1
+
+      - name: Upload boxed OCR visual audit
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-visual-audit
+          path: var/ocr-visual-audit
+          if-no-files-found: warn
+          retention-days: 7
