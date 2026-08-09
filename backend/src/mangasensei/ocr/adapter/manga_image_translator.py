@@ -207,7 +207,7 @@ class MangaImageTranslatorEngine:
             MangaSenseiModel48pxOCR._MODEL_DIR = str(self._model_cache)
             self._recognizer = MangaSenseiModel48pxOCR(
                 short_axis_context=_RECOGNITION_SHORT_AXIS_CONTEXT
-            )  # type: ignore[no-untyped-call]
+            )
             await self._recognizer.load(self._device)
         return self._detector, self._recognizer, dispatch, manifest
 
