@@ -30,7 +30,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .ocr54/source/unpacked .ocr54/source/page9 .ocr54/artifact
+          mkdir -p \
+            .ocr54/source/unpacked \
+            .ocr54/source/page9 \
+            .ocr54/source/page10 \
+            .ocr54/artifact
           curl --proto '=https' --tlsv1.2 --fail --location --retry 3 \
             --output .ocr54/source/001bj.zip \
             https://densho810.com/free/dl/001bj.zip
@@ -44,7 +48,7 @@ jobs:
           echo "${SOURCE_PDF_SHA256}  ${pdfs[0]}" | sha256sum --check --strict
           printf '%s\n' "${pdfs[0]}" > .ocr54/source/pdf-path.txt
 
-      - name: Extract exact embedded page 9 JPEG
+      - name: Extract exact embedded page 9 and investigation-only page 10 JPEGs
         shell: bash
         run: |
           set -euo pipefail
@@ -54,20 +58,32 @@ jobs:
           fi
           pdf_path=$(cat .ocr54/source/pdf-path.txt)
           pdfimages -f 9 -l 9 -j "${pdf_path}" .ocr54/source/page9/extract
-          matches=()
+          page9_matches=()
           while IFS= read -r -d '' candidate; do
             digest=$(sha256sum "${candidate}" | cut -d' ' -f1)
             if [[ "${digest}" == "${PAGE9_SHA256}" ]]; then
-              matches+=("${candidate}")
+              page9_matches+=("${candidate}")
             fi
           done < <(find .ocr54/source/page9 -type f -name '*.jpg' -print0)
-          if [[ ${#matches[@]} -ne 1 ]]; then
-            printf 'expected exactly one checksum-matching page 9 JPEG, found %s\n' "${#matches[@]}" >&2
+          if [[ ${#page9_matches[@]} -ne 1 ]]; then
+            printf 'expected exactly one checksum-matching page 9 JPEG, found %s\n' \
+              "${#page9_matches[@]}" >&2
             find .ocr54/source/page9 -maxdepth 1 -type f -print -exec sha256sum {} \;
             exit 1
           fi
-          cp "${matches[0]}" .ocr54/artifact/source_page9.jpg
+          cp "${page9_matches[0]}" .ocr54/artifact/source_page9.jpg
           echo "${PAGE9_SHA256}  .ocr54/artifact/source_page9.jpg" | sha256sum --check --strict
+
+          pdfimages -f 10 -l 10 -j "${pdf_path}" .ocr54/source/page10/extract
+          mapfile -t page10_jpegs < <(find .ocr54/source/page10 -type f -name '*.jpg' -print)
+          if [[ ${#page10_jpegs[@]} -ne 1 ]]; then
+            printf 'expected exactly one embedded page 10 JPEG, found %s\n' \
+              "${#page10_jpegs[@]}" >&2
+            find .ocr54/source/page10 -maxdepth 1 -type f -print -exec sha256sum {} \;
+            exit 1
+          fi
+          cp "${page10_jpegs[0]}" .ocr54/artifact/source_page10.jpg
+          sha256sum .ocr54/artifact/source_page10.jpg
 
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -84,10 +100,11 @@ jobs:
           uv run mangasensei models download
           uv run mangasensei models verify
 
-      - name: Trace page 9 across OCR stages and controlled canvas heights
+      - name: Trace page 9 across isolated, controlled and real continuation inputs
         run: |
           uv run python scripts/ocr_54_page9_diagnostic.py \
             --page9 .ocr54/artifact/source_page9.jpg \
+            --page10 .ocr54/artifact/source_page10.jpg \
             --model-cache "${MANGASENSEI_MODEL_CACHE}" \
             --output .ocr54/artifact/trace
 
