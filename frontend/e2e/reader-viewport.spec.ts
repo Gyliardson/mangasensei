@@ -81,7 +81,12 @@ async function installApiFixture(page: Page, fixtureName: FixtureName) {
               text: "猫",
               rawText: "猫",
               correctedText: null,
-              bbox: { x: 8, y: 8, width: 20, height: 30 },
+              bbox: {
+                x: Math.round(fixture.width * 0.1),
+                y: Math.round(fixture.height * 0.1),
+                width: Math.round(fixture.width * 0.25),
+                height: Math.round(fixture.height * 0.25),
+              },
               normalizedBbox: { x: 0.1, y: 0.1, width: 0.25, height: 0.25 },
               polygon: null,
               angle: 0,
@@ -123,17 +128,16 @@ async function enterReader(page: Page, fixtureName: FixtureName) {
 for (const fixtureName of ["portrait", "landscape"] as const) {
   test(`keeps ${fixtureName} image and OCR overlay aligned through fit and zoom`, async ({ page }, testInfo) => {
     await installApiFixture(page, fixtureName);
-    await page.goto(`/ ?fixture=${fixtureName}`.replace("/ ?", "/?"));
+    await page.goto(`/?fixture=${fixtureName}`);
     await enterReader(page, fixtureName);
 
     const viewport = page.getByRole("region", { name: "Visualização da página" });
     const canvas = page.locator(".page-canvas");
-    const image = canvas.locator("img");
-    const overlay = canvas.locator("svg.region-overlay");
     const fitMode = page.getByRole("combobox", { name: "Ajuste da página" });
 
     await expect(fitMode).toHaveValue("comfortable");
     await expect(page.getByLabel("Nível de zoom")).toHaveText("100%");
+    await expect.poll(() => viewport.evaluate((element) => element.style.maxHeight)).toMatch(/px$/);
 
     const initial = await page.evaluate(() => {
       const viewportElement = document.querySelector<HTMLElement>(".page-viewport");
