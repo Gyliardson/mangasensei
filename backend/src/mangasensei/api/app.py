@@ -262,7 +262,13 @@ def create_app(settings: Settings) -> FastAPI:
     ) -> dict[str, Any]:
         authorized = await authorizer.authorize_page(page_id=page_id, token=page_token)
         data = await page_queries.get(authorized.internal_id)
-        return _success({"status": data["status"], "error": data["error"]})
+        return _success(
+            {
+                "status": data["status"],
+                "error": data["error"],
+                "resultAvailable": data["resultAvailable"],
+            }
+        )
 
     @app.get("/health")
     async def health() -> dict[str, Any]:

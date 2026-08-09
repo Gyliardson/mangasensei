@@ -70,6 +70,7 @@ export interface StudyRegion {
 export interface StudyPage {
   readonly pageId: string;
   readonly status: JobStatus;
+  readonly resultAvailable: boolean;
   readonly expiresAt: string;
   readonly imageUrl: string;
   readonly dimensions: { readonly width: number; readonly height: number };
@@ -80,6 +81,12 @@ export interface StudyPage {
     readonly recognizer: string;
     readonly upstreamCommit: string;
   };
+}
+
+interface PageStatus {
+  readonly status: JobStatus;
+  readonly resultAvailable: boolean;
+  readonly error: StudyPage["error"];
 }
 
 interface Envelope<T> {
@@ -129,7 +136,7 @@ export async function waitForPage(
 ): Promise<StudyPage> {
   let delay = 600;
   while (!signal.aborted) {
-    const status = await requestJson<{ readonly status: JobStatus; readonly error: StudyPage["error"] }>(
+    const status = await requestJson<PageStatus>(
       `/api/v1/pages/${encodeURIComponent(upload.pageId)}/status`,
       upload.capabilities.readPage,
       signal,
