@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker/Compose image version metadata is supplied from release tooling instead of a hardcoded application version.
 - Normalized JMdict data now uses the `mangasensei-jmdict-v2` form contract and reproducible manifest metadata derived from the checksum-pinned source artifact.
 - Browser assurance now labels the fast API-mocked Playwright suite separately from the required full-stack critical-flow E2E.
+- Page and status responses now expose `resultAvailable` separately from the latest analysis-attempt status.
 
 ### Fixed
 
@@ -46,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker runtime roles now receive only their required database, capability and Gemini secrets; DB-only roles no longer require capability peppers.
 - Local JMdict lookup now respects kana-to-kanji and sense-to-form restrictions instead of reconstructing invalid Cartesian-product associations.
 - Reader vocabulary now exposes deterministic local JMdict entries even when Gemini is disabled or omits a vocabulary link; contextual Gemini fields remain optional enrichment.
+- Reprocessing no longer hides a previously completed study result while a replacement is pending or after that replacement fails; only a newer completed result replaces it.
 
 ## [0.1.0] - 2026-08-07
 
