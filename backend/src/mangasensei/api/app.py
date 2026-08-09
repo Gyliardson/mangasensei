@@ -1,10 +1,11 @@
-"""FastAPI composition root."""
+"""MangaSensei FastAPI application factory."""
 
 from __future__ import annotations
 
 import asyncio
-import hmac
-from collections.abc import Awaitable, Callable
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -12,114 +13,170 @@ from fastapi import FastAPI, File, Header, Request, Response, UploadFile, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from sqlalchemy import text
 
-from mangasensei import __version__
-from mangasensei.application.authorization import (
-    CapabilityAuthorizer,
-    ResourceNotFoundError,
-)
+from mangasensei.application.authorization import PageAuthorizer, ResourceNotFoundError
+from mangasensei.application.idempotency import InvalidIdempotencyKeyError
 from mangasensei.application.page_queries import PageQueryService
 from mangasensei.application.reprocessing import AnalysisInProgressError, ReprocessService
-from mangasensei.application.uploads import UploadService
+from mangasensei.application.uploads import IdempotencyConflictError, UploadResult, UploadService
 from mangasensei.config import Settings
+from mangasensei.infrastructure.capabilities import CapabilityService
 from mangasensei.infrastructure.database.session import create_database
-from mangasensei.infrastructure.rate_limits import InMemoryRateLimiter, RateLimitExceededError
+from mangasensei.infrastructure.rate_limits import PostgreSQLRateLimiter
 from mangasensei.storage.images import ImageValidationError, ImageValidator
 from mangasensei.storage.local import LocalFilesystemStorage
 
-_EXPECTED_DATABASE_REVISION = "f41c7a9498fa"
-Handler = Callable[[Request], Awaitable[Response]]
+_EXPECTED_DATABASE_REVISION = "a17e52c4d908"
+_HTTP_REQUESTS = Counter(
+    "http_requests",
+    "HTTP requests completed by method and status code.",
+    ("method", "status"),
+    namespace="mangasensei",
+)
+_HTTP_DURATION = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request duration by method.",
+    ("method",),
+    namespace="mangasensei",
+)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
-    settings = settings or Settings()
-    database_url, peppers = settings.require_runtime_config()
-    _, sessions = create_database(database_url)
+def _success(data: Any) -> dict[str, Any]:
+    return {"success": True, "data": data, "error": None}
+
+
+def _error(code: str, message: str) -> dict[str, Any]:
+    return {"success": False, "data": None, "error": {"code": code, "message": message}}
+
+
+def _upload_data(result: UploadResult) -> dict[str, Any]:
+    return {
+        "pageId": str(result.page_id),
+        "jobId": str(result.job_id),
+        "contentSha256": result.content_sha256,
+        "width": result.width,
+        "height": result.height,
+        "mediaType": result.media_type,
+        "expiresAt": result.expires_at.isoformat(),
+        "capabilities": {
+            "readPage": result.capabilities.read_page,
+            "readImage": result.capabilities.read_image,
+            "reprocessPage": result.capabilities.reprocess_page,
+        },
+    }
+
+
+def create_app(settings: Settings) -> FastAPI:
+    database_url, capability_peppers = settings.require_runtime_config()
+    engine, sessions = create_database(database_url)
     storage = LocalFilesystemStorage(settings.storage_root)
+    capability_service = CapabilityService(capability_peppers)
+    upload_service = UploadService(
+        sessions=sessions,
+        storage=storage,
+        capability_service=capability_service,
+        idempotency_pepper=capability_peppers[0],
+    )
+    authorizer = PageAuthorizer(sessions, capability_service)
+    page_queries = PageQueryService(sessions)
+    reprocess_service = ReprocessService(
+        sessions,
+        idempotency_pepper=capability_peppers[0],
+    )
+    rate_limiter = PostgreSQLRateLimiter(
+        sessions,
+        pepper=capability_peppers[0],
+    )
     validator = ImageValidator(
         max_bytes=settings.max_upload_bytes,
         max_pixels=settings.max_image_pixels,
         max_side=settings.max_image_side,
     )
-    upload_service = UploadService(
-        sessions,
-        storage,
-        capability_pepper=peppers[0],
-        retention_hours=settings.retention_hours,
-    )
-    authorizer = CapabilityAuthorizer(sessions, peppers=peppers)
-    page_queries = PageQueryService(sessions)
-    reprocess_service = ReprocessService(sessions, idempotency_pepper=peppers[0])
-    limiter = InMemoryRateLimiter()
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        yield
+        await engine.dispose()
+
     app = FastAPI(
-        title="MangaSensei",
-        version=__version__,
-        docs_url=None,
-        redoc_url=None,
-        openapi_url=None,
+        title="MangaSensei API",
+        version="0.1.0",
+        docs_url="/api/docs",
+        openapi_url="/api/openapi.json",
+        lifespan=lifespan,
     )
 
     @app.middleware("http")
-    async def security_and_rate_limit(request: Request, call_next: Handler) -> Response:
-        if request.url.path.startswith("/api/v1/"):
-            if request.method not in {"GET", "HEAD", "OPTIONS"}:
-                content_type = request.headers.get("content-type", "")
-                if "application/x-www-form-urlencoded" in content_type:
-                    return JSONResponse(
-                        status_code=415,
-                        content=_error("unsupported_media_type", "Tipo de conteúdo não suportado."),
-                    )
+    async def security_headers(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        started_at = time.perf_counter()
+        try:
             policy = _rate_limit_policy(request, settings)
-            if policy is not None:
-                bucket, limit = policy
-                try:
-                    await limiter.consume(
-                        bucket=f"{bucket}:{_client_key(request)}",
-                        limit=limit,
-                        window_seconds=60,
-                    )
-                except RateLimitExceededError:
-                    return JSONResponse(
-                        status_code=429,
-                        content=_error(
-                            "rate_limited",
-                            "Muitas requisições. Aguarde um momento e tente novamente.",
-                        ),
-                        headers={"Retry-After": "60"},
-                    )
-        response = await call_next(request)
+            response: Response
+            if policy is not None and not await rate_limiter.allow(
+                client_key=request.client.host if request.client is not None else "unknown",
+                action=policy[0],
+                limit=policy[1],
+            ):
+                response = JSONResponse(
+                    status_code=429,
+                    content=_error(
+                        "rate_limit_exceeded",
+                        "Muitas requisições. Tente novamente em instantes.",
+                    ),
+                    headers={"Retry-After": "60"},
+                )
+            else:
+                response = await call_next(request)
+        except Exception:
+            _HTTP_REQUESTS.labels(method=request.method, status="500").inc()
+            _HTTP_DURATION.labels(method=request.method).observe(time.perf_counter() - started_at)
+            raise
+        _HTTP_REQUESTS.labels(method=request.method, status=str(response.status_code)).inc()
+        _HTTP_DURATION.labels(method=request.method).observe(time.perf_counter() - started_at)
         response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
-        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; "
-            "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
+            "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; "
+            "script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'"
         )
+        if request.url.path.startswith("/api/v1/"):
+            response.headers["Cache-Control"] = "private, no-store"
         return response
 
-    @app.exception_handler(ResourceNotFoundError)
-    async def resource_not_found(_: Request, __: ResourceNotFoundError) -> JSONResponse:
+    @app.exception_handler(ImageValidationError)
+    async def image_error(_: Request, exc: ImageValidationError) -> JSONResponse:
+        return JSONResponse(status_code=422, content=_error("invalid_image", str(exc)))
+
+    @app.exception_handler(IdempotencyConflictError)
+    async def idempotency_error(_: Request, __: IdempotencyConflictError) -> JSONResponse:
         return JSONResponse(
-            status_code=404,
-            content=_error("not_found", "Recurso não encontrado."),
+            status_code=409,
+            content=_error("idempotency_conflict", "A chave já foi usada por outro arquivo."),
+        )
+
+    @app.exception_handler(InvalidIdempotencyKeyError)
+    async def invalid_idempotency(_: Request, __: InvalidIdempotencyKeyError) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content=_error("invalid_idempotency_key", "A chave de idempotência é inválida."),
         )
 
     @app.exception_handler(AnalysisInProgressError)
     async def analysis_in_progress(_: Request, __: AnalysisInProgressError) -> JSONResponse:
         return JSONResponse(
             status_code=409,
-            content=_error(
-                "analysis_in_progress",
-                "Já existe uma análise ativa para esta página.",
-            ),
+            content=_error("analysis_in_progress", "A página já possui uma análise em andamento."),
         )
 
-    @app.exception_handler(ImageValidationError)
-    async def invalid_image(_: Request, exc: ImageValidationError) -> JSONResponse:
-        return JSONResponse(status_code=422, content=_error("invalid_image", str(exc)))
+    @app.exception_handler(ResourceNotFoundError)
+    async def not_found(_: Request, __: ResourceNotFoundError) -> JSONResponse:
+        return JSONResponse(status_code=404, content=_error("not_found", "Recurso não encontrado."))
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(_: Request, __: RequestValidationError) -> JSONResponse:
@@ -215,7 +272,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict[str, Any]:
-        return _success({"status": "ok", "version": __version__})
+        return _success({"status": "ok", "version": "0.1.0"})
 
     @app.get("/metrics", include_in_schema=False)
     async def metrics() -> Response:
@@ -267,33 +324,3 @@ def _rate_limit_policy(request: Request, settings: Settings) -> tuple[str, int] 
     if request.method == "POST" and request.url.path.endswith("/reprocess"):
         return "reprocess", settings.reprocess_rate_limit_per_minute
     return "api", settings.api_rate_limit_per_minute
-
-
-def _client_key(request: Request) -> str:
-    client = request.client
-    return client.host if client is not None else "unknown"
-
-
-def _success(data: dict[str, Any]) -> dict[str, Any]:
-    return {"success": True, "data": data, "error": None}
-
-
-def _error(code: str, message: str) -> dict[str, Any]:
-    return {"success": False, "data": None, "error": {"code": code, "message": message}}
-
-
-def _upload_data(result: Any) -> dict[str, Any]:
-    return {
-        "pageId": str(result.page_id),
-        "jobId": str(result.job_id),
-        "contentSha256": result.content_sha256,
-        "width": result.width,
-        "height": result.height,
-        "mediaType": result.media_type,
-        "expiresAt": result.expires_at.isoformat(),
-        "capabilities": {
-            "readPage": result.capabilities.read_page,
-            "readImage": result.capabilities.read_image,
-            "reprocessPage": result.capabilities.reprocess_page,
-        },
-    }
