@@ -19,13 +19,15 @@
 
 MangaSensei は漫画ページから日本語テキストを抽出し、ローカルの言語データで補強して、元画像を変更せずレスポンシブなリーダーに表示します。OCR モデルの重みと JMdict 由来データはローカルに保持され、Git にコミットされず配布イメージにも含まれません。Gemini は任意です。
 
+日本語コンテンツは、**ブラジルポルトガル語（`pt-BR`）または英語（`en`）の文脈解説**で学習できます。学習言語は明示的に選択され、現在ポルトガル語の UI locale とは独立しています。レビュー済みローカル JMdict の決定論的な語義はどちらのモードでも英語のままで、学習言語だけを変更すると完了済み OCR と日本語言語解析を再利用します。詳細は[学習言語コントラクト](docs/study-languages.md)を参照してください。
+
 現在の開発バージョンは [`VERSION`](VERSION) に記録されています。
 
 ## MangaSensei の考え方
 
 | Local-first | Original-first | Study-first |
 | --- | --- | --- |
-| OCR、モデル、辞書データは既定でローカルです。 | アップロードした漫画画像はそのまま保持し、学習用オーバーレイを別に描画します。 | ふりがな、語彙、言語情報、文脈解説を読解の流れに沿って整理します。 |
+| OCR、モデル、辞書データは既定でローカルです。 | アップロードした漫画画像はそのまま保持し、学習用オーバーレイを別に描画します。 | ふりがな、語彙、学習言語、言語情報、文脈解説を読解の流れに沿って整理します。 |
 
 ## リーダープレビュー
 
@@ -40,11 +42,11 @@ MangaSensei は漫画ページから日本語テキストを抽出し、ロー�
 
 | 領域 | 内容 |
 | --- | --- |
-| アップロード | 冪等性とページ単位 HMAC capability を備えた安全な画像アップロード |
+| アップロード | 冪等性、明示的な `pt-BR`/`en` 学習言語、ページ単位 HMAC capability を備えた安全な画像アップロード |
 | OCR | チェックサムで検証された Manga Image Translator のローカル OCR サブセット |
-| 言語解析 | Sudachi トークン化と、検証済みソースから生成する正規化 JMdict インデックス |
-| Gemini | 予算追跡と `store=False` を使う任意の構造化学習解説 |
-| リーダー | 認証付き Blob、レスポンシブ SVG オーバーレイ、ふりがな、語彙カードを備えた React SPA |
+| 言語解析 | Sudachi トークン化と、検証済みソースから生成する英語ベースの正規化 JMdict インデックス |
+| Gemini | 予算追跡と `store=False` を使う任意の `pt-BR`/`en` 構造化文脈解説 |
+| リーダー | 認証付き Blob、レスポンシブ SVG オーバーレイ、ふりがな、学習言語設定、語彙カードを備えた React SPA |
 | 運用 | PostgreSQL キュー、lease 回復、保持処理、readiness、metrics |
 
 ## アーキテクチャ
@@ -98,10 +100,10 @@ flowchart TD
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/v1/pages` | 漫画ページをアップロードし、解析 job をキューに登録する |
-| `GET` | `/api/v1/pages/{page_id}` | ページトークンで状態と完了済み学習データを取得する |
+| `POST` | `/api/v1/pages` | 日本語漫画ページをアップロードし、任意の `studyLanguage`（既定 `pt-BR` または `en`）で解析 job をキューに登録する |
+| `GET` | `/api/v1/pages/{page_id}` | ページトークンで状態、永続化された言語メタデータ、完了済み学習データを取得する |
 | `GET` | `/api/v1/pages/{page_id}/image` | 認証付き Blob レスポンスで元画像を返す |
-| `POST` | `/api/v1/pages/{page_id}/reprocess` | reprocess capability で新しい解析をキューに登録する |
+| `POST` | `/api/v1/pages/{page_id}/reprocess` | reprocess capability で解析、または学習言語だけの再生成をキューに登録する |
 | `GET` | `/health` | プロセスの health check |
 | `GET` | `/ready` | データベース、storage、schema の readiness check |
 | `GET` | `/metrics` | Prometheus metrics |
@@ -135,7 +137,7 @@ Copy-Item .env.example .env
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Gemini は任意です。ローカル OCR と言語解析だけで worker を実行する場合は `GOOGLE_API_KEY` を未設定または空のままにし、Gemini の補強を有効にする場合のみ空でないキーを設定してください。有効にした場合、任意の補強のために送信されるのは OCR テキストとリージョン単位の最小限の語彙候補（`id`、`surface`、`lemma`、`reading`）だけです。元画像、辞書の意味、ローカル JMdict データセットは送信されません。
+Gemini は任意です。ローカル OCR と言語解析だけで worker を実行する場合は `GOOGLE_API_KEY` を未設定または空のままにし、選択した学習言語で文脈補強を有効にする場合のみ空でないキーを設定してください。有効にした場合、送信されるのは OCR テキストとリージョン単位の最小限の語彙候補（`id`、`surface`、`lemma`、`reading`）だけです。元画像、辞書の意味、ローカル JMdict データセットは送信されません。Gemini を無効にしても日本語 OCR・トークン化と英語 JMdict 語彙は利用でき、文脈翻訳・解説だけが欠ける場合があります。
 
 Docker Compose で起動:
 
