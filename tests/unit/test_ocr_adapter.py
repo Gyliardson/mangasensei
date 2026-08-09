@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import pytest
+
 from mangasensei.domain.models import PageDimensions
 from mangasensei.ocr.adapter.manga_image_translator import (
     UPSTREAM_REPOSITORY,
@@ -87,17 +89,18 @@ def test_engine_provenance_uses_supplied_manifest_and_effective_config(tmp_path:
 
 def test_engine_keeps_upstream_recognized_text_out_of_info_logs(
     tmp_path: Path,
-    caplog: object,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     recognizer_logger = logging.getLogger("manga-translator.Model48pxOCR")
     previous_level = recognizer_logger.level
     try:
         recognizer_logger.setLevel(logging.NOTSET)
-        MangaImageTranslatorEngine(model_cache=tmp_path)
+        with caplog.at_level(logging.INFO):
+            MangaImageTranslatorEngine(model_cache=tmp_path)
+            recognizer_logger.info("prob: 0.99 秘密の本文")
 
         assert recognizer_logger.level >= logging.WARNING
-        recognizer_logger.info("prob: 0.99 秘密の本文")
-        assert "秘密の本文" not in str(caplog)
+        assert "秘密の本文" not in caplog.text
     finally:
         recognizer_logger.setLevel(previous_level)
 
