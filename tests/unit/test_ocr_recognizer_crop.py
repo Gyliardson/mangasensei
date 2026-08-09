@@ -7,10 +7,10 @@ import pytest
 
 from mangasensei.ocr.adapter.recognizer_48px import (
     MangaSenseiModel48pxOCR,
-    _RecognitionQuadrilateral,
     _copy_quadrilateral,
     _copy_recognition,
     _expand_short_axis,
+    _RecognitionQuadrilateral,
 )
 from mangasensei.ocr.adapter.recognizer_contract import (
     RECOGNITION_BATCH_CONFIRMATION_CEILING,
