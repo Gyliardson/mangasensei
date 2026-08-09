@@ -81,7 +81,9 @@ def _download_verified_model(model_root: Path) -> list[dict[str, Any]]:
         expected_sha = _metadata_value(lfs, "sha256")
         expected_size = _metadata_value(lfs, "size") or getattr(sibling, "size", None)
         if not isinstance(expected_sha, str) or not isinstance(expected_size, int):
-            raise RuntimeError(f"missing immutable LFS metadata for Baberu artifact: {relative_path}")
+            raise RuntimeError(
+                f"missing immutable LFS metadata for Baberu artifact: {relative_path}"
+            )
         actual_sha = _sha256(path)
         actual_size = path.stat().st_size
         if actual_sha != expected_sha or actual_size != expected_size:
