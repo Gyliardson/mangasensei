@@ -216,7 +216,7 @@ test("switches study language while UI locale and local dictionary language stay
 
   await expect(page.getByText("It is a cat.")).toHaveAttribute("lang", "en");
   await expect(page.getByText("A polite nominal sentence.")).toHaveAttribute("lang", "en");
-  await expect(page.getByText("cat")).toHaveAttribute("lang", "en");
+  await expect(page.getByText("cat", { exact: true })).toHaveAttribute("lang", "en");
   await expect(page.getByText("significados locais em inglês")).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("lang", "pt-BR");
   await expect(page.getByRole("group", { name: "Apresentação da página" }).getByRole("combobox", { name: "Idioma de estudo" })).toHaveCount(0);
