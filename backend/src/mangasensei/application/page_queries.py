@@ -27,7 +27,7 @@ class PageQueryService:
 
     async def get(self, page_id: int) -> dict[str, Any]:
         async with self._sessions() as session:
-            job = (
+            latest_job = (
                 await session.execute(
                     select(JobRecord)
                     .where(JobRecord.page_id == page_id)
@@ -38,13 +38,27 @@ class PageQueryService:
             run = (
                 await session.execute(
                     select(OcrRunRecord)
-                    .where(OcrRunRecord.job_id == job.id)
-                    .order_by(OcrRunRecord.created_at.desc(), OcrRunRecord.id.desc())
+                    .join(JobRecord, JobRecord.id == OcrRunRecord.job_id)
+                    .where(
+                        JobRecord.page_id == page_id,
+                        JobRecord.status == "completed",
+                    )
+                    .order_by(
+                        JobRecord.created_at.desc(),
+                        JobRecord.id.desc(),
+                        OcrRunRecord.fencing_token.desc(),
+                        OcrRunRecord.id.desc(),
+                    )
                     .limit(1)
                 )
             ).scalar_one_or_none()
             if run is None:
-                return {"status": job.status, "regions": [], "error": _public_error(job)}
+                return {
+                    "status": latest_job.status,
+                    "resultAvailable": False,
+                    "regions": [],
+                    "error": _public_error(latest_job),
+                }
 
             regions = tuple(
                 (
@@ -113,7 +127,7 @@ class PageQueryService:
                             GeminiAnalysisRecord,
                             GeminiAnalysisRecord.id == GeminiRegionAnalysisRecord.analysis_id,
                         )
-                        .where(GeminiAnalysisRecord.job_id == job.id)
+                        .where(GeminiAnalysisRecord.job_id == run.job_id)
                     )
                 ).scalars()
             )
@@ -193,7 +207,8 @@ class PageQueryService:
                 }
             )
         return {
-            "status": job.status,
+            "status": latest_job.status,
+            "resultAvailable": True,
             "dimensions": {"width": run.width, "height": run.height},
             "ocr": {
                 "detector": run.detector,
@@ -201,7 +216,7 @@ class PageQueryService:
                 "upstreamCommit": run.upstream_commit,
             },
             "regions": response_regions,
-            "error": _public_error(job),
+            "error": _public_error(latest_job),
         }
 
 
