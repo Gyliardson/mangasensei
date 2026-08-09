@@ -163,14 +163,21 @@ h1 {
 .section-index {
   position: absolute;
   z-index: 1;
-  top: -1.6rem;
+  top: -2.15rem;
   right: 1.5rem;
-  padding-inline: 0.3rem;
   color: var(--red);
-  background: var(--paper);
   font-family: Georgia, serif;
   font-size: 4.2rem;
   line-height: 1;
+  text-shadow:
+    -3px -3px 0 var(--paper),
+    0 -3px 0 var(--paper),
+    3px -3px 0 var(--paper),
+    -3px 0 0 var(--paper),
+    3px 0 0 var(--paper),
+    -3px 3px 0 var(--paper),
+    0 3px 0 var(--paper),
+    3px 3px 0 var(--paper);
 }
 
 .title-row {
