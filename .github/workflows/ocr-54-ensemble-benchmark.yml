@@ -1,0 +1,163 @@
+name: OCR 54 Ensemble Benchmark
+
+on:
+  push:
+    branches: [investigate/54-ocr-ensemble-benchmark]
+    paths:
+      - ".github/workflows/ocr-54-ensemble-benchmark.yml"
+      - "scripts/ocr_54_prepare_ensemble_benchmark.py"
+      - "scripts/ocr_54_run_external_recognizer.py"
+      - "scripts/ocr_54_summarize_ensemble_benchmark.py"
+      - "backend/src/mangasensei/ocr/**"
+      - "tests/fixtures/ocr/real_manga/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Prepare licensed challenge crops
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MANGASENSEI_MODEL_CACHE: ${{ github.workspace }}/var/models
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - run: uv sync --frozen --extra ocr
+      - name: Lint investigation scripts
+        run: uv run ruff check scripts/ocr_54_prepare_ensemble_benchmark.py scripts/ocr_54_run_external_recognizer.py scripts/ocr_54_summarize_ensemble_benchmark.py
+      - run: uv run mangasensei models download
+      - run: uv run mangasensei models verify
+      - name: Prepare crops and 48px baselines
+        run: >-
+          uv run python scripts/ocr_54_prepare_ensemble_benchmark.py
+          --output var/ocr-54-ensemble/prepared
+          --model-cache "$MANGASENSEI_MODEL_CACHE"
+      - name: Upload prepared licensed benchmark
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-ensemble-prepared
+          path: var/ocr-54-ensemble/prepared
+          if-no-files-found: error
+          retention-days: 7
+
+  manga-ocr:
+    name: MangaOCR expert
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      HF_HOME: ${{ github.workspace }}/var/hf-manga-ocr
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TRANSFORMERS_VERBOSITY: error
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-ensemble-prepared
+          path: var/ocr-54-ensemble/prepared
+      - run: uv venv .bench-manga-ocr --python 3.11
+      - name: Install pinned MangaOCR benchmark environment
+        run: >-
+          uv pip install --python .bench-manga-ocr/bin/python
+          "manga-ocr==0.1.16" "transformers==5.14.1"
+      - name: Run MangaOCR over detector-gated crops
+        run: >-
+          .bench-manga-ocr/bin/python scripts/ocr_54_run_external_recognizer.py
+          --recognizer manga-ocr
+          --input var/ocr-54-ensemble/prepared
+          --output var/ocr-54-ensemble/manga-ocr
+      - name: Upload MangaOCR observations only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-ensemble-manga-ocr
+          path: var/ocr-54-ensemble/manga-ocr/manga-ocr.json
+          if-no-files-found: error
+          retention-days: 7
+
+  paddle-v6:
+    name: PP-OCRv6 independent expert
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      HF_HOME: ${{ github.workspace }}/var/hf-paddle-v6
+      XDG_CACHE_HOME: ${{ github.workspace }}/var/cache-paddle-v6
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TRANSFORMERS_VERBOSITY: error
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-ensemble-prepared
+          path: var/ocr-54-ensemble/prepared
+      - run: uv venv .bench-paddle-v6 --python 3.11
+      - name: Install pinned PaddleOCR benchmark environment
+        run: >-
+          uv pip install --python .bench-paddle-v6/bin/python
+          "paddleocr==3.7.0" "transformers==5.14.1"
+      - name: Run PP-OCRv6 recognition over line crops
+        run: >-
+          .bench-paddle-v6/bin/python scripts/ocr_54_run_external_recognizer.py
+          --recognizer paddle-v6
+          --input var/ocr-54-ensemble/prepared
+          --output var/ocr-54-ensemble/paddle-v6
+      - name: Upload PP-OCRv6 observations only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-ensemble-paddle-v6
+          path: var/ocr-54-ensemble/paddle-v6/paddle-v6.json
+          if-no-files-found: error
+          retention-days: 7
+
+  summarize:
+    name: Compare semantic quality and stability
+    needs: [prepare, manga-ocr, paddle-v6]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-ensemble-prepared
+          path: var/ocr-54-ensemble/prepared
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-ensemble-manga-ocr
+          path: var/ocr-54-ensemble/manga-ocr
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ocr-54-ensemble-paddle-v6
+          path: var/ocr-54-ensemble/paddle-v6
+      - name: Build semantic benchmark report
+        run: >-
+          python scripts/ocr_54_summarize_ensemble_benchmark.py
+          --prepared var/ocr-54-ensemble/prepared
+          --manga-ocr var/ocr-54-ensemble/manga-ocr/manga-ocr.json
+          --paddle-v6 var/ocr-54-ensemble/paddle-v6/paddle-v6.json
+          --output var/ocr-54-ensemble/report
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-54-ensemble-report
+          path: var/ocr-54-ensemble/report
+          if-no-files-found: error
+          retention-days: 7
