@@ -8,10 +8,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from mangasensei.domain.languages import DEFAULT_STUDY_LANGUAGE, StudyLanguage
 from mangasensei.gemini.contracts import GeminiPageAnalysis
 from mangasensei.linguistics.service import LinguisticToken
 
-PAGE_STUDY_PROMPT_VERSION = "page-study-v2"
+PAGE_STUDY_PROMPT_VERSION = "page-study-v3"
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,15 +78,19 @@ def build_page_prompt(
     prompt_version: str,
     regions: Mapping[str, str],
     vocabulary_by_region: Mapping[str, Sequence[GeminiVocabularyCandidate]],
+    study_language: StudyLanguage = DEFAULT_STUDY_LANGUAGE,
 ) -> str:
-    """Serialize only OCR text and minimal deterministic lexical candidates."""
+    """Serialize only OCR text, the explicit study language and minimal lexical candidates."""
 
     payload = {
         "prompt_version": prompt_version,
+        "study_language": study_language.value,
         "instructions": (
             "Return contextual translation, explanation, grammar points and only stable "
-            "vocabulary identifiers listed for that same region. Return exactly one analysis "
-            "for every requested region. Never invent OCR text or identifiers."
+            "vocabulary identifiers listed for that same region. Write every translation, "
+            "explanation and grammar-point label in exactly the requested study_language. "
+            "Return exactly one analysis for every requested region. Never invent OCR text "
+            "or identifiers."
         ),
         "regions": [
             {
@@ -117,11 +122,13 @@ class GeminiAnalysisService:
         *,
         regions: Mapping[str, str],
         vocabulary_by_region: Mapping[str, Sequence[GeminiVocabularyCandidate]],
+        study_language: StudyLanguage = DEFAULT_STUDY_LANGUAGE,
     ) -> GeminiPageAnalysis:
         prompt = build_page_prompt(
             prompt_version=self._prompt_version,
             regions=regions,
             vocabulary_by_region=vocabulary_by_region,
+            study_language=study_language,
         )
         result = await self._adapter.analyze(prompt=prompt, schema=GeminiPageAnalysis)
         known_regions = frozenset(regions)

@@ -17,6 +17,7 @@ from mangasensei.infrastructure.database.storage_models import (
     PageCapabilityRecord,
     PageRecord,
 )
+from mangasensei.infrastructure.database.study_models import StudyResultRecord
 
 __all__ = [
     "Base",
@@ -33,4 +34,5 @@ __all__ = [
     "PageCapabilityRecord",
     "PageRecord",
     "RateLimitBucketRecord",
+    "StudyResultRecord",
 ]

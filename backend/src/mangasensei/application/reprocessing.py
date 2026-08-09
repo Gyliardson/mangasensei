@@ -10,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mangasensei.application.authorization import ResourceNotFoundError
 from mangasensei.application.idempotency import idempotency_digest
+from mangasensei.domain.languages import DEFAULT_STUDY_LANGUAGE, StudyLanguage
 from mangasensei.infrastructure.database.job_models import JobRecord
 from mangasensei.infrastructure.database.storage_models import PageRecord
+from mangasensei.infrastructure.database.study_models import StudyResultRecord
 
 _ACTIVE_STATUSES = (
     "pending",
@@ -21,16 +23,22 @@ _ACTIVE_STATUSES = (
     "processing_gemini",
     "retryable_failure",
 )
+_REPROCESS_KINDS = ("page_reprocess", "study_language_reprocess")
 
 
 class AnalysisInProgressError(RuntimeError):
     """A page already has an active analysis job."""
 
 
+class ReprocessIdempotencyConflictError(ValueError):
+    """A reprocess idempotency key was reused with a different request contract."""
+
+
 @dataclass(frozen=True, slots=True)
 class ReprocessResult:
     job_id: UUID
     status: str
+    study_language: str
     created: bool
 
 
@@ -44,7 +52,13 @@ class ReprocessService:
         self._sessions = sessions
         self._idempotency_pepper = idempotency_pepper.encode()
 
-    async def create(self, *, page_id: int, idempotency_key: str) -> ReprocessResult:
+    async def create(
+        self,
+        *,
+        page_id: int,
+        idempotency_key: str,
+        study_language: StudyLanguage | None = None,
+    ) -> ReprocessResult:
         digest = idempotency_digest(
             pepper=self._idempotency_pepper,
             namespace="reprocess",
@@ -60,19 +74,53 @@ class ReprocessService:
             ).scalar_one_or_none()
             if page is None:
                 raise ResourceNotFoundError
+
+            latest_result = (
+                await session.execute(
+                    select(StudyResultRecord)
+                    .join(JobRecord, JobRecord.id == StudyResultRecord.job_id)
+                    .where(
+                        JobRecord.page_id == page.id,
+                        JobRecord.status == "completed",
+                    )
+                    .order_by(JobRecord.created_at.desc(), JobRecord.id.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            requested_language = (
+                study_language
+                if study_language is not None
+                else StudyLanguage(latest_result.study_language)
+                if latest_result is not None
+                else DEFAULT_STUDY_LANGUAGE
+            )
+            job_kind = (
+                "study_language_reprocess"
+                if study_language is not None and latest_result is not None
+                else "page_reprocess"
+            )
+
             existing = (
                 await session.execute(
                     select(JobRecord).where(
                         JobRecord.page_id == page.id,
-                        JobRecord.job_kind == "page_reprocess",
+                        JobRecord.job_kind.in_(_REPROCESS_KINDS),
                         JobRecord.idempotency_digest == digest,
                     )
                 )
             ).scalar_one_or_none()
             if existing is not None:
+                if (
+                    existing.job_kind != job_kind
+                    or existing.study_language != requested_language.value
+                ):
+                    raise ReprocessIdempotencyConflictError(
+                        "idempotency key is bound to another reprocess request"
+                    )
                 return ReprocessResult(
                     job_id=existing.public_id,
                     status=existing.status,
+                    study_language=existing.study_language,
                     created=False,
                 )
             active = (
@@ -87,10 +135,16 @@ class ReprocessService:
                 raise AnalysisInProgressError
             job = JobRecord(
                 page_id=page.id,
-                job_kind="page_reprocess",
+                job_kind=job_kind,
                 idempotency_digest=digest,
                 request_digest=page.request_digest,
+                study_language=requested_language.value,
             )
             session.add(job)
             await session.flush()
-            return ReprocessResult(job_id=job.public_id, status=job.status, created=True)
+            return ReprocessResult(
+                job_id=job.public_id,
+                status=job.status,
+                study_language=job.study_language,
+                created=True,
+            )

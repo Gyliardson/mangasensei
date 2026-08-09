@@ -9,27 +9,33 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import FastAPI, File, Header, Request, Response, UploadFile, status
+from fastapi import Body, FastAPI, File, Form, Header, Request, Response, UploadFile, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 
 import mangasensei
 from mangasensei.application.authorization import PageAuthorizer, ResourceNotFoundError
 from mangasensei.application.idempotency import InvalidIdempotencyKeyError
 from mangasensei.application.page_queries import PageQueryService
-from mangasensei.application.reprocessing import AnalysisInProgressError, ReprocessService
+from mangasensei.application.reprocessing import (
+    AnalysisInProgressError,
+    ReprocessIdempotencyConflictError,
+    ReprocessService,
+)
 from mangasensei.application.uploads import IdempotencyConflictError, UploadResult, UploadService
 from mangasensei.config import Settings
+from mangasensei.domain.languages import DEFAULT_STUDY_LANGUAGE, StudyLanguage
 from mangasensei.infrastructure.capabilities import CapabilityService
 from mangasensei.infrastructure.database.session import create_database
 from mangasensei.infrastructure.rate_limits import PostgreSQLRateLimiter
 from mangasensei.storage.images import ImageValidationError, ImageValidator
 from mangasensei.storage.local import LocalFilesystemStorage
 
-_EXPECTED_DATABASE_REVISION = "a17e52c4d908"
+_EXPECTED_DATABASE_REVISION = "e63b0c4d129a"
 _HTTP_REQUESTS = Counter(
     "http_requests",
     "HTTP requests completed by method and status code.",
@@ -42,6 +48,12 @@ _HTTP_DURATION = Histogram(
     ("method",),
     namespace="mangasensei",
 )
+
+
+class ReprocessRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    study_language: StudyLanguage = Field(alias="studyLanguage")
 
 
 def _success(data: Any) -> dict[str, Any]:
@@ -61,6 +73,7 @@ def _upload_data(result: UploadResult) -> dict[str, Any]:
         "height": result.height,
         "mediaType": result.media_type,
         "expiresAt": result.expires_at.isoformat(),
+        "studyLanguage": result.study_language,
         "capabilities": {
             "readPage": result.capabilities.read_page,
             "readImage": result.capabilities.read_image,
@@ -158,7 +171,16 @@ def create_app(settings: Settings) -> FastAPI:
     async def idempotency_error(_: Request, __: IdempotencyConflictError) -> JSONResponse:
         return JSONResponse(
             status_code=409,
-            content=_error("idempotency_conflict", "A chave já foi usada por outro arquivo."),
+            content=_error("idempotency_conflict", "A chave já foi usada por outra requisição."),
+        )
+
+    @app.exception_handler(ReprocessIdempotencyConflictError)
+    async def reprocess_idempotency_error(
+        _: Request, __: ReprocessIdempotencyConflictError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content=_error("idempotency_conflict", "A chave já foi usada por outra requisição."),
         )
 
     @app.exception_handler(InvalidIdempotencyKeyError)
@@ -191,6 +213,9 @@ def create_app(settings: Settings) -> FastAPI:
         response: Response,
         image: Annotated[UploadFile, File(description="Static JPEG, PNG or WebP page")],
         idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+        study_language: Annotated[StudyLanguage, Form(alias="studyLanguage")] = (
+            DEFAULT_STUDY_LANGUAGE
+        ),
     ) -> dict[str, Any]:
         content = await _read_limited(image, settings.max_upload_bytes)
         validated = await asyncio.to_thread(
@@ -202,6 +227,7 @@ def create_app(settings: Settings) -> FastAPI:
             image=validated,
             original_filename=image.filename or "page",
             idempotency_key=idempotency_key,
+            study_language=study_language,
         )
         response.status_code = status.HTTP_202_ACCEPTED if result.created else status.HTTP_200_OK
         return _success(_upload_data(result))
@@ -229,17 +255,20 @@ def create_app(settings: Settings) -> FastAPI:
         page_id: UUID,
         page_token: Annotated[str, Header(alias="X-Page-Token")],
         idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+        payload: Annotated[ReprocessRequest | None, Body()] = None,
     ) -> dict[str, Any]:
         authorized = await authorizer.authorize_reprocess(page_id=page_id, token=page_token)
         result = await reprocess_service.create(
             page_id=authorized.internal_id,
             idempotency_key=idempotency_key,
+            study_language=payload.study_language if payload is not None else None,
         )
         response.status_code = status.HTTP_202_ACCEPTED if result.created else status.HTTP_200_OK
         return _success(
             {
                 "jobId": str(result.job_id),
                 "status": result.status,
+                "studyLanguage": result.study_language,
                 "created": result.created,
             }
         )
