@@ -12,12 +12,18 @@ from mangasensei.domain.models import BoundingBox, PageDimensions
 from mangasensei.gemini.contracts import GeminiPageAnalysis, GeminiRegionAnalysis
 from mangasensei.infrastructure.database.session import create_database
 from mangasensei.linguistics.jmdict import JsonJmdictDictionary
+from mangasensei.linguistics.jmdict_glosses import (
+    JmdictGlossPack,
+    JmdictGlossSourceReference,
+    JsonJmdictGlossPack,
+    LocalizedJmdictGlossResolver,
+)
 from mangasensei.linguistics.service import LinguisticService
 from mangasensei.linguistics.sudachi import SudachiTokenizer
 from mangasensei.ocr.contracts import OcrImage, OcrProvenance, OcrRegionResult, OcrResult
 from mangasensei.runtime import run_worker_loop
 from mangasensei.storage.local import LocalFilesystemStorage
-from mangasensei.workers.runner import Worker
+from mangasensei.workers.dictionary_projection import DictionaryProjectionWorker
 
 REGION_ID = "5ca22b32-6834-59db-a183-428a557a22e8"
 FULLSTACK_PROVENANCE = OcrProvenance(
@@ -116,12 +122,41 @@ class DeterministicFullStackGemini:
         return schema(regions=tuple(analyses))
 
 
+class FullStackGlossPackProvider:
+    """Tiny deterministic en/de pack provider for full-stack browser coverage."""
+
+    def __init__(self, fixtures: Path) -> None:
+        self._packs: dict[str, JsonJmdictGlossPack] = {}
+        for language, filename in (("en", "jmdict.json"), ("de", "jmdict-de.json")):
+            dictionary = JsonJmdictDictionary(fixtures / filename)
+            self._packs[language] = JsonJmdictGlossPack(
+                language=language,
+                dictionary=dictionary,
+                source=JmdictGlossSourceReference(
+                    dataset="JMdict",
+                    language=language,
+                    version=dictionary.version,
+                    digest_sha256=dictionary.digest.hex(),
+                ),
+            )
+
+    def is_supported_language(self, language: str) -> bool:
+        return language in self._packs
+
+    def get_pack(self, language: str) -> JmdictGlossPack:
+        try:
+            return self._packs[language]
+        except KeyError as exc:
+            raise LookupError(language) from exc
+
+
 async def main() -> None:
     settings = Settings(_env_file=None)
     database_url = settings.require_database_url()
     engine, sessions = create_database(database_url)
-    dictionary = JsonJmdictDictionary(Path(__file__).parent / "fixtures" / "jmdict.json")
-    worker = Worker(
+    fixtures = Path(__file__).parent / "fixtures"
+    dictionary = JsonJmdictDictionary(fixtures / "jmdict.json")
+    worker = DictionaryProjectionWorker(
         sessions=sessions,
         storage=LocalFilesystemStorage(settings.storage_root),
         ocr=DeterministicFullStackOcr(),
@@ -130,6 +165,7 @@ async def main() -> None:
         gemini_model="fullstack-deterministic-provider",
         worker_id="fullstack-e2e-worker",
         lease_seconds=60,
+        gloss_resolver=LocalizedJmdictGlossResolver(FullStackGlossPackProvider(fixtures)),
     )
     try:
         await run_worker_loop(worker, poll_seconds=0.1)
