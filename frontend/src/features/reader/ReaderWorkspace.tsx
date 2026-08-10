@@ -1,36 +1,32 @@
-import {
-  BookOpenText,
-  ChevronDown,
-  ChevronUp,
-  FileImage,
-  Minus,
-  Plus,
-  RotateCcw,
-} from "lucide-react";
-import type React from "react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { BookOpenText, Minus, Plus, RotateCcw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
-import type { StudyLanguage, StudyPage, StudyRegion, StudyToken } from "../../lib/api";
-import { studyLanguageLabel } from "../../lib/studyLanguage";
-import { furiganaReading } from "./furigana";
+import type { StudyPage, StudyRegion, StudyToken } from "../../lib/api";
 import {
-  DEFAULT_FURIGANA_MODE,
-  readFuriganaPreference,
-  writeFuriganaPreference,
-  type FuriganaMode,
-} from "./furiganaPreference";
+  type StudyLanguage,
+  isStudyLanguage,
+  studyLanguageLabel,
+} from "../../lib/studyLanguage";
+import { type FuriganaMode, furiganaReading, isFuriganaMode } from "./furigana";
+import { loadFuriganaPreference, saveFuriganaPreference } from "./furiganaPreference";
+import { toSvgBox } from "./overlay";
 import {
-  chooseDefaultFitMode,
-  constrainFitMode,
-  hasHorizontalOverflow,
-  readReaderViewportPreference,
   READER_ZOOM_MAX,
   READER_ZOOM_MIN,
   READER_ZOOM_STEP,
-  writeReaderViewportPreference,
-  type ReaderFitMode,
+  type ReaderViewportMetrics,
+  calculateReaderCanvasWidth,
+  clampReaderZoom,
+  effectiveReaderFitMode,
+  isMobileReaderViewport,
+  isReaderFitMode,
+} from "./readerViewport";
+import {
   type ReaderViewportPreference,
+  loadReaderViewportPreference,
+  saveReaderViewportPreference,
 } from "./readerViewportPreference";
+import "./reader-preferences.css";
 
 interface ReaderWorkspaceProps {
   readonly page: StudyPage;
@@ -51,161 +47,183 @@ export function ReaderWorkspace({
   onStudyLanguageChange,
   onReset,
 }: ReaderWorkspaceProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(page.regions[0]?.id ?? null);
-  const [furiganaMode, setFuriganaMode] = useState<FuriganaMode>(() => readFuriganaPreference());
-  const viewportRef = useRef<HTMLDivElement | null>(null);
-  const canvasRef = useRef<HTMLDivElement | null>(null);
-  const preferredFitMode = useRef<ReaderFitMode | null>(null);
-  const [viewportPreference, setViewportPreference] = useState<ReaderViewportPreference>(() => {
-    const stored = readReaderViewportPreference();
-    preferredFitMode.current = stored?.fitMode ?? null;
-    return stored ?? {
-      fitMode: chooseDefaultFitMode(page.dimensions),
-      zoom: 100,
-    };
-  });
-  const selected =
-    page.regions.find((region) => region.id === selectedId) ?? page.regions[0];
-  const presentedFitMode = constrainFitMode(
-    viewportPreference.fitMode,
-    viewportPreference.zoom,
+  const [selectedId, setSelectedId] = useState(page.regions[0]?.id ?? null);
+  const [furiganaMode, setFuriganaMode] = useState<FuriganaMode>(() => loadFuriganaPreference());
+  const [viewportPreference, setViewportPreference] = useState<ReaderViewportPreference>(() =>
+    loadReaderViewportPreference(),
   );
+  const [viewportMetrics, setViewportMetrics] = useState<ReaderViewportMetrics | null>(null);
   const [hasHorizontalPan, setHasHorizontalPan] = useState(false);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const selected = page.regions.find((region) => region.id === selectedId) ?? page.regions[0];
+  const readerWidth = viewportMetrics?.width ?? window.innerWidth;
+  const mobileViewport = isMobileReaderViewport(readerWidth);
+  const presentedFitMode = effectiveReaderFitMode(viewportPreference.fitMode, readerWidth);
 
   useEffect(() => {
-    if (page.regions.length === 0) {
-      setSelectedId(null);
-      return;
-    }
-    setSelectedId((current) =>
-      current && page.regions.some((region) => region.id === current)
-        ? current
-        : page.regions[0].id,
-    );
-  }, [page.regions]);
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const measure = () => {
+      const rect = viewport.getBoundingClientRect();
+      const width = Math.max(1, viewport.clientWidth || rect.width || window.innerWidth);
+      const height = Math.max(240, window.innerHeight - Math.max(rect.top, 0) - 24);
+      setViewportMetrics((current) => {
+        if (
+          current
+          && Math.abs(current.width - width) < 1
+          && Math.abs(current.height - height) < 1
+        ) {
+          return current;
+        }
+        return { width, height };
+      });
+    };
+
+    measure();
+    window.addEventListener("resize", measure);
+    const resizeObserver = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(() => measure());
+    resizeObserver?.observe(viewport);
+
+    return () => {
+      window.removeEventListener("resize", measure);
+      resizeObserver?.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
-    const requestedFitMode = preferredFitMode.current ?? viewportPreference.fitMode;
-    const nextFitMode = constrainFitMode(requestedFitMode, viewportPreference.zoom);
-    if (nextFitMode === viewportPreference.fitMode) {
-      return;
-    }
-    setViewportPreference((current) => ({ ...current, fitMode: nextFitMode }));
-  }, [viewportPreference.fitMode, viewportPreference.zoom]);
-
-  useEffect(() => {
-    writeReaderViewportPreference(viewportPreference);
-  }, [viewportPreference]);
-
-  useLayoutEffect(() => {
     const viewport = viewportRef.current;
     const canvas = canvasRef.current;
-    if (!viewport || !canvas) {
-      return;
-    }
+    if (!viewport || !canvas || !viewportMetrics) return;
 
-    const syncOverflow = () => {
-      setHasHorizontalPan(
-        hasHorizontalOverflow(viewport.clientWidth, canvas.getBoundingClientRect().width),
-      );
-    };
-    syncOverflow();
-    const ResizeObserverImpl = globalThis.ResizeObserver;
-    if (!ResizeObserverImpl) {
-      return;
+    const canvasWidth = calculateReaderCanvasWidth(
+      page.dimensions,
+      viewportMetrics,
+      viewportPreference.fitMode,
+      viewportPreference.zoom,
+    );
+    canvas.style.width = `${Math.round(canvasWidth)}px`;
+    const canPanHorizontally = canvasWidth > viewportMetrics.width + 1;
+    setHasHorizontalPan(canPanHorizontally);
+    if (!canPanHorizontally) {
+      viewport.scrollLeft = 0;
     }
-    const observer = new ResizeObserverImpl(syncOverflow);
-    observer.observe(viewport);
-    observer.observe(canvas);
-    return () => observer.disconnect();
-  }, [page.dimensions, presentedFitMode, viewportPreference.zoom]);
+  }, [page.dimensions, viewportMetrics, viewportPreference.fitMode, viewportPreference.zoom]);
 
-  const changeFitMode = (fitMode: ReaderFitMode) => {
-    preferredFitMode.current = fitMode;
-    setViewportPreference((current) => ({
-      ...current,
-      fitMode: constrainFitMode(fitMode, current.zoom),
-    }));
+  const changeFuriganaMode = (value: string) => {
+    if (!isFuriganaMode(value)) return;
+    setFuriganaMode(value);
+    saveFuriganaPreference(value);
   };
+
+  const changeStudyLanguage = (value: string) => {
+    if (!isStudyLanguage(value)) return;
+    onStudyLanguageChange(value);
+  };
+
+  const changeFitMode = (value: string) => {
+    if (!isReaderFitMode(value)) return;
+    setViewportPreference((current) => {
+      const next = { ...current, fitMode: value };
+      saveReaderViewportPreference(next);
+      return next;
+    });
+  };
+
   const changeZoom = (delta: number) => {
-    setViewportPreference((current) => ({
-      fitMode: constrainFitMode(
-        preferredFitMode.current ?? current.fitMode,
-        Math.min(READER_ZOOM_MAX, Math.max(READER_ZOOM_MIN, current.zoom + delta)),
-      ),
-      zoom: Math.min(READER_ZOOM_MAX, Math.max(READER_ZOOM_MIN, current.zoom + delta)),
-    }));
+    setViewportPreference((current) => {
+      const next = { ...current, zoom: clampReaderZoom(current.zoom + delta) };
+      saveReaderViewportPreference(next);
+      return next;
+    });
   };
 
   return (
-    <main className="reader-shell">
-      <header className="reader-header">
-        <div>
-          <p className="eyebrow">MangaSensei</p>
-          <h1>Leitor de estudo</h1>
-        </div>
-        <button className="button ghost" type="button" onClick={onReset}>
-          <RotateCcw aria-hidden="true" />
-          Nova página
-        </button>
-      </header>
-
-      <section className="reader-language-bar" aria-label="Preferências de idioma">
-        <label>
-          <span>Idioma de estudo</span>
-          <select
-            aria-label="Idioma de estudo"
-            value={preferredStudyLanguage}
-            disabled={studyLanguageUpdating}
-            onChange={(event) => onStudyLanguageChange(event.target.value as StudyLanguage)}
-          >
-            <option value="pt-BR">Português (Brasil)</option>
-            <option value="en">English</option>
-          </select>
-        </label>
-        <label>
-          <span>Exibição de furigana</span>
-          <select
-            aria-label="Exibição de furigana"
-            value={furiganaMode}
-            onChange={(event) => {
-              const next = event.target.value as FuriganaMode;
-              setFuriganaMode(next);
-              writeFuriganaPreference(next);
-            }}
-          >
-            <option value="hiragana">Hiragana</option>
-            <option value="katakana">Katakana</option>
-            <option value="hidden">Ocultar</option>
-          </select>
-        </label>
-        {studyLanguageUpdating ? <span>Atualizando idioma…</span> : null}
-        {studyLanguageError ? <span role="alert">{studyLanguageError}</span> : null}
-      </section>
-
-      <section className="reader-page-section">
-        <div className="reader-page-toolbar">
-          <div className="reader-page-title">
-            <FileImage aria-hidden="true" />
-            <span>Página original</span>
+    <main id="conteudo" className="reader-layout">
+      <section className="page-stage" aria-labelledby="reader-title">
+        <div className="reader-toolbar">
+          <div>
+            <p className="eyebrow">Página processada</p>
+            <h1 id="reader-title">Selecione uma região</h1>
           </div>
-          <div className="reader-viewport-controls" aria-label="Controles de visualização">
-            <button
-              className="reader-fit-button"
-              type="button"
-              aria-pressed={presentedFitMode === "width"}
-              onClick={() => changeFitMode("width")}
+          <div className="reader-header-actions">
+            <div
+              className="reader-study-actions"
+              role="group"
+              aria-label="Preferências de estudo"
+              aria-busy={studyLanguageUpdating}
             >
-              Ajustar largura
-            </button>
-            <button
-              className="reader-fit-button"
-              type="button"
-              aria-pressed={presentedFitMode === "height"}
-              onClick={() => changeFitMode("height")}
+              <label className="reader-preference">
+                <span>Idioma de estudo</span>
+                <select
+                  aria-label="Idioma de estudo"
+                  value={preferredStudyLanguage}
+                  disabled={studyLanguageUpdating}
+                  onChange={(event) => changeStudyLanguage(event.currentTarget.value)}
+                >
+                  <option value="pt-BR">Português (Brasil)</option>
+                  <option value="en">Inglês</option>
+                </select>
+              </label>
+              <label className="reader-preference">
+                <span>Furigana na leitura</span>
+                <select
+                  aria-label="Exibição de furigana"
+                  value={furiganaMode}
+                  onChange={(event) => changeFuriganaMode(event.currentTarget.value)}
+                >
+                  <option value="hiragana">Hiragana</option>
+                  <option value="katakana">Katakana</option>
+                  <option value="hidden">Oculto</option>
+                </select>
+              </label>
+            </div>
+            <div className="reader-navigation" role="group" aria-label="Navegação">
+              <button className="text-button" type="button" onClick={onReset}>
+                <RotateCcw aria-hidden="true" /> Nova página
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {studyLanguageUpdating && preferredStudyLanguage !== page.studyLanguage ? (
+          <p className="study-language-feedback" role="status">
+            Atualizando explicações para {studyLanguageLabel(preferredStudyLanguage)}. O resultado
+            exibido continua em {studyLanguageLabel(page.studyLanguage)} até a nova análise concluir.
+          </p>
+        ) : null}
+        {studyLanguageError ? (
+          <p className="study-language-feedback study-language-error" role="alert">
+            {studyLanguageError} O resultado em {studyLanguageLabel(page.studyLanguage)} foi mantido.
+          </p>
+        ) : null}
+
+        <div className="page-presentation-toolbar" role="group" aria-label="Apresentação da página">
+          <label className="reader-preference page-fit-preference">
+            <span>Ajuste da página</span>
+            <select
+              aria-label="Ajuste da página"
+              value={presentedFitMode}
+              onChange={(event) => changeFitMode(event.currentTarget.value)}
             >
-              Ajustar altura
-            </button>
+              {mobileViewport ? (
+                <>
+                  <option value="width">Largura</option>
+                  <option value="page">Página inteira</option>
+                </>
+              ) : (
+                <>
+                  <option value="comfortable">Confortável</option>
+                  <option value="page">Página inteira</option>
+                  <option value="width">Largura</option>
+                </>
+              )}
+            </select>
+          </label>
+          <div className="reader-zoom" role="group" aria-label="Zoom da página">
             <button
               className="reader-zoom-button"
               type="button"
@@ -403,16 +421,4 @@ function RubyToken({
     return <span>{token.surface}</span>;
   }
   return <ruby>{token.surface}<rp>（</rp><rt>{reading}</rt><rp>）</rp></ruby>;
-}
-
-function toSvgBox(
-  normalized: StudyRegion["normalizedBbox"],
-  dimensions: StudyPage["dimensions"],
-) {
-  return {
-    x: normalized.x * dimensions.width,
-    y: normalized.y * dimensions.height,
-    width: normalized.width * dimensions.width,
-    height: normalized.height * dimensions.height,
-  };
 }
