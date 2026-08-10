@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Bounded ordered multi-image Document import with creation idempotency, one independent Page/job per image, document-scoped read/image/reprocess capabilities, aggregate page-count progress, partial-result reader navigation, current-child language reprocessing, and real full-stack multipage browser coverage; PDF and bulk retry/cancel remain deferred.
 - Licensed real-manga OCR fixture corpus with documented provenance and integrity metadata.
 - Reviewed real-model OCR regressions for known-good short vertical dialogue on licensed manga pages.
 - Layered licensed OCR assurance with manifest integrity checks, repeated short-text inference and a deeper full-corpus catastrophic-output guard.
