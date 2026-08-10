@@ -9,7 +9,6 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import httpx
 import pytest
 
-from mangasensei.linguistics.jmdict import JsonJmdictDictionary
 from mangasensei.linguistics.jmdict_bootstrap import (
     CONVERTER_VERSION,
     JmdictIntegrityError,
@@ -108,23 +107,14 @@ async def test_english_and_german_bootstrap_use_same_safe_v3_conversion(
             configured, language="de", registry_path=registry_path, client=client
         )
 
-    english = JsonJmdictDictionary(configured)
-    german = JsonJmdictDictionary(configured.parent / "jmdict-de.json")
-    english_hanpen = english.lookup("半片", "ハンペン")
-    german_hanpen = german.lookup("半片", "ハンペン")
-    english_hanpei = english.lookup("半平", "ハンペイ")
-    german_hanpei = german.lookup("半平", "ハンペイ")
-
-    assert english_hanpen is not None
-    assert german_hanpen is not None
-    assert english_hanpei is not None
-    assert german_hanpei is not None
-    assert english_hanpen.meanings == ("fish cake", "half ticket")
-    assert german_hanpen.meanings == ("Fischkuchen", "halbe Karte")
-    assert english_hanpei.meanings == ("fish cake",)
-    assert german_hanpei.meanings == ("Fischkuchen",)
-    assert english.lookup("半片", "ハンペイ") is None
-    assert german.lookup("半片", "ハンペイ") is None
+    english = normalized_form_map(configured)
+    german = normalized_form_map(configured.parent / "jmdict-de.json")
+    assert english[("半片", "はんぺん")] == ["fish cake", "half ticket"]
+    assert german[("半片", "はんぺん")] == ["Fischkuchen", "halbe Karte"]
+    assert english[("半平", "はんぺい")] == ["fish cake"]
+    assert german[("半平", "はんぺい")] == ["Fischkuchen"]
+    assert ("半片", "はんぺい") not in english
+    assert ("半片", "はんぺい") not in german
 
 
 @pytest.mark.asyncio
@@ -254,6 +244,16 @@ def test_third_party_notice_tracks_manifest_backed_provenance() -> None:
         )
         for value in expected_values:
             assert f"`{value}`" in notice
+
+
+def normalized_form_map(path: Path) -> dict[tuple[str, str], list[str]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    entries = payload["entries"]
+    assert len(entries) == 1
+    return {
+        (form["lemma"], form["reading"]): form["meanings"]
+        for form in entries[0]["forms"]
+    }
 
 
 def write_fixture_registry(tmp_path: Path) -> tuple[Path, dict[str, bytes]]:
