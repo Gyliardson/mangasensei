@@ -19,7 +19,7 @@ Un entorno de estudio centrado en la privacidad para convertir páginas de manga
 
 MangaSensei extrae texto japonés de páginas de manga, enriquece el resultado con datos lingüísticos locales y lo presenta en un lector responsivo sin alterar la imagen original. Los pesos de OCR y los datos derivados de JMdict permanecen en local y no se incluyen en Git ni en la imagen distribuible. Gemini es opcional.
 
-El contenido japonés puede estudiarse con **explicaciones contextuales en Portugués de Brasil (`pt-BR`) o Inglés (`en`)**. El idioma de estudio se elige de forma explícita y es independiente del locale de la interfaz almacenado en el navegador. La interfaz admite Inglés (`en`) y Portugués de Brasil (`pt-BR`), usa inglés por defecto en un estado nuevo o inválido del navegador y persiste localmente una selección explícita. Los significados deterministas del JMdict local siguen en inglés en ambos modos de estudio, y cambiar solo el idioma de estudio reutiliza el OCR y el análisis lingüístico japonés ya completados. Consulta el [contrato de idiomas de estudio](docs/study-languages.md) para los límites exactos.
+El contenido japonés puede estudiarse con **explicaciones contextuales en Portugués de Brasil (`pt-BR`) o Inglés (`en`)**. Los cuatro ejes de idioma son independientes: contenido japonés (`ja`), idioma de estudio/explicación (`pt-BR` o `en`), idioma solicitado para el diccionario determinista (`en`, `de` o `pt-BR`) y locale de interfaz guardado en el navegador (`en` o `pt-BR`). La interfaz y el diccionario usan inglés por defecto en estados nuevos o inválidos del navegador. Alemán usa el pack JMdict local revisado cuando existe la forma canónica exacta y, si no, hace fallback por elemento a inglés; una solicitud de diccionario `pt-BR` sigue siendo explícitamente Portugués de Brasil, pero los significados deterministas usan fallback en inglés porque no existe un pack JMdict revisado de glosas portuguesas a nivel de palabra. Cambiar el idioma del diccionario reutiliza el análisis lingüístico canónico persistido y no vuelve a ejecutar OCR, adquisición léxica de Sudachi ni Gemini. Consulta el [contrato de ejes de idioma](docs/study-languages.md) y el [contrato de packs JMdict](docs/jmdict-packs.md).
 
 La versión actual de desarrollo está registrada en [`VERSION`](VERSION).
 
@@ -27,7 +27,7 @@ La versión actual de desarrollo está registrada en [`VERSION`](VERSION).
 
 | Local-first | Imagen original preservada | Diseñado para estudiar |
 | --- | --- | --- |
-| OCR, modelos y datos del diccionario son locales por defecto. | La página subida se conserva sin modificaciones y las capas de estudio se renderizan por separado. | Furigana, vocabulario, idioma de estudio, datos lingüísticos y explicaciones contextuales se organizan alrededor de la lectura. |
+| OCR, modelos y datos del diccionario son locales por defecto. | La página subida se conserva sin modificaciones y las capas de estudio se renderizan por separado. | Furigana, vocabulario, idiomas independientes de estudio y diccionario, datos lingüísticos y explicaciones contextuales se organizan alrededor de la lectura. |
 
 ## Vista previa del lector
 
@@ -44,9 +44,9 @@ La versión actual de desarrollo está registrada en [`VERSION`](VERSION).
 | --- | --- |
 | Carga | Subida segura de imágenes con idempotencia, idioma de estudio explícito `pt-BR`/`en` y capabilities HMAC por página |
 | OCR | Subconjunto local de Manga Image Translator con modelos verificados por checksum |
-| Lingüística | Tokenización Sudachi e índice JMdict normalizado en inglés generado desde una fuente verificada |
+| Lingüística | Tokenización Sudachi y datos JMdict locales revisados en inglés/alemán proyectados sobre identidades léxicas canónicas independientes del idioma |
 | Gemini | Explicaciones contextuales estructuradas opcionales en `pt-BR`/`en`, con control de presupuesto y `store=False` |
-| Lector | SPA React con Blob autenticado, overlays SVG responsivos, furigana, preferencias independientes de locale de interfaz `en`/`pt-BR` e idioma de estudio, y tarjetas de vocabulario |
+| Lector | SPA React con Blob autenticado, overlays SVG responsivos, furigana, locale de interfaz `en`/`pt-BR`, idioma de estudio `pt-BR`/`en` y preferencia solicitada de diccionario `en`/`de`/`pt-BR`, todos independientes, con presentación explícita del fallback |
 | Operación | Cola PostgreSQL, recuperación de leases, retención, readiness y métricas |
 
 ## Arquitectura
@@ -101,9 +101,9 @@ flowchart TD
 | Método | Ruta | Propósito |
 | --- | --- | --- |
 | `POST` | `/api/v1/pages` | Sube una página de manga japonés y crea análisis con `studyLanguage` opcional (`pt-BR` por defecto o `en`) |
-| `GET` | `/api/v1/pages/{page_id}` | Consulta estado, metadatos persistidos de idioma y datos de estudio completados usando el token de página |
+| `GET` | `/api/v1/pages/{page_id}` | Consulta estado, metadatos persistidos de idiomas/proyección y datos de estudio completados usando el token de página |
 | `GET` | `/api/v1/pages/{page_id}/image` | Devuelve la imagen original mediante una respuesta Blob autenticada |
-| `POST` | `/api/v1/pages/{page_id}/reprocess` | Encola análisis o regeneración solo del idioma de estudio usando una capability de reprocesamiento |
+| `POST` | `/api/v1/pages/{page_id}/reprocess` | Encola análisis general o regeneración de exactamente un eje, idioma de estudio o diccionario, usando una capability de reprocesamiento |
 | `GET` | `/health` | Health check del proceso |
 | `GET` | `/ready` | Verificación de base de datos, almacenamiento y schema |
 | `GET` | `/metrics` | Métricas Prometheus |
@@ -137,7 +137,7 @@ Genera secretos y configúralos en `.env` antes de ejecutar cualquier cosa que u
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Gemini es opcional. Deja `GOOGLE_API_KEY` sin definir o en blanco para ejecutar el worker solo con OCR y lingüística locales; configura una clave no vacía para habilitar enriquecimiento contextual en el idioma de estudio seleccionado. Cuando está habilitado, solo se envían el texto OCR y candidatos léxicos mínimos por región (`id`, `surface`, `lemma`, `reading`). La imagen original, los significados del diccionario y el dataset JMdict local no se envían. Con Gemini deshabilitado, el OCR/tokenización japoneses y el vocabulario JMdict en inglés siguen disponibles, mientras que la traducción y explicación contextuales pueden estar ausentes.
+Gemini es opcional. Deja `GOOGLE_API_KEY` sin definir o en blanco para ejecutar el worker solo con OCR y lingüística locales; configura una clave no vacía para habilitar enriquecimiento contextual en el idioma de estudio seleccionado. Cuando está habilitado, solo se envían el texto OCR y candidatos léxicos mínimos por región (`id`, `surface`, `lemma`, `reading`). La imagen original, los significados del diccionario y el dataset JMdict local no se envían. Con Gemini deshabilitado, el OCR/tokenización japoneses y el vocabulario JMdict determinista local siguen disponibles, mientras que la traducción y explicación contextuales pueden estar ausentes.
 
 Ejecuta con Docker Compose:
 
