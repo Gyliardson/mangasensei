@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from statistics import median
-from typing import Any, Sequence
+from typing import Any
 
 _MIN_TIER_BAND_PAGE_FRACTION = 0.02
 _MAX_TIER_BAND_PAGE_FRACTION = 0.12
 _TIER_BAND_REGION_HEIGHT_FRACTION = 0.5
 _MAX_PANEL_GROUPS = 16
 _MIN_PANEL_AREA_FRACTION = 0.02
+_MIN_CONTOUR_AREA_FRACTION = 0.025
 _MIN_PANEL_WIDTH_FRACTION = 0.10
 _MIN_PANEL_HEIGHT_FRACTION = 0.05
 _MAX_AMBIGUOUS_OVERLAP = 0.20
@@ -331,7 +333,7 @@ def _sobel_external_boxes(pixels: Any) -> tuple[PanelBox, ...]:
     for contour in contours:
         x, y, width, height = cv2.boundingRect(contour)
         area_fraction = width * height / page_area
-        if area_fraction < 0.025 or area_fraction > 0.98:
+        if area_fraction < _MIN_CONTOUR_AREA_FRACTION or area_fraction > 0.98:
             continue
         if width < page_width * _MIN_PANEL_WIDTH_FRACTION:
             continue
@@ -494,8 +496,14 @@ def _validate_boxes(
 
     for index, first in enumerate(boxes):
         for second in boxes[index + 1 :]:
-            intersection_width = max(0, min(first.x2, second.x2) - max(first.x1, second.x1))
-            intersection_height = max(0, min(first.y2, second.y2) - max(first.y1, second.y1))
+            intersection_width = max(
+                0,
+                min(first.x2, second.x2) - max(first.x1, second.x1),
+            )
+            intersection_height = max(
+                0,
+                min(first.y2, second.y2) - max(first.y1, second.y1),
+            )
             intersection_area = intersection_width * intersection_height
             if intersection_area == 0:
                 continue
