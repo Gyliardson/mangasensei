@@ -138,7 +138,10 @@ async def test_document_create_replay_reuses_logical_document_without_duplicate_
     assert first.status_code == 202
     assert replay.status_code == 200
     assert replay.json()["data"]["documentId"] == first.json()["data"]["documentId"]
-    assert replay.json()["data"]["capabilities"]["readDocument"] != first.json()["data"]["capabilities"]["readDocument"]
+    assert (
+        replay.json()["data"]["capabilities"]["readDocument"]
+        != first.json()["data"]["capabilities"]["readDocument"]
+    )
 
     async_url = clean_postgres_url.replace("postgresql://", "postgresql+psycopg://", 1)
     engine = create_async_engine(async_url)
