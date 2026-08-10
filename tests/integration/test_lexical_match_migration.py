@@ -248,7 +248,9 @@ def test_lexical_match_migration_backfills_resolved_token_meanings_and_gemini_li
         command.upgrade(config, "head")
 
         with engine.connect() as connection:
-            revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            revision = connection.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
             lexical = connection.execute(
                 text(
                     """
