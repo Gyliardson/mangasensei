@@ -6,7 +6,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
+      - "backend/migrations/versions/*dictionary_projections.py"
+      - "backend/src/mangasensei/api/app.py"
+      - "backend/src/mangasensei/application/page_queries.py"
+      - "backend/src/mangasensei/application/reprocessing.py"
       - "backend/src/mangasensei/cli.py"
+      - "backend/src/mangasensei/infrastructure/database/dictionary_projection_models.py"
       - "backend/src/mangasensei/linguistics/jmdict.py"
       - "backend/src/mangasensei/linguistics/jmdict_bootstrap.py"
       - "backend/src/mangasensei/linguistics/jmdict_glosses.py"
@@ -14,8 +19,11 @@ on:
       - "backend/src/mangasensei/linguistics/runtime_glosses.py"
       - "backend/src/mangasensei/linguistics/jmdict_manifest*.json"
       - "backend/src/mangasensei/linguistics/jmdict_packs.json"
+      - "backend/src/mangasensei/runtime.py"
+      - "backend/src/mangasensei/workers/dictionary_projection.py"
       - "scripts/update_jmdict_manifest.py"
       - "scripts/measure_jmdict_load.py"
+      - "tests/integration/test_dictionary_projection_*.py"
       - "tests/unit/test_jmdict_bootstrap.py"
       - "tests/unit/test_jmdict_glosses.py"
       - "tests/unit/test_jmdict_packs.py"
@@ -33,7 +41,12 @@ on:
   push:
     branches: [main]
     paths:
+      - "backend/migrations/versions/*dictionary_projections.py"
+      - "backend/src/mangasensei/api/app.py"
+      - "backend/src/mangasensei/application/page_queries.py"
+      - "backend/src/mangasensei/application/reprocessing.py"
       - "backend/src/mangasensei/cli.py"
+      - "backend/src/mangasensei/infrastructure/database/dictionary_projection_models.py"
       - "backend/src/mangasensei/linguistics/jmdict.py"
       - "backend/src/mangasensei/linguistics/jmdict_bootstrap.py"
       - "backend/src/mangasensei/linguistics/jmdict_glosses.py"
@@ -41,8 +54,11 @@ on:
       - "backend/src/mangasensei/linguistics/runtime_glosses.py"
       - "backend/src/mangasensei/linguistics/jmdict_manifest*.json"
       - "backend/src/mangasensei/linguistics/jmdict_packs.json"
+      - "backend/src/mangasensei/runtime.py"
+      - "backend/src/mangasensei/workers/dictionary_projection.py"
       - "scripts/update_jmdict_manifest.py"
       - "scripts/measure_jmdict_load.py"
+      - "tests/integration/test_dictionary_projection_*.py"
       - "tests/unit/test_jmdict_bootstrap.py"
       - "tests/unit/test_jmdict_glosses.py"
       - "tests/unit/test_jmdict_packs.py"
