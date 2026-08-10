@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -36,10 +37,13 @@ def normalize_png(path: Path) -> None:
 
 
 def chromium_version() -> str:
+    node = shutil.which("node")
+    if node is None:
+        raise SystemExit("node executable is required to resolve the Playwright Chromium version")
     try:
         result = subprocess.run(
             [
-                "node",
+                node,
                 "-e",
                 (
                     "import('playwright').then(async({chromium})=>{"
