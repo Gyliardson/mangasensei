@@ -14,8 +14,13 @@ class StudyLanguage(StrEnum):
 
 class DictionaryLanguage(StrEnum):
     ENGLISH = "en"
+    GERMAN = "de"
+    PORTUGUESE_BRAZIL = "pt-BR"
 
 
 CONTENT_LANGUAGE = ContentLanguage.JAPANESE
 DEFAULT_STUDY_LANGUAGE = StudyLanguage.PORTUGUESE_BRAZIL
+DEFAULT_DICTIONARY_LANGUAGE = DictionaryLanguage.ENGLISH
+FALLBACK_DICTIONARY_LANGUAGE = DictionaryLanguage.ENGLISH
+# Backward-compatible English-only field used by historical StudyResult records.
 LOCAL_DICTIONARY_LANGUAGE = DictionaryLanguage.ENGLISH

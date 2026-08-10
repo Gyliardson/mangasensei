@@ -6,18 +6,28 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
+      - "backend/migrations/versions/*dictionary_projections.py"
+      - "backend/src/mangasensei/api/app.py"
+      - "backend/src/mangasensei/application/page_queries.py"
+      - "backend/src/mangasensei/application/reprocessing.py"
       - "backend/src/mangasensei/cli.py"
+      - "backend/src/mangasensei/infrastructure/database/dictionary_projection_models.py"
       - "backend/src/mangasensei/linguistics/jmdict.py"
       - "backend/src/mangasensei/linguistics/jmdict_bootstrap.py"
       - "backend/src/mangasensei/linguistics/jmdict_glosses.py"
       - "backend/src/mangasensei/linguistics/jmdict_packs.py"
+      - "backend/src/mangasensei/linguistics/runtime_glosses.py"
       - "backend/src/mangasensei/linguistics/jmdict_manifest*.json"
       - "backend/src/mangasensei/linguistics/jmdict_packs.json"
+      - "backend/src/mangasensei/runtime.py"
+      - "backend/src/mangasensei/workers/dictionary_projection.py"
       - "scripts/update_jmdict_manifest.py"
       - "scripts/measure_jmdict_load.py"
+      - "tests/integration/test_dictionary_projection_*.py"
       - "tests/unit/test_jmdict_bootstrap.py"
       - "tests/unit/test_jmdict_glosses.py"
       - "tests/unit/test_jmdict_packs.py"
+      - "tests/unit/test_runtime_glosses.py"
       - "tests/unit/test_cli.py"
       - "tests/fullstack/fixtures/jmdict.json"
       - "THIRD_PARTY_NOTICES.md"
@@ -31,18 +41,28 @@ on:
   push:
     branches: [main]
     paths:
+      - "backend/migrations/versions/*dictionary_projections.py"
+      - "backend/src/mangasensei/api/app.py"
+      - "backend/src/mangasensei/application/page_queries.py"
+      - "backend/src/mangasensei/application/reprocessing.py"
       - "backend/src/mangasensei/cli.py"
+      - "backend/src/mangasensei/infrastructure/database/dictionary_projection_models.py"
       - "backend/src/mangasensei/linguistics/jmdict.py"
       - "backend/src/mangasensei/linguistics/jmdict_bootstrap.py"
       - "backend/src/mangasensei/linguistics/jmdict_glosses.py"
       - "backend/src/mangasensei/linguistics/jmdict_packs.py"
+      - "backend/src/mangasensei/linguistics/runtime_glosses.py"
       - "backend/src/mangasensei/linguistics/jmdict_manifest*.json"
       - "backend/src/mangasensei/linguistics/jmdict_packs.json"
+      - "backend/src/mangasensei/runtime.py"
+      - "backend/src/mangasensei/workers/dictionary_projection.py"
       - "scripts/update_jmdict_manifest.py"
       - "scripts/measure_jmdict_load.py"
+      - "tests/integration/test_dictionary_projection_*.py"
       - "tests/unit/test_jmdict_bootstrap.py"
       - "tests/unit/test_jmdict_glosses.py"
       - "tests/unit/test_jmdict_packs.py"
+      - "tests/unit/test_runtime_glosses.py"
       - "tests/unit/test_cli.py"
       - "tests/fullstack/fixtures/jmdict.json"
       - "THIRD_PARTY_NOTICES.md"
@@ -85,12 +105,13 @@ jobs:
       - name: Verify all reviewed sources, normalized metadata and runtime loads
         run: uv run python scripts/update_jmdict_manifest.py --check
 
-      - name: Validate focused producer, resolver, pack and CLI regressions
+      - name: Validate focused producer, resolver, lazy provider, pack and CLI regressions
         run: |
           uv run pytest \
             tests/unit/test_jmdict_bootstrap.py \
             tests/unit/test_jmdict_glosses.py \
             tests/unit/test_jmdict_packs.py \
+            tests/unit/test_runtime_glosses.py \
             tests/unit/test_cli.py \
             -q
 
@@ -153,6 +174,8 @@ jobs:
           require_completed_successfully models
           require_completed_successfully jmdict
           require_completed_successfully migrate
+          docker compose run --rm --no-deps jmdict mangasensei jmdict verify
+          docker compose run --rm --no-deps jmdict mangasensei jmdict verify --language de
 
           for attempt in $(seq 1 120); do
             if curl --fail --silent --show-error "http://127.0.0.1:${MANGASENSEI_PORT}/ready" >/dev/null; then

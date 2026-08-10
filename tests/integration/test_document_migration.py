@@ -26,7 +26,7 @@ def test_document_schema_preserves_standalone_page_idempotency_contract(
     assert page_columns["upload_idempotency_digest"]["nullable"] is False
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert revision == "4b913c2a7e56"
+    assert revision == "9c2e7d4a1160"
     engine.dispose()
 
 

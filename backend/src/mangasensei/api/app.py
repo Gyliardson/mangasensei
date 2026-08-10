@@ -14,7 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import text
 
 import mangasensei
@@ -25,19 +25,24 @@ from mangasensei.application.idempotency import InvalidIdempotencyKeyError
 from mangasensei.application.page_queries import PageQueryService
 from mangasensei.application.reprocessing import (
     AnalysisInProgressError,
+    DictionaryProjectionUnavailableError,
     ReprocessIdempotencyConflictError,
     ReprocessService,
 )
 from mangasensei.application.uploads import IdempotencyConflictError, UploadResult, UploadService
 from mangasensei.config import Settings
-from mangasensei.domain.languages import DEFAULT_STUDY_LANGUAGE, StudyLanguage
+from mangasensei.domain.languages import (
+    DEFAULT_STUDY_LANGUAGE,
+    DictionaryLanguage,
+    StudyLanguage,
+)
 from mangasensei.infrastructure.capabilities import CapabilityService
 from mangasensei.infrastructure.database.session import create_database
 from mangasensei.infrastructure.rate_limits import PostgreSQLRateLimiter
 from mangasensei.storage.images import ImageValidationError, ImageValidator
 from mangasensei.storage.local import LocalFilesystemStorage
 
-_EXPECTED_DATABASE_REVISION = "4b913c2a7e56"
+_EXPECTED_DATABASE_REVISION = "9c2e7d4a1160"
 _HTTP_REQUESTS = Counter(
     "http_requests",
     "HTTP requests completed by method and status code.",
@@ -55,7 +60,14 @@ _HTTP_DURATION = Histogram(
 class ReprocessRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    study_language: StudyLanguage = Field(alias="studyLanguage")
+    study_language: StudyLanguage | None = Field(default=None, alias="studyLanguage")
+    dictionary_language: DictionaryLanguage | None = Field(default=None, alias="dictionaryLanguage")
+
+    @model_validator(mode="after")
+    def require_one_reprojection_axis(self) -> ReprocessRequest:
+        if (self.study_language is None) == (self.dictionary_language is None):
+            raise ValueError("exactly one reprocessing language axis is required")
+        return self
 
 
 def _success(data: Any) -> dict[str, Any]:
@@ -201,6 +213,18 @@ def create_app(settings: Settings) -> FastAPI:
             content=_error("analysis_in_progress", "A página já possui uma análise em andamento."),
         )
 
+    @app.exception_handler(DictionaryProjectionUnavailableError)
+    async def dictionary_projection_unavailable(
+        _: Request, __: DictionaryProjectionUnavailableError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content=_error(
+                "result_unavailable",
+                "A página ainda não possui análise linguística concluída para reprojeção.",
+            ),
+        )
+
     @app.exception_handler(ResourceNotFoundError)
     async def not_found(_: Request, __: ResourceNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=404, content=_error("not_found", "Recurso não encontrado."))
@@ -262,6 +286,25 @@ def create_app(settings: Settings) -> FastAPI:
         payload: Annotated[ReprocessRequest | None, Body()] = None,
     ) -> dict[str, Any]:
         authorized = await authorizer.authorize_reprocess(page_id=page_id, token=page_token)
+        if payload is not None and payload.dictionary_language is not None:
+            result = await reprocess_service.create_dictionary_projection(
+                page_id=authorized.internal_id,
+                idempotency_key=idempotency_key,
+                dictionary_language=payload.dictionary_language,
+            )
+            response.status_code = (
+                status.HTTP_202_ACCEPTED if result.created else status.HTTP_200_OK
+            )
+            return _success(
+                {
+                    "jobId": str(result.job_id),
+                    "status": result.status,
+                    "studyLanguage": result.study_language,
+                    "requestedDictionaryLanguage": result.requested_dictionary_language,
+                    "created": result.created,
+                }
+            )
+
         result = await reprocess_service.create(
             page_id=authorized.internal_id,
             idempotency_key=idempotency_key,

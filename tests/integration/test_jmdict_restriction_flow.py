@@ -140,6 +140,12 @@ async def test_restricted_jmdict_meanings_propagate_to_page_response(
                 "reading": "ハンペイ",
                 "meanings": ["pounded fish cake"],
                 "source": "JMdict jmdict-simplified-3.6.2+test",
+                "effectiveLanguage": "en",
+                "fallbackUsed": False,
+                "fallbackReason": None,
+                "sourceRef": (
+                    f"jmdict:en:{dictionary.version}:{dictionary.digest.hex()[:16]}"
+                ),
                 "jlpt": None,
             }
         ]
