@@ -12,6 +12,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:fullstack": "playwright test --config playwright.fullstack.config.ts",
+    "media:check": "node ../scripts/media/check-contract.mjs && playwright test --config playwright.media.config.ts --list",
+    "media:capture": "playwright test --config playwright.media.config.ts",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {

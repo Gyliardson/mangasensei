@@ -16,6 +16,9 @@
     "test:e2e": "npm run test:e2e --workspace frontend",
     "e2e": "npm run test:e2e --workspace frontend",
     "e2e:fullstack": "npm run test:e2e:fullstack --workspace frontend",
+    "media:check": "npm run media:check --workspace frontend",
+    "media:capture": "npm run media:capture --workspace frontend --",
+    "media:derive": "node scripts/media/derive.mjs",
     "typecheck": "npm run typecheck --workspace frontend"
   }
 }

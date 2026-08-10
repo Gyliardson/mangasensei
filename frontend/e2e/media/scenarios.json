@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "sourceId": "synthetic-v1",
+  "captureClass": "presentation-fixture",
+  "scenarios": [
+    {
+      "id": "reader-desktop",
+      "profiles": ["desktop"],
+      "formats": ["png"],
+      "state": "completed-reader"
+    },
+    {
+      "id": "reader-mobile",
+      "profiles": ["mobile"],
+      "formats": ["png"],
+      "state": "completed-reader"
+    },
+    {
+      "id": "core-workflow",
+      "profiles": ["desktop"],
+      "formats": ["png", "webm"],
+      "state": "upload-to-completed-reader"
+    },
+    {
+      "id": "multipage-partial",
+      "profiles": ["desktop"],
+      "formats": ["png"],
+      "state": "one-readable-one-processing"
+    },
+    {
+      "id": "multipage-navigation",
+      "profiles": ["desktop"],
+      "formats": ["png", "webm"],
+      "state": "two-readable-pages-navigation"
+    },
+    {
+      "id": "dictionary-language-switch",
+      "profiles": ["desktop"],
+      "formats": ["png", "webm"],
+      "state": "dictionary-english-to-german"
+    }
+  ]
+}
