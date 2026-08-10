@@ -59,15 +59,9 @@ def upgrade() -> None:
     )
 
     # Slice A could only seed document children by filling the then-NOT-NULL standalone
-    # upload identity. That identity was never a public document-child contract, so clear
-    # it before enforcing the Slice-B ownership invariant. Standalone Page rows are untouched.
-    op.execute(
-        sa.text(
-            "UPDATE mangasensei.pages "
-            "SET upload_key_id = NULL, upload_idempotency_digest = NULL "
-            "WHERE document_id IS NOT NULL"
-        )
-    )
+    # upload identity. Make those columns nullable before clearing that historical fixture
+    # identity, then enforce the Slice-B ownership invariant. Standalone Page rows remain
+    # non-null throughout and are untouched by the backfill.
     op.alter_column(
         "pages",
         "upload_key_id",
@@ -81,6 +75,13 @@ def upgrade() -> None:
         existing_type=sa.LargeBinary(length=32),
         nullable=True,
         schema="mangasensei",
+    )
+    op.execute(
+        sa.text(
+            "UPDATE mangasensei.pages "
+            "SET upload_key_id = NULL, upload_idempotency_digest = NULL "
+            "WHERE document_id IS NOT NULL"
+        )
     )
     op.create_check_constraint(
         op.f("ck_pages_standalone_idempotency_pair"),
