@@ -21,6 +21,7 @@ Verified on 2026-08-09 using official documentation, package registries and revi
 | E2E | Playwright | 1.62.1 | Desktop and mobile projects |
 | Dictionary data | jmdict-simplified | 3.6.2+20260803141815 | Reviewed `en`/`eng` and `de`/`ger` packs share one pinned source snapshot; English remains the default runtime pack; both normalize with `mangasensei-jmdict-v3` while preserving reading/spelling and sense restrictions |
 | OCR source | manga-image-translator | 95227a2bb0fd306cd4f0c104d57284026f991b3a | Vendored OCR subset |
+| OCR image runtime | opencv-python-headless | 5.0.0.93 | Headless Python wheel; adopted after a same-code 12-page A/B against 4.14.0.94 |
 
 Python packages are locked by `uv.lock`. JavaScript packages are locked by
 `package-lock.json`. Model artifacts use a separate checksum manifest because
