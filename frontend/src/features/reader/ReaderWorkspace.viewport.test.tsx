@@ -59,9 +59,12 @@ function renderReader() {
       imageUrl="fixture-image"
       uiLocale="pt-BR"
       preferredStudyLanguage={studyPage.studyLanguage}
-      studyLanguageUpdating={false}
+      preferredDictionaryLanguage="en"
+      languageMutation={null}
       studyLanguageError={null}
+      dictionaryLanguageError={null}
       onStudyLanguageChange={vi.fn()}
+      onDictionaryLanguageChange={vi.fn()}
       onReset={vi.fn()}
     />,
   );
@@ -79,6 +82,7 @@ describe("ReaderWorkspace viewport controls", () => {
 
     const studyControls = screen.getByRole("group", { name: "Preferências de estudo" });
     expect(within(studyControls).getByRole("combobox", { name: "Idioma de estudo" })).toBeVisible();
+    expect(within(studyControls).getByRole("combobox", { name: "Idioma do dicionário" })).toBeVisible();
     expect(within(studyControls).getByRole("combobox", { name: "Exibição de furigana" })).toBeVisible();
 
     const navigation = screen.getByRole("group", { name: "Navegação" });
@@ -89,6 +93,7 @@ describe("ReaderWorkspace viewport controls", () => {
     expect(within(presentation).getByRole("combobox", { name: "Ajuste da página" })).toBeVisible();
     expect(within(presentation).getByRole("group", { name: "Zoom da página" })).toBeVisible();
     expect(within(presentation).queryByRole("combobox", { name: "Idioma de estudo" })).not.toBeInTheDocument();
+    expect(within(presentation).queryByRole("combobox", { name: "Idioma do dicionário" })).not.toBeInTheDocument();
   });
 
   it("switches fit mode, adjusts zoom and restores the local presentation preference", async () => {
