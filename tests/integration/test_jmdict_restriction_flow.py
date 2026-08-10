@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 import pytest
@@ -63,7 +64,8 @@ class RestrictedTokenizerFixture:
 
 class RestrictedGeminiFixture:
     async def analyze(self, *, prompt: str, schema: type[GeminiPageAnalysis]) -> GeminiPageAnalysis:
-        assert "半平" in prompt
+        payload = json.loads(prompt)
+        vocabulary_id = payload["regions"][0]["vocabulary_candidates"][0]["id"]
         return schema(
             regions=(
                 GeminiRegionAnalysis(
@@ -71,7 +73,7 @@ class RestrictedGeminiFixture:
                     translation="Fish cake.",
                     explanation="Fixture explanation.",
                     grammar_points=(),
-                    vocabulary_ids=("jmdict-1010230",),
+                    vocabulary_ids=(vocabulary_id,),
                 ),
             )
         )
