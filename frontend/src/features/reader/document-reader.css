@@ -1,0 +1,81 @@
+.document-navigation-shell {
+  width: min(100% - 2rem, 1180px);
+  margin: 1rem auto 0;
+  padding: 1rem;
+  border: 1px solid var(--line, #d8d5cc);
+  border-radius: 0.75rem;
+  background: var(--paper, #fff);
+}
+
+.document-progress,
+.document-prev-next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.document-prev-next {
+  margin-top: 0.75rem;
+  justify-content: flex-start;
+}
+
+.document-page-index {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+  gap: 0.5rem;
+  max-height: 12rem;
+  overflow: auto;
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+}
+
+.document-page-index button {
+  width: 100%;
+  min-height: 3rem;
+  display: grid;
+  place-items: center;
+  gap: 0.1rem;
+  border: 1px solid var(--line, #d8d5cc);
+  border-radius: 0.5rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.document-page-index button[aria-current="page"] {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.document-page-index button[data-page-status="failed"] small {
+  font-weight: 700;
+}
+
+.document-session-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+
+.document-reader-loading {
+  width: 100%;
+  min-height: 50vh;
+}
+
+.document-reader-loading > p {
+  width: min(100% - 2rem, 1180px);
+  margin: 2rem auto;
+}
+
+@media (max-width: 640px) {
+  .document-navigation-shell {
+    width: min(100% - 1rem, 1180px);
+    padding: 0.75rem;
+  }
+
+  .document-page-index {
+    grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+  }
+}
