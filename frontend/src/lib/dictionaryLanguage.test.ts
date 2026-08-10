@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   DEFAULT_DICTIONARY_LANGUAGE,
@@ -9,10 +9,19 @@ import {
 
 const originalDescriptor = Object.getOwnPropertyDescriptor(window, "localStorage");
 
-afterEach(() => {
-  window.localStorage.clear();
-  vi.restoreAllMocks();
+function restoreLocalStorage() {
   if (originalDescriptor) Object.defineProperty(window, "localStorage", originalDescriptor);
+}
+
+beforeEach(() => {
+  restoreLocalStorage();
+  window.localStorage.clear();
+});
+
+afterEach(() => {
+  restoreLocalStorage();
+  vi.restoreAllMocks();
+  window.localStorage.clear();
 });
 
 describe("dictionary language preference", () => {
