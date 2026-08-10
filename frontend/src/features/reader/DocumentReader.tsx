@@ -149,13 +149,19 @@ export function DocumentReader({
     void (async () => {
       let protectedImage: string | null = null;
       try {
-        const [loadedPage, loadedImage] = await Promise.all([
-          fetchDocumentPage(access, currentPageId, controller.signal),
-          fetchDocumentProtectedImage(access, currentPageId, controller.signal),
-        ]);
-        protectedImage = loadedImage;
+        const pagePromise = fetchDocumentPage(access, currentPageId, controller.signal);
+        const imagePromise = fetchDocumentProtectedImage(
+          access,
+          currentPageId,
+          controller.signal,
+        ).then((loadedImage) => {
+          protectedImage = loadedImage;
+          return loadedImage;
+        });
+        const [loadedPage, loadedImage] = await Promise.all([pagePromise, imagePromise]);
         if (generation !== requestGeneration.current || currentPageIdRef.current !== currentPageId) {
           URL.revokeObjectURL(loadedImage);
+          protectedImage = null;
           return;
         }
         setPage(loadedPage);
@@ -373,11 +379,13 @@ export function DocumentReader({
 
   if (!page || !imageUrl || !currentSummary?.resultAvailable) {
     const currentFailed = isFailedStatus(currentSummary?.status);
+    const loadError = currentSummary?.resultAvailable ? studyLanguageError : null;
+    const hasError = currentFailed || loadError !== null;
     return (
       <main id="conteudo" className="document-reader-loading">
         {navigation}
-        <p role={currentFailed ? "alert" : "status"}>
-          {currentFailed ? documentMessages.failedPage : documentMessages.processingPage}
+        <p role={hasError ? "alert" : "status"}>
+          {currentFailed ? documentMessages.failedPage : loadError ?? documentMessages.processingPage}
         </p>
       </main>
     );

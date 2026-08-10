@@ -2,16 +2,26 @@ import {
   ApiError,
   type DocumentSnapshot,
   type DocumentUploadData,
-  type JobStatus,
   type StudyPage,
   fetchDocumentPage,
   fetchDocumentSnapshot,
 } from "./api";
 
-const terminalStatuses = new Set<JobStatus>(["completed", "failed", "expired"]);
+const baseDelayMs = 600;
+const maxDelayMs = 5_000;
+
+function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(resolve, milliseconds);
+    signal.addEventListener("abort", () => {
+      window.clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    }, { once: true });
+  });
+}
 
 export function documentNeedsPolling(snapshot: DocumentSnapshot): boolean {
-  return snapshot.pages.some((page) => !terminalStatuses.has(page.status));
+  return snapshot.progress.processingPages > 0;
 }
 
 export async function waitForDocumentPageResult(
@@ -19,9 +29,9 @@ export async function waitForDocumentPageResult(
   pageId: string,
   signal: AbortSignal,
   onSnapshot: (snapshot: DocumentSnapshot) => void,
-  isSatisfied: (page: StudyPage) => boolean,
+  predicate: (page: StudyPage) => boolean,
 ): Promise<StudyPage> {
-  let delay = 600;
+  let attempt = 0;
   while (!signal.aborted) {
     const snapshot = await fetchDocumentSnapshot(access, signal);
     onSnapshot(snapshot);
@@ -30,9 +40,10 @@ export async function waitForDocumentPageResult(
 
     if (summary.status === "completed") {
       const page = await fetchDocumentPage(access, pageId, signal);
-      if (isSatisfied(page)) return page;
+      if (predicate(page)) return page;
       throw new ApiError("request_failed");
     }
+
     if (summary.status === "failed" || summary.status === "expired") {
       if (summary.resultAvailable) {
         const page = await fetchDocumentPage(access, pageId, signal);
@@ -41,22 +52,9 @@ export async function waitForDocumentPageResult(
       throw new ApiError(summary.status);
     }
 
-    await abortableDelay(delay, signal);
-    delay = Math.min(Math.round(delay * 1.6), 5_000);
+    const backoff = Math.min(baseDelayMs * 1.6 ** attempt, maxDelayMs);
+    attempt += 1;
+    await delay(backoff, signal);
   }
-  throw new DOMException("Operation aborted", "AbortError");
-}
-
-function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timeout = window.setTimeout(resolve, milliseconds);
-    signal.addEventListener(
-      "abort",
-      () => {
-        window.clearTimeout(timeout);
-        reject(new DOMException("Operation aborted", "AbortError"));
-      },
-      { once: true },
-    );
-  });
+  throw new DOMException("Aborted", "AbortError");
 }
