@@ -27,7 +27,10 @@ def main() -> int:
                 "file_size_bytes": args.dictionary.stat().st_size,
                 "load_seconds": round(elapsed, 6),
                 "max_rss_kib": max_rss_kib,
-                "method": "Python resource.getrusage(RUSAGE_SELF).ru_maxrss on Linux; one fresh process per pack",
+                "method": (
+                    "Python resource.getrusage(RUSAGE_SELF).ru_maxrss on Linux; "
+                    "one fresh process per pack"
+                ),
                 "path": str(args.dictionary),
             },
             sort_keys=True,
