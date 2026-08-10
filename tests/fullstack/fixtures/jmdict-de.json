@@ -1,0 +1,17 @@
+{
+  "converterVersion": "mangasensei-jmdict-v3",
+  "version": "fullstack-fixture-de",
+  "entries": [
+    {
+      "id": "jmdict-1467640",
+      "jlptLevel": "N5",
+      "forms": [
+        {
+          "lemma": "猫",
+          "reading": "ねこ",
+          "meanings": ["Katze"]
+        }
+      ]
+    }
+  ]
+}
