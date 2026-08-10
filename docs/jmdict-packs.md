@@ -121,6 +121,12 @@ loads German only on the first German request in that worker process, after reso
 the reviewed pinned pack. It keeps at most that one optional German pack; there is no unbounded or
 global cache and no runtime download of unpinned artifacts.
 
+Production Compose bootstrap materializes both reviewed pinned JSON artifacts in the shared JMdict
+volume before workers start. Provisioning the German file does not deserialize it into worker
+memory; the worker still verifies and loads `jmdict-de.json` only on the first German projection.
+The dedicated JMdict contract workflow validates this clean-volume bootstrap and verifies both
+artifacts through the same CLI integrity contract.
+
 The reviewed loader measurement gate previously observed substantial one-process residency (about
 862 MiB max RSS for English and about 545 MiB for German in the measured environment). Those
 measurements are implementation evidence, not product limits, and are why German is not eagerly
