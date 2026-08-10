@@ -143,28 +143,26 @@ jobs:
         run: |
           test ! -e .env
           cp .env.example .env
-          python - <<'PY'
+          python_image='python:3.11-slim-bookworm@sha256:d29f48a31a8b408ed19272ca1e7b10ebae13b240a27e862d3d4217c528e2e0c3'
+          database_password="$(docker run --rm "${python_image}" python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          capability_pepper="$(docker run --rm "${python_image}" python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          DATABASE_PASSWORD="${database_password}" CAPABILITY_PEPPER="${capability_pepper}" python - <<'PY'
           from pathlib import Path
-          import secrets
+          import os
 
           path = Path(".env")
           text = path.read_text(encoding="utf-8")
-          database_password = secrets.token_urlsafe(32)
-          capability_pepper = secrets.token_urlsafe(32)
           text = text.replace(
               "POSTGRES_PASSWORD=replace-with-a-long-random-password",
-              f"POSTGRES_PASSWORD={database_password}",
-          )
-          text = text.replace(
-              "postgresql+psycopg://mangasensei:replace-with-a-long-random-password@localhost:5432/mangasensei",
-              f"postgresql+psycopg://mangasensei:{database_password}@localhost:5432/mangasensei",
+              f"POSTGRES_PASSWORD={os.environ['DATABASE_PASSWORD']}",
           )
           text = text.replace(
               'MANGASENSEI_CAPABILITY_PEPPERS=["replace-with-a-long-random-pepper"]',
-              f'MANGASENSEI_CAPABILITY_PEPPERS=["{capability_pepper}"]',
+              f'MANGASENSEI_CAPABILITY_PEPPERS=["{os.environ["CAPABILITY_PEPPER"]}"]',
           )
-          assert "replace-with-a-long-random-password" not in text
-          assert "replace-with-a-long-random-pepper" not in text
+          assert "POSTGRES_PASSWORD=replace-with-a-long-random-password" not in text
+          assert 'MANGASENSEI_CAPABILITY_PEPPERS=["replace-with-a-long-random-pepper"]' not in text
+          assert "postgresql+psycopg://mangasensei:replace-with-a-long-random-password@localhost:5432/mangasensei" in text
           assert "GOOGLE_API_KEY=\n" in text
           path.write_text(text, encoding="utf-8")
           PY
