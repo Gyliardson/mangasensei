@@ -3,6 +3,7 @@ name: Media Capture Contract
 on:
   pull_request:
     paths:
+      - "frontend/playwright.config.ts"
       - "frontend/playwright.media.config.ts"
       - "frontend/e2e/media/**"
       - "scripts/media/**"
