@@ -19,7 +19,7 @@ Um ambiente de estudo focado em privacidade para transformar páginas de mangá 
 
 O MangaSensei extrai texto japonês de páginas de mangá, enriquece o resultado com dados linguísticos locais e apresenta tudo em um leitor responsivo sem alterar a imagem original. Os pesos dos modelos de OCR e os dados derivados do JMdict permanecem locais e não são commitados nem incluídos na imagem distribuível. Gemini é opcional.
 
-Conteúdo japonês pode ser estudado com **explicações contextuais em Português (Brasil) (`pt-BR`) ou Inglês (`en`)**. O idioma de estudo é explícito e independente do locale atual da interface, que continua em português. Os significados determinísticos do JMdict local permanecem em inglês nos dois modos, e trocar apenas o idioma de estudo reaproveita OCR e análise linguística japonesa já concluídos. Consulte o [contrato de idiomas de estudo](docs/study-languages.md) para os limites exatos.
+Conteúdo japonês pode ser estudado com **explicações contextuais em Português (Brasil) (`pt-BR`) ou Inglês (`en`)**. O idioma de estudo é explícito e independente do locale da interface salvo no navegador. A interface suporta Inglês (`en`) e Português (Brasil) (`pt-BR`), usa inglês por padrão em estado novo ou inválido do navegador e persiste localmente uma escolha explícita. Os significados determinísticos do JMdict local permanecem em inglês nos dois modos de estudo, e trocar apenas o idioma de estudo reaproveita OCR e análise linguística japonesa já concluídos. Consulte o [contrato de idiomas de estudo](docs/study-languages.md) para os limites exatos.
 
 A versão atual de desenvolvimento está registrada em [`VERSION`](VERSION).
 
@@ -46,7 +46,7 @@ A versão atual de desenvolvimento está registrada em [`VERSION`](VERSION).
 | OCR | Subconjunto local do Manga Image Translator com modelos verificados por checksum |
 | Linguística | Tokenização Sudachi e índice JMdict normalizado em inglês gerado a partir de fonte verificada |
 | Gemini | Explicações contextuais estruturadas opcionais em `pt-BR`/`en`, com controle de orçamento e `store=False` |
-| Leitor | SPA React com Blob autenticado, overlays SVG responsivos, furigana, preferência de idioma de estudo e cartões de vocabulário |
+| Leitor | SPA React com Blob autenticado, overlays SVG responsivos, furigana, preferências independentes de locale da interface `en`/`pt-BR` e idioma de estudo, e cartões de vocabulário |
 | Operação | Fila PostgreSQL, recuperação por leases, retenção, readiness e métricas |
 
 ## Arquitetura
