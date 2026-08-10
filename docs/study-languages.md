@@ -1,52 +1,35 @@
-# Study-language contract
+# Language-axis contract
 
-MangaSensei currently analyzes **Japanese manga only**. Study language controls learner-facing language-dependent content; it does not change the manga content language, OCR engine, reading order, Sudachi tokenization, or deterministic Japanese analysis.
+MangaSensei currently analyzes **Japanese manga only**. Content language, study language, dictionary language, and UI locale are separate product axes. Changing one does not silently rewrite another after an explicit user preference.
 
 ## Language model
-
-Three concepts are intentionally separate:
 
 | Concept | Current contract |
 | --- | --- |
 | Content / study-target language | `ja` only |
 | Study / explanation language | `pt-BR` (default) or `en` |
-| UI locale | Independent from study language; the current application UI remains Portuguese (`pt-BR`) |
+| Dictionary / deterministic JMdict language | requested `en` (default), `de`, or `pt-BR` |
+| UI locale | `en` (fresh-browser default) or `pt-BR` |
 
-The API does not infer study language from browser locale, `Accept-Language`, UI copy, nationality, or any other ambient signal. The browser exposes an explicit study-language preference instead.
+Valid combinations therefore include UI English + study Portuguese + dictionary German, UI Portuguese + study English + dictionary English, and UI English + study Portuguese + a `pt-BR` dictionary request whose deterministic effective meanings are English fallback.
 
-## Browser preference and reader
+The API and browser do not infer study or dictionary language from browser locale, `Accept-Language`, nationality, the other language axis, or ambient signals. Content remains Japanese.
 
-The upload screen and reader expose `Português (Brasil)` and `Inglês` as study-language choices. The preference is stored locally in the browser under a validated two-value contract. Missing, malformed, or inaccessible browser storage falls back to `pt-BR` without breaking the application.
+## Browser preferences and reader
 
-Browser storage is a convenience for the next request; it is not the source of truth for already generated content. The reader displays the effective `studyLanguage` returned by the persisted completed result. If a language-only reprocessing request fails, the previous completed result remains visible and the browser selector is restored to that effective language rather than pretending the failed preference was generated successfully.
+Study language and dictionary language are explicit, independently validated browser-local preferences. Missing, malformed, stale, or inaccessible study-language storage falls back to `pt-BR`; dictionary-language storage falls back to `en`. Storage failures do not break the application.
 
-Study language is part of the reader's **study preferences** alongside furigana. It is intentionally separate from navigation and from page-presentation controls such as fit and zoom.
+The reader groups study language, dictionary language, and furigana as study preferences while keeping navigation and page-presentation controls such as fit and zoom separate. UI locale remains independently selectable in the application chrome.
 
-The document/UI locale remains `pt-BR` when English study content is selected. Contextual English output is marked with `lang="en"`, Japanese text with `lang="ja"`, and deterministic local JMdict meanings with `lang="en"`.
+Browser storage is a convenience for future requests. Persisted completed page data remains authoritative for what is currently displayed. A language reprojection never relabels the previous completed result as if the requested replacement had already succeeded.
 
-## Upload API
+While either reader-initiated study-language or dictionary-language reprocessing is active, the other language mutation is disabled so the two one-active-job operations cannot race. Stopping client polling is not backend cancellation; the queued job may continue.
 
-`POST /api/v1/pages` accepts an optional multipart form field named `studyLanguage` in addition to the image. Supported values are `pt-BR` and `en`. Omitting the field preserves backward compatibility and selects `pt-BR`.
+## Study language
 
-The upload response includes the effective `studyLanguage` associated with the queued job. Unsupported or malformed values are rejected by the normal request-validation contract; they are not silently mapped to another language.
+`POST /api/v1/pages` accepts an optional multipart `studyLanguage` field with `pt-BR` or `en`. Omitting it preserves the `pt-BR` default. Study language controls contextual translation, explanation, and grammar output. It does not change OCR, reading order, Sudachi tokenization, Japanese lexical acquisition, canonical dictionary identity, UI locale, or deterministic dictionary language.
 
-Replaying an upload idempotency key with a different study language is treated as an idempotency conflict rather than reinterpreting the original request.
-
-## Page result metadata
-
-`GET /api/v1/pages/{page_id}` identifies the language contract of the **persisted completed result** with:
-
-- `contentLanguage`: currently always `ja`;
-- `studyLanguage`: `pt-BR` or `en` for the completed learner-facing result;
-- `dictionaryLanguage`: currently `en`, reflecting the reviewed local JMdict dataset used by MangaSensei.
-
-This metadata belongs to the persisted result. A browser preference change cannot silently reinterpret an existing English result as Portuguese or vice versa.
-
-When a newer reprocessing attempt is pending or fails, `resultAvailable` may remain true and the API continues to expose the previous completed result together with that result's effective language metadata. The browser keeps rendering that completed result while a requested language replacement is still being generated.
-
-## Reprocessing a study language
-
-`POST /api/v1/pages/{page_id}/reprocess` keeps its existing page capability and idempotency requirements. An optional JSON body can request a study language:
+A study-language-only request uses the existing protected and idempotent reprocess endpoint:
 
 ```json
 {
@@ -54,61 +37,63 @@ When a newer reprocessing attempt is pending or fails, `resultAvailable` may rem
 }
 ```
 
-When the page already has a completed analysis and only the study language is explicitly changed, MangaSensei creates a language-reprocessing job that reuses the completed language-independent work. It does not re-upload or decode the image and does not rerun OCR, reading order, Sudachi, or the persisted deterministic Japanese linguistic analysis merely to change the explanation language.
+The language-only path reuses completed language-independent work instead of rerunning OCR, reading order, Sudachi, or the persisted deterministic Japanese linguistic analysis merely to change the explanation language. Optional Gemini receives the explicit validated study language in its structured prompt; Gemini remains optional.
 
-If no study language is supplied, reprocessing preserves the latest completed result's study language when available; pre-language/default flows remain `pt-BR`.
+## Dictionary language
 
-The endpoint keeps the same authorization boundary: language is request/result metadata, never an authorization input. Reusing one idempotency key for a different reprocessing mode or study language returns an idempotency conflict.
+Dictionary language controls only the persisted localized JMdict projection over the already-resolved canonical `LexicalFormIdentity`. It does not change OCR, Sudachi/tokenization, lexical span acquisition, Japanese JMdict candidate selection, study language, UI locale, content language, or Gemini vocabulary identity.
 
-## Gemini boundary
+The browser exposes `English`, `German`, and `Portuguese (Brazil)` as requested dictionary languages. Fresh or invalid browser state defaults to English to preserve the established deterministic local dictionary behavior.
 
-Gemini remains optional. When configured, the validated study language is included explicitly in the structured page-study prompt contract. The request digest covers that exact prompt, so changing study language also changes the provider request digest truthfully.
+A dictionary-language-only request uses the same protected and idempotent reprocess endpoint with exactly one language axis:
 
-The privacy boundary is unchanged: the original manga image and local JMdict dataset/meanings are not sent to Gemini. Optional enrichment receives OCR text plus the minimum region-scoped lexical candidate fields required by the current contract.
+```json
+{
+  "dictionaryLanguage": "de"
+}
+```
 
-With Gemini disabled, Japanese OCR and linguistic analysis continue locally. Contextual translation/explanation fields may be absent because MangaSensei does not fabricate deterministic multilingual contextual content.
+Supported requested values are `en`, `de`, and `pt-BR`. The dictionary-only worker reuses the latest completed linguistic run and persisted lexical matches. It performs no OCR, Sudachi/lexical acquisition, or Gemini call.
 
-## Deterministic local vocabulary
+The upload endpoint continues to create the normal initial English dictionary projection. After that completed result becomes readable, a browser whose stored dictionary preference differs from the persisted requested language starts dictionary-only reprojection. The completed result remains visible while this happens.
 
-The currently reviewed/pinned JMdict pipeline is English-backed. Its local meanings therefore remain deterministic English dictionary meanings even when the selected study language is `pt-BR`.
+On successful reprojection, the reader fetches the newly completed page and persists the requested language reported by that result. On failure, the previous completed page stays visible and the browser selector/storage return to the requested dictionary language of that still-visible result.
 
-Dictionary meaning and contextual translation/explanation are separate concepts:
+## Requested versus effective dictionary language
 
-- JMdict supplies deterministic local lexical meanings and stable dictionary identifiers;
-- optional Gemini supplies language-dependent contextual translation, explanation, and grammar presentation.
+The legacy page-level `dictionaryLanguage: "en"` remains for compatibility and is not the authoritative requested language for new clients. New page responses may expose `requestedDictionaryLanguage`, `fallbackDictionaryLanguage`, and `dictionarySources`; vocabulary items may expose `effectiveLanguage`, `fallbackUsed`, `fallbackReason`, and `sourceRef`.
 
-MangaSensei does not introduce or synthesize a Portuguese deterministic dictionary source solely to make the study-language contract appear uniform.
+The browser renders vocabulary meaning `lang` metadata from each item's **effective** language. Japanese lemma/reading remain `lang="ja"`. A legacy response without the newer projection fields is interpreted only as the historical English case: requested English, effective English, no fallback.
+
+Fallback semantics are deterministic and exact-form preserving:
+
+1. `en` requested: effective English, no fallback.
+2. `de` requested with an exact German hit: effective German.
+3. `de` requested when the exact canonical entry/form/glosses are unavailable: the same canonical identity/form falls back per item to English. German and English senses are never merged or aligned by ordinal.
+4. `pt-BR` requested: the request remains `pt-BR`, but deterministic meanings are effective English with unsupported-request fallback provenance because there is no reviewed word-level Portuguese JMdict pack.
+
+The reader identifies the requested dictionary language at panel level, marks English fallback items explicitly, and explains the `pt-BR` fallback without presenting English meanings as Portuguese. It uses `dictionarySources` and each item's `sourceRef` for compact JMdict/effective-language provenance rather than reproducing raw digests on every card.
+
+See [Reviewed JMdict language packs](jmdict-packs.md) for pack integrity, exact-form resolution, fallback semantics, and runtime loading details.
 
 ## Persistence and migration
 
-Existing completed analyses created before the explicit study-language schema are migrated as:
+Existing historical results retain their established interpretation: content `ja`, study `pt-BR`, dictionary requested/effective English, and no fallback. New dictionary projections are immutable views over the persisted canonical linguistic run; they do not rewrite lexical identity.
 
-- content language: `ja`;
-- study language: `pt-BR`;
-- dictionary language: `en`.
+When a newer language job is pending or fails, `resultAvailable` may remain true and protected page reads continue to expose the last completed result. Page retention remains the governing lifecycle for jobs, results, linguistic data, dictionary projections, and image storage.
 
-This preserves the pre-existing Portuguese study-flow interpretation while retaining the English JMdict provenance.
+## Privacy boundary
 
-Study-language-only results can reference an earlier linguistic run. Page retention remains the governing lifecycle: deleting an expired page still cascades through the related jobs/results and their reused analysis graph according to the existing retention model.
+The original manga image, local JMdict data, and deterministic dictionary meanings are not sent to Gemini. Optional enrichment receives OCR text plus the minimum region-scoped lexical candidate fields required by the current contract. With Gemini disabled, Japanese OCR, deterministic linguistic analysis, and local JMdict projection continue to work; contextual translation/explanation may be absent.
 
 ## Assurance
 
-The deterministic unit/integration layers verify:
+Deterministic unit/component coverage verifies independent browser preferences, malformed/storage-failure fallback, exact dictionary reprocess payload/capability/idempotency behavior, retained previous results during pending/failure, requested-versus-effective language presentation, German direct and mixed English fallback, `pt-BR` requested with effective English, legacy English compatibility, and preserved multi-token lexical rendering.
 
-- `pt-BR` is the default and unsupported study-language values are rejected;
-- browser preference persistence has deterministic fallback for malformed or inaccessible storage;
-- the Gemini prompt contains the explicit validated study language and its persisted request digest remains tied to the exact prompt;
-- a real pre-language database state with a completed analysis upgrades to `pt-BR` result metadata without losing the existing linguistic run;
-- `pt-BR` → `en` language reprocessing creates a new study result while retaining exactly one OCR run and one linguistic run;
-- the previously completed result and its language remain readable while the new language job is pending;
-- English study metadata remains valid with Gemini disabled and deterministic local JMdict vocabulary still works;
-- normal analysis jobs cannot use the direct state transitions reserved for language-only reuse jobs;
-- mocked browser coverage exercises desktop/mobile/accessibility behavior and verifies that UI locale, study language, Japanese content and English dictionary meanings remain distinct.
+Mocked Playwright covers desktop/mobile/accessibility behavior, keyboard-operable language controls, persistence across re-entry, German and fallback presentation, UI/study/dictionary independence, furigana, fit/zoom, and focus behavior.
 
-The required real full-stack Playwright flow performs an actual browser upload against FastAPI, PostgreSQL and the queue/worker, receives a persisted `pt-BR` contextual result, requests `en` through the real reprocess endpoint and capability, waits for the worker, then reads the newly persisted English result back through the application. MangaSensei API requests are not intercepted. Heavy OCR inference and the paid Gemini network call are replaced only at their external boundaries with deterministic fixtures; API, migrations, capabilities, queue transitions, Sudachi/JMdict processing, persistence, reprocessing and browser behavior remain real.
+The required real full-stack Playwright flow runs against FastAPI, PostgreSQL, real migrations, page capabilities, queue/fencing, and the real dictionary-projection worker. Heavy OCR and paid Gemini network boundaries are deterministically replaced. The flow proves browser `en` -> `de` dictionary reprojection through persisted localized JMdict data without downloading the production review packs.
 
 ## Current product boundary
 
-This feature does **not** add English, Portuguese, Spanish, or generic multilingual manga OCR. Content remains Japanese and automatic content-language detection is not performed. It also does not translate or replace text inside the manga image.
-
-The current browser UI remains Portuguese while study/explanation language can independently be Portuguese (Brazil) or English. Deterministic local JMdict meanings remain English regardless of the selected study language, and optional contextual translation/explanation remains absent when Gemini is disabled.
+This feature does **not** add multilingual manga OCR, content-language detection, Spanish dictionary packs, generated Portuguese dictionary translations, or Gemini translation of deterministic dictionary meanings. Content remains Japanese and the original image is never replaced with translated text.
