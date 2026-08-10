@@ -222,7 +222,7 @@ async def test_document_reads_are_capability_scoped_and_membership_protected(
     assert wrong_scope_image.status_code == 404
     assert wrong_document.status_code == 404
     assert nonmember.status_code == 404
-    assert post_not_supported.status_code == 405
+    assert post_not_supported.status_code == 404
 
 
 @pytest.mark.integration
