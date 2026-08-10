@@ -74,7 +74,8 @@ def main() -> None:
         else:
             url = _validated_font_url(font["tag"], font["path"])
             print(f"downloading {font['id']} from pinned upstream tag {font['tag']}")
-            # The URL is constructed from and validated against the single reviewed HTTPS host above.
+            # The URL is constructed from and validated against the single reviewed
+            # HTTPS host above before this deliberately narrow network operation.
             with urllib.request.urlopen(url, timeout=120) as response, target.open(  # noqa: S310
                 "wb"
             ) as out:

@@ -41,7 +41,9 @@ def chromium_version() -> str:
     if node is None:
         raise SystemExit("node executable is required to resolve the Playwright Chromium version")
     try:
-        result = subprocess.run(
+        # `node` is resolved to an executable path and every remaining argument is a
+        # source-controlled constant. No untrusted input reaches this subprocess.
+        result = subprocess.run(  # noqa: S603
             [
                 node,
                 "-e",
