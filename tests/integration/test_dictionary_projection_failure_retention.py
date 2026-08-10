@@ -65,7 +65,7 @@ async def test_failed_dictionary_projection_keeps_prior_result_and_retention_cas
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         upload = await client.post(
             "/api/v1/pages",
-            headers={"Idempotency-Key": "key-a"},
+            headers={"Idempotency-Key": "dictionary-flow-upload"},
             files={
                 "image": ("page.png", _image(), "image/png"),
                 "studyLanguage": (None, "en"),
@@ -88,7 +88,7 @@ async def test_failed_dictionary_projection_keeps_prior_result_and_retention_cas
             f"/api/v1/pages/{data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "key-b",
+                "Idempotency-Key": "dictionary-flow-failure",
             },
             json={"dictionaryLanguage": "de"},
         )
