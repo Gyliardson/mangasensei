@@ -92,6 +92,19 @@ function collectDocumentImageBodies(page: Page): Map<string, Promise<Buffer>> {
   return bodies;
 }
 
+async function waitForImageBody(
+  bodies: Map<string, Promise<Buffer>>,
+  pageId: string,
+): Promise<Buffer> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const body = bodies.get(pageId);
+    if (body) return body;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`protected image was not fetched for ${pageId}`);
+}
+
 test("creates, partially reads, navigates and reprojects a real multipage document", async ({
   page,
   request,
@@ -145,11 +158,11 @@ test("creates, partially reads, navigates and reprojects a real multipage docume
   );
   expect(partial.progress.failedPages).toBe(0);
 
-  await expect(page.getByRole("button", { name: "Page 1, Ready" })).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  await expect(page.getByRole("button", { name: "Page 2, Processing" })).toBeVisible();
+  const pageIndex = page.locator(".document-page-index button");
+  await expect(pageIndex.nth(0)).toHaveAttribute("aria-current", "page");
+  await expect(pageIndex.nth(0)).toHaveAttribute("data-page-status", "readable");
+  await expect(pageIndex.nth(1)).toHaveAttribute("data-page-status", "processing");
+  await expect(page.getByText("1 / 2 pages complete · 1 processing · 0 failed")).toBeVisible();
   await expect(page.getByRole("button", { name: "Region 1: 猫です" })).toBeVisible({
     timeout: 20_000,
   });
@@ -158,7 +171,7 @@ test("creates, partially reads, navigates and reprojects a real multipage docume
   const secondPageId = document.pages[1]?.pageId;
   expect(firstPageId).toBeTruthy();
   expect(secondPageId).toBeTruthy();
-  expect(await protectedImages.get(firstPageId!)!).toEqual(bluePage);
+  expect(await waitForImageBody(protectedImages, firstPageId!)).toEqual(bluePage);
 
   await waitForDocument(
     request,
@@ -166,11 +179,11 @@ test("creates, partially reads, navigates and reprojects a real multipage docume
     document.capabilities.readDocument,
     (snapshot) => snapshot.progress.completedPages === 2 && snapshot.progress.processingPages === 0,
   );
-  await expect(page.getByRole("button", { name: "Page 2, Ready" })).toBeVisible({ timeout: 10_000 });
+  await expect(pageIndex.nth(1)).toHaveAttribute("data-page-status", "readable", { timeout: 10_000 });
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByText("Page 2 of 2")).toBeVisible();
   await expect(page.getByRole("button", { name: "Region 1: 猫です" })).toBeVisible();
-  expect(await protectedImages.get(secondPageId!)!).toEqual(redPage);
+  expect(await waitForImageBody(protectedImages, secondPageId!)).toEqual(redPage);
 
   const dictionaryMutationPromise = page.waitForResponse((response) => {
     const path = new URL(response.url()).pathname;
