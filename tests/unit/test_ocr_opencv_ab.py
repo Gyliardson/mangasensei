@@ -1,24 +1,31 @@
 from __future__ import annotations
 
 import copy
+import importlib
 import runpy
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import pytest
 
 from mangasensei.ocr.diagnostics.opencv_ab import (
-    array_delta,
-    array_descriptor,
-    array_fingerprint,
     compare_probe_roots,
     safe_comparison_summary,
-    source_zone_statistics,
-    spatially_match,
+    semantic_equivalence_failures,
+)
+from mangasensei.ocr.diagnostics.opencv_artifacts import (
     validate_artifact_root,
     write_fixture_artifact,
     write_fixture_notice,
     write_probe_manifest,
+)
+from mangasensei.ocr.diagnostics.opencv_matching import (
+    array_delta,
+    array_descriptor,
+    array_fingerprint,
+    source_zone_statistics,
+    spatially_match,
 )
 
 
@@ -82,6 +89,62 @@ def test_spatial_match_maximizes_valid_pair_count_before_overlap() -> None:
         (0, 1),
         (1, 0),
     )
+
+
+def test_spatial_match_selects_global_weight_optimum() -> None:
+    baseline = (
+        {"bbox": (0.0, 0.0, 4.0, 10.0)},
+        {"bbox": (0.0, 0.0, 9.0, 10.0)},
+    )
+    candidate = (
+        {"bbox": (0.0, 0.0, 6.0, 10.0)},
+        {"bbox": (1.0, 0.0, 5.0, 10.0)},
+    )
+
+    result = spatially_match(baseline, candidate)
+
+    assert tuple((match.baseline_index, match.candidate_index) for match in result.matches) == (
+        (0, 1),
+        (1, 0),
+    )
+
+
+def test_spatial_match_rejects_geometry_only_ties() -> None:
+    duplicate_geometry = (
+        {"bbox": (0.0, 0.0, 10.0, 10.0)},
+        {"bbox": (0.0, 0.0, 10.0, 10.0)},
+    )
+
+    with pytest.raises(ValueError, match="ambiguous spatial matching"):
+        spatially_match(duplicate_geometry, tuple(reversed(duplicate_geometry)))
+
+
+def test_spatial_match_tie_break_is_independent_of_candidate_order() -> None:
+    baseline = (
+        {"bbox": (0.0, 0.0, 10.0, 10.0)},
+        {"bbox": (10.0, 0.0, 20.0, 10.0)},
+    )
+    candidate = (
+        {"bbox": (5.0, -1.0, 15.0, 9.0)},
+        {"bbox": (5.0, 1.0, 15.0, 11.0)},
+    )
+
+    forward = spatially_match(baseline, candidate)
+    reversed_candidates = tuple(reversed(candidate))
+    reversed_result = spatially_match(baseline, reversed_candidates)
+    forward_geometry = {
+        (baseline[match.baseline_index]["bbox"], candidate[match.candidate_index]["bbox"])
+        for match in forward.matches
+    }
+    reversed_geometry = {
+        (
+            baseline[match.baseline_index]["bbox"],
+            reversed_candidates[match.candidate_index]["bbox"],
+        )
+        for match in reversed_result.matches
+    }
+
+    assert reversed_geometry == forward_geometry
 
 
 def test_array_delta_characterizes_numeric_change_without_pixel_exact_policy() -> None:
@@ -253,6 +316,22 @@ def test_probe_artifacts_compare_spatial_stages_and_numeric_arrays(tmp_path: Pat
     assert comparison["semantic_text_change_count"] == 0
     assert comparison["unmatched_detector_candidates"] == 0
     assert comparison["unmatched_final_regions"] == 0
+    assert comparison["final_bbox_change_count"] == 1
+    assert comparison["final_polygon_value_change_count"] == 1
+    assert semantic_equivalence_failures(comparison) == {
+        "final_bbox_change_count": 1,
+        "final_polygon_value_change_count": 1,
+    }
+    assert semantic_equivalence_failures(
+        {
+            **comparison,
+            "final_bbox_change_count": 0,
+            "final_polygon_value_change_count": 0,
+            "semantic_text_change_count": 1,
+        }
+    ) == {
+        "semantic_text_change_count": 1,
+    }
     fixture_comparison = comparison["fixtures"][0]
     assert fixture_comparison["detector"]["matched_count"] == 2
     assert fixture_comparison["recognizer_accepted"]["matched_count"] == 1
@@ -263,6 +342,12 @@ def test_probe_artifacts_compare_spatial_stages_and_numeric_arrays(tmp_path: Pat
     assert fixture_comparison["recognizer_crops"]["matches"][0]["delta"]["changed_values"] == 1
     assert fixture_comparison["recognizer_inputs"]["unmatched_count"] == 0
     assert fixture_comparison["recognizer_inputs"]["matches"][0]["delta"]["changed_values"] == 1
+    with pytest.raises(ValueError, match="current clean checkout"):
+        compare_probe_roots(
+            baseline_root,
+            candidate_root,
+            expected_repository_sha="different-repository-sha",
+        )
 
 
 def test_probe_comparison_rejects_different_source_or_model_inputs(tmp_path: Path) -> None:
@@ -336,6 +421,65 @@ def test_probe_comparison_rejects_runtime_drift_and_tampered_artifacts(
         compare_probe_roots(baseline_root, candidate_root)
 
 
+def test_schema_two_requires_complete_integrity_evidence(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    baseline_root = repository / "var" / "ocr-opencv-ab" / "opencv-4"
+    candidate_root = repository / "var" / "ocr-opencv-ab" / "opencv-5"
+    baseline_entry = write_fixture_artifact(
+        baseline_root,
+        fixture_file="v01/synthetic.jpg",
+        record=_fixture_record(),
+        arrays=_fixture_arrays(),
+    )
+    candidate_entry = write_fixture_artifact(
+        candidate_root,
+        fixture_file="v01/synthetic.jpg",
+        record=_fixture_record(),
+        arrays=_fixture_arrays(),
+    )
+    write_probe_manifest(
+        baseline_root,
+        metadata=_schema_two_probe_metadata("4.14.0.94"),
+        fixtures=(baseline_entry,),
+    )
+    write_probe_manifest(
+        candidate_root,
+        metadata=_schema_two_probe_metadata("5.0.0.93"),
+        fixtures=(candidate_entry,),
+    )
+
+    assert compare_probe_roots(baseline_root, candidate_root)["fixture_count"] == 1
+
+    incomplete_entry = {
+        key: value for key, value in candidate_entry.items() if key != "arrays_sha256"
+    }
+    write_probe_manifest(
+        candidate_root,
+        metadata=_schema_two_probe_metadata("5.0.0.93"),
+        fixtures=(incomplete_entry,),
+    )
+    with pytest.raises(ValueError, match="missing required paths"):
+        compare_probe_roots(baseline_root, candidate_root)
+
+
+def test_probe_manifest_rejects_empty_fixture_evidence(tmp_path: Path) -> None:
+    baseline_root = tmp_path / "var" / "ocr-opencv-ab" / "opencv-4"
+    candidate_root = tmp_path / "var" / "ocr-opencv-ab" / "opencv-5"
+    write_probe_manifest(
+        baseline_root,
+        metadata=_probe_metadata("4.14.0.94"),
+        fixtures=(),
+    )
+    write_probe_manifest(
+        candidate_root,
+        metadata=_probe_metadata("5.0.0.93"),
+        fixtures=(),
+    )
+
+    with pytest.raises(ValueError, match="fixture_count"):
+        compare_probe_roots(baseline_root, candidate_root)
+
+
 def test_probe_comparison_reports_final_angle_and_polygon_presence_changes(
     tmp_path: Path,
 ) -> None:
@@ -375,6 +519,56 @@ def test_probe_comparison_reports_final_angle_and_polygon_presence_changes(
 
     assert final_comparison["angle_change_count"] == 1
     assert final_comparison["polygon_presence_change_count"] == 1
+    assert comparison["final_angle_change_count"] == 1
+    assert comparison["final_polygon_presence_change_count"] == 1
+    assert semantic_equivalence_failures(comparison) == {
+        "final_angle_change_count": 1,
+        "final_polygon_presence_change_count": 1,
+    }
+
+
+def test_probe_comparison_gates_final_polygon_shape_changes(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    baseline_root = repository / "var" / "ocr-opencv-ab" / "opencv-4"
+    candidate_root = repository / "var" / "ocr-opencv-ab" / "opencv-5"
+    baseline_record = _fixture_record()
+    baseline_final = baseline_record["final_regions"][0]
+    candidate_record = {
+        **baseline_record,
+        "final_regions": [
+            {
+                **baseline_final,
+                "polygon": [*baseline_final["polygon"], [15, 15]],
+            }
+        ],
+    }
+    baseline_entry = write_fixture_artifact(
+        baseline_root,
+        fixture_file="v01/synthetic.jpg",
+        record=baseline_record,
+        arrays=_fixture_arrays(),
+    )
+    candidate_entry = write_fixture_artifact(
+        candidate_root,
+        fixture_file="v01/synthetic.jpg",
+        record=candidate_record,
+        arrays=_fixture_arrays(),
+    )
+    write_probe_manifest(
+        baseline_root,
+        metadata=_probe_metadata("4.14.0.94"),
+        fixtures=(baseline_entry,),
+    )
+    write_probe_manifest(
+        candidate_root,
+        metadata=_probe_metadata("5.0.0.93"),
+        fixtures=(candidate_entry,),
+    )
+
+    comparison = compare_probe_roots(baseline_root, candidate_root)
+
+    assert comparison["final_polygon_value_change_count"] == 1
+    assert semantic_equivalence_failures(comparison) == {"final_polygon_value_change_count": 1}
 
 
 def test_generated_fixture_notice_preserves_terms_and_artifact_warning(tmp_path: Path) -> None:
@@ -402,6 +596,66 @@ def test_opencv_ab_cli_exposes_separate_probe_and_compare_commands() -> None:
 
     assert "probe" in help_text
     assert "compare" in help_text
+    historical = parser.parse_args(
+        [
+            "compare",
+            "--baseline",
+            "baseline",
+            "--candidate",
+            "candidate",
+            "--output",
+            "comparison.json",
+            "--allow-historical",
+        ]
+    )
+    assert historical.allow_historical is True
+
+
+def test_runtime_capture_installs_and_restores_real_vendor_boundaries() -> None:
+    script = Path(__file__).parents[2] / "scripts" / "ocr_opencv_ab.py"
+    namespace = runpy.run_path(str(script), run_name="ocr_opencv_ab_runtime_test")
+    runtime_capture_type = namespace["_RuntimeCapture"]
+    detector_module = importlib.import_module(
+        "mangasensei.ocr.vendor.manga_image_translator.manga_translator.detection.default"
+    )
+    imgproc = importlib.import_module(
+        "mangasensei.ocr.vendor.manga_image_translator.manga_translator.detection."
+        "default_utils.imgproc"
+    )
+    recognizer_boundary = importlib.import_module("mangasensei.ocr.adapter.recognizer_48px")
+
+    class Model:
+        def infer_beam_batch_tensor(self, *_args: Any, **_kwargs: Any) -> None:
+            return None
+
+    class Recognizer:
+        model = Model()
+
+    originals = (
+        imgproc.resize_aspect_ratio,
+        detector_module.det_batch_forward_default,
+        recognizer_boundary._RecognitionQuadrilateral.get_transformed_region,
+    )
+    capture = runtime_capture_type(Recognizer())
+
+    def exercise_patched_boundaries() -> None:
+        with capture.installed():
+            assert imgproc.resize_aspect_ratio is not originals[0]
+            assert detector_module.det_batch_forward_default is not originals[1]
+            assert (
+                recognizer_boundary._RecognitionQuadrilateral.get_transformed_region
+                is not originals[2]
+            )
+            assert "infer_beam_batch_tensor" in vars(capture.recognizer.model)
+            raise RuntimeError("injected failure")
+
+    with pytest.raises(RuntimeError, match="injected failure"):
+        exercise_patched_boundaries()
+
+    assert imgproc.resize_aspect_ratio is originals[0]
+    assert detector_module.det_batch_forward_default is originals[1]
+    assert recognizer_boundary._RecognitionQuadrilateral.get_transformed_region is originals[2]
+    assert "infer_beam_batch_tensor" not in vars(capture.recognizer.model)
 
 
 def _fixture_record(
@@ -461,9 +715,46 @@ def _probe_metadata(opencv_distribution: str) -> dict[str, object]:
             "optimized": True,
         },
         "runtime": {"python": "3.11.9", "numpy": "2.4.6"},
+        "fixture_count": 1,
         "fixture_manifest_sha256": "fixture-manifest-sha",
         "model_manifest_sha256": "model-manifest-sha",
         "ocr_config_digest": "ocr-config-digest",
+    }
+
+
+def _schema_two_probe_metadata(opencv_distribution: str) -> dict[str, object]:
+    metadata = _probe_metadata(opencv_distribution)
+    return {
+        **metadata,
+        "schema_version": 2,
+        "runtime": {
+            "python": "3.11.9",
+            "python_implementation": "CPython",
+            "platform": "test-platform",
+            "machine": "test-machine",
+            "numpy": "2.4.6",
+            "torch": "2.13.0",
+            "pillow": "12.0.0",
+            "networkx": "3.6.1",
+            "pyclipper": "1.4.0",
+            "shapely": "2.1.2",
+            "torchvision": "0.24.0",
+            "torch_threads": 4,
+            "torch_interop_threads": 4,
+        },
+        "opencv": {
+            **cast(dict[str, object], metadata["opencv"]),
+            "binary_sha256": ("4" if opencv_distribution.startswith("4") else "5") * 64,
+            "opencl": False,
+        },
+        "model_files": [
+            {
+                "filename": "model.bin",
+                "sha256": "a" * 64,
+                "size_bytes": 1,
+            }
+        ],
+        "source_files": {"mangasensei/ocr/adapter.py": "b" * 64},
     }
 
 

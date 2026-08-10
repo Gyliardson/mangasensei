@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import ctypes
 import hashlib
+import importlib
 import importlib.metadata
 import json
 import os
@@ -15,10 +16,11 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -35,28 +37,30 @@ from mangasensei.ocr.adapter.manga_image_translator import (
     region_from_upstream,
 )
 from mangasensei.ocr.diagnostics.opencv_ab import (
-    array_descriptor,
-    array_fingerprint,
     compare_probe_roots,
     safe_comparison_summary,
-    source_zone_statistics,
+    semantic_equivalence_failures,
+)
+from mangasensei.ocr.diagnostics.opencv_artifacts import (
+    manifest_model_files,
+    model_file_evidence,
     validate_artifact_root,
+    validate_fixture_path,
     write_fixture_artifact,
     write_fixture_notice,
     write_probe_manifest,
+)
+from mangasensei.ocr.diagnostics.opencv_matching import (
+    array_descriptor,
+    array_fingerprint,
+    source_zone_statistics,
 )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = REPOSITORY_ROOT / "tests" / "fixtures" / "ocr" / "real_manga" / "black_jack"
 FIXTURE_MANIFEST_PATH = FIXTURE_ROOT / "manifest.json"
 MODEL_MANIFEST_PATH = (
-    REPOSITORY_ROOT
-    / "backend"
-    / "src"
-    / "mangasensei"
-    / "ocr"
-    / "models"
-    / "manifest.json"
+    REPOSITORY_ROOT / "backend" / "src" / "mangasensei" / "ocr" / "models" / "manifest.json"
 )
 _PAGE9_FILE = "v01/black_jack_v01_pdf009.jpg"
 _REVIEWED_MAP_ZONES = {
@@ -79,6 +83,11 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--baseline", type=Path, required=True)
     compare.add_argument("--candidate", type=Path, required=True)
     compare.add_argument("--output", type=Path, required=True)
+    compare.add_argument(
+        "--allow-historical",
+        action="store_true",
+        help="compare reviewed schema-1 probes whose source SHA predates this checkout",
+    )
     return parser
 
 
@@ -101,13 +110,14 @@ class _RuntimeCapture:
             default as detector_module,
         )
 
-        imgproc = detector_module.imgproc
+        imgproc = importlib.import_module(
+            "mangasensei.ocr.vendor.manga_image_translator.manga_translator.detection."
+            "default_utils.imgproc"
+        )
         original_resize = imgproc.resize_aspect_ratio
         original_forward = detector_module.det_batch_forward_default
         original_crop = recognizer_boundary._RecognitionQuadrilateral.get_transformed_region
         model = self.recognizer.model
-        model_had_override = "infer_beam_batch_tensor" in vars(model)
-        model_override = vars(model).get("infer_beam_batch_tensor")
         original_tensor_inference = model.infer_beam_batch_tensor
 
         def capture_resize(
@@ -116,12 +126,13 @@ class _RuntimeCapture:
             interpolation: int,
             mag_ratio: float = 1,
         ) -> tuple[np.ndarray, float, tuple[int, int], int, int]:
-            result = original_resize(image, square_size, interpolation, mag_ratio)
+            result = cast(
+                tuple[np.ndarray, float, tuple[int, int], int, int],
+                original_resize(image, square_size, interpolation, mag_ratio),
+            )
             resized, ratio, heatmap_size, pad_width, pad_height = result
             call_index = len(self.preprocessing)
-            filtered_key = self._store_array(
-                f"detector_filtered_{call_index:03d}", image
-            )
+            filtered_key = self._store_array(f"detector_filtered_{call_index:03d}", image)
             resized_key = self._store_array(f"detector_resized_{call_index:03d}", resized)
             if call_index == 0:
                 self.array_stages["detector_filtered_input"] = filtered_key
@@ -201,14 +212,14 @@ class _RuntimeCapture:
             for batch_index, width_value in enumerate(image_widths):
                 width = int(width_value)
                 valid_tensor = np.ascontiguousarray(tensor[batch_index, :, :, :width])
-                pixels = np.rint(
-                    np.transpose(valid_tensor, (1, 2, 0)) * 127.5 + 127.5
-                ).clip(0, 255).astype(np.uint8)
+                pixels = (
+                    np.rint(np.transpose(valid_tensor, (1, 2, 0)) * 127.5 + 127.5)
+                    .clip(0, 255)
+                    .astype(np.uint8)
+                )
                 crop_index = self._claim_crop(pixels)
                 input_index = len(self.recognizer_inputs)
-                input_key = self._store_array(
-                    f"recognizer_input_{input_index:03d}", valid_tensor
-                )
+                input_key = self._store_array(f"recognizer_input_{input_index:03d}", valid_tensor)
                 crop_record = self.crops[crop_index]
                 input_record = {
                     "input_index": input_index,
@@ -233,20 +244,22 @@ class _RuntimeCapture:
             )
             return original_tensor_inference(image_tensor, image_widths, *args, **kwargs)
 
-        imgproc.resize_aspect_ratio = capture_resize
-        detector_module.det_batch_forward_default = capture_forward
-        recognizer_boundary._RecognitionQuadrilateral.get_transformed_region = capture_crop
-        model.infer_beam_batch_tensor = capture_tensor_inference
-        try:
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(imgproc, "resize_aspect_ratio", capture_resize))
+            stack.enter_context(
+                patch.object(detector_module, "det_batch_forward_default", capture_forward)
+            )
+            stack.enter_context(
+                patch.object(
+                    recognizer_boundary._RecognitionQuadrilateral,
+                    "get_transformed_region",
+                    capture_crop,
+                )
+            )
+            stack.enter_context(
+                patch.object(model, "infer_beam_batch_tensor", capture_tensor_inference)
+            )
             yield
-        finally:
-            imgproc.resize_aspect_ratio = original_resize
-            detector_module.det_batch_forward_default = original_forward
-            recognizer_boundary._RecognitionQuadrilateral.get_transformed_region = original_crop
-            if model_had_override:
-                model.infer_beam_batch_tensor = model_override
-            else:
-                delattr(model, "infer_beam_batch_tensor")
 
     def store_raw_mask(self, raw_mask: np.ndarray) -> dict[str, object]:
         key = self._store_array("detector_raw_mask", raw_mask)
@@ -295,14 +308,19 @@ class _RuntimeCapture:
 
 
 async def capture_probe(output: Path, *, model_cache: Path) -> dict[str, object]:
+    source_files = _source_evidence()
+    repository_sha = _repository_sha()
     output_root = validate_artifact_root(output, repository_root=REPOSITORY_ROOT)
-    if output_root.exists() and any(output_root.iterdir()):
-        raise ValueError(f"diagnostic output directory is not empty: {output_root}")
+    if output_root.exists():
+        raise ValueError(f"diagnostic output directory already exists: {output_root}")
 
-    fixture_manifest = _read_json(FIXTURE_MANIFEST_PATH)
-    model_manifest_payload = _read_json(MODEL_MANIFEST_PATH)
+    fixture_manifest, fixture_manifest_sha256 = _read_json_with_sha(FIXTURE_MANIFEST_PATH)
+    model_manifest_payload, model_manifest_sha256 = _read_json_with_sha(MODEL_MANIFEST_PATH)
+    opencv_metadata = _opencv_metadata()
+    runtime_metadata = _runtime_metadata()
     source = _object(fixture_manifest, "source")
     terms = _object(fixture_manifest, "terms")
+    output_root.mkdir(mode=0o700, parents=True)
     write_fixture_notice(
         output_root,
         source_url=str(terms["url"]),
@@ -310,9 +328,11 @@ async def capture_probe(output: Path, *, model_cache: Path) -> dict[str, object]
         author=str(source["authorEn"]),
     )
 
-    engine = MangaImageTranslatorEngine(model_cache=_resolve_path(model_cache), device="cpu")
+    resolved_model_cache = _resolve_path(model_cache)
+    engine = MangaImageTranslatorEngine(model_cache=resolved_model_cache, device="cpu")
     detector, recognizer, merge, model_manifest = await engine._ensure_loaded()
     provenance = engine.provenance_for_manifest(model_manifest)
+    model_files = model_file_evidence(resolved_model_cache, model_manifest_payload["artifacts"])
     fixture_entries: list[dict[str, str]] = []
     total_started = time.perf_counter()
     for fixture in _fixture_list(fixture_manifest):
@@ -329,23 +349,43 @@ async def capture_probe(output: Path, *, model_cache: Path) -> dict[str, object]
         )
         fixture_entries.append(fixture_entry)
 
+    if _repository_sha() != repository_sha:
+        raise RuntimeError("repository HEAD changed during probe capture")
+    if _file_sha256(FIXTURE_MANIFEST_PATH) != fixture_manifest_sha256:
+        raise RuntimeError("fixture manifest changed during probe capture")
+    if _file_sha256(MODEL_MANIFEST_PATH) != model_manifest_sha256:
+        raise RuntimeError("model manifest changed during probe capture")
+    if _opencv_metadata() != opencv_metadata:
+        raise RuntimeError("loaded OpenCV identity changed during probe capture")
+    if _runtime_metadata() != runtime_metadata:
+        raise RuntimeError("OCR runtime identity changed during probe capture")
+    if (
+        model_file_evidence(resolved_model_cache, model_manifest_payload["artifacts"])
+        != model_files
+    ):
+        raise RuntimeError("model files changed during probe capture")
+    if _source_evidence() != source_files:
+        raise RuntimeError("MangaSensei source files changed during probe capture")
+
     metadata: dict[str, object] = {
-        "schema_version": 1,
-        "repository_sha": _repository_sha(),
-        "fixture_manifest_sha256": _file_sha256(FIXTURE_MANIFEST_PATH),
-        "model_manifest_sha256": _file_sha256(MODEL_MANIFEST_PATH),
+        "schema_version": 2,
+        "repository_sha": repository_sha,
+        "fixture_manifest_sha256": fixture_manifest_sha256,
+        "model_manifest_sha256": model_manifest_sha256,
         "model_manifest_version": model_manifest.version,
         "model_upstream_commit": model_manifest.upstream_commit,
         "model_artifacts": model_manifest_payload["artifacts"],
+        "model_files": model_files,
+        "source_files": source_files,
         "ocr_config_digest": provenance.config_digest.hex(),
-        "opencv": _opencv_metadata(),
-        "runtime": _runtime_metadata(),
+        "opencv": opencv_metadata,
+        "runtime": runtime_metadata,
         "fixture_count": len(fixture_entries),
         "elapsed_seconds": time.perf_counter() - total_started,
         "peak_rss_bytes": _peak_rss_bytes(),
     }
-    write_probe_manifest(output_root, metadata=metadata, fixtures=fixture_entries)
-    return metadata
+    manifest_path = write_probe_manifest(output_root, metadata=metadata, fixtures=fixture_entries)
+    return {**metadata, "probe_manifest_sha256": _file_sha256(manifest_path)}
 
 
 async def _capture_fixture(
@@ -359,7 +399,10 @@ async def _capture_fixture(
     expected_sha256: str,
     output_root: Path,
 ) -> dict[str, str]:
-    image_path = FIXTURE_ROOT / fixture_file
+    fixture_path = validate_fixture_path(fixture_file)
+    image_path = FIXTURE_ROOT.joinpath(*fixture_path.parts).resolve()
+    if not image_path.is_relative_to(FIXTURE_ROOT.resolve()):
+        raise ValueError(f"fixture path escapes the reviewed fixture root: {fixture_file}")
     content = image_path.read_bytes()
     image_sha256 = hashlib.sha256(content).hexdigest()
     if image_sha256 != expected_sha256:
@@ -390,9 +433,7 @@ async def _capture_fixture(
             _RECOGNIZER_FLAG,
         )
         recognized = [line for line in recognized if str(line.text).strip()]
-        recognized_records = [
-            _quadrilateral_record(line, include_text=True) for line in recognized
-        ]
+        recognized_records = [_quadrilateral_record(line, include_text=True) for line in recognized]
         merged = await merge(recognized, dimensions.width, dimensions.height)
         merged_records = [_merged_record(block) for block in merged]
         ordered = _manga_reading_order(merged, page_height=dimensions.height)
@@ -448,16 +489,42 @@ async def _capture_fixture(
     )
 
 
-def compare_and_write(baseline: Path, candidate: Path, output: Path) -> dict[str, Any]:
+def compare_and_write(
+    baseline: Path,
+    candidate: Path,
+    output: Path,
+    *,
+    allow_historical: bool = False,
+) -> dict[str, Any]:
+    source_files = _source_evidence()
     baseline_root = validate_artifact_root(baseline, repository_root=REPOSITORY_ROOT)
     candidate_root = validate_artifact_root(candidate, repository_root=REPOSITORY_ROOT)
     output_path = validate_artifact_root(output, repository_root=REPOSITORY_ROOT)
-    comparison = compare_probe_roots(baseline_root, candidate_root)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        json.dumps(comparison, ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
+    fixture_manifest, fixture_manifest_sha256 = _read_json_with_sha(FIXTURE_MANIFEST_PATH)
+    model_manifest, model_manifest_sha256 = _read_json_with_sha(MODEL_MANIFEST_PATH)
+    expected_fixtures = {
+        str(fixture["file"]): str(fixture["sha256"]) for fixture in _fixture_list(fixture_manifest)
+    }
+    comparison = compare_probe_roots(
+        baseline_root,
+        candidate_root,
+        expected_fixture_manifest_sha256=fixture_manifest_sha256,
+        expected_model_manifest_sha256=model_manifest_sha256,
+        expected_repository_sha=None if allow_historical else _repository_sha(),
+        expected_fixture_sha256=expected_fixtures,
+        expected_model_files=manifest_model_files(model_manifest["artifacts"]),
+        expected_source_files=source_files,
+        expected_reviewed_map_zones=_REVIEWED_MAP_ZONES,
     )
+    if allow_historical and comparison["probe_schema_version"] != 1:
+        raise ValueError("--allow-historical is restricted to legacy schema-1 probes")
+    if not allow_historical and comparison["probe_schema_version"] != 2:
+        raise ValueError("legacy schema-1 probes require --allow-historical")
+    output_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with output_path.open("x", encoding="utf-8", newline="\n") as output_file:
+        output_file.write(json.dumps(comparison, ensure_ascii=False, indent=2, sort_keys=True))
+        output_file.write("\n")
+    output_path.chmod(0o600)
     return comparison
 
 
@@ -491,6 +558,7 @@ def _final_record(region: Any) -> dict[str, object]:
         "id": str(region.id),
         "bbox": [bbox.x, bbox.y, bbox.x + bbox.width, bbox.y + bbox.height],
         "polygon": region.polygon,
+        "angle": region.angle,
         "text": region.japanese_text,
         "confidence": region.confidence,
         "reading_order": region.reading_order,
@@ -502,17 +570,40 @@ def _bbox_values(values: Any) -> list[float]:
 
 
 def _points(values: Any) -> list[list[int]]:
-    return np.asarray(values).astype(int).tolist()
+    return cast(list[list[int]], np.asarray(values).astype(int).tolist())
 
 
 def _opencv_metadata() -> dict[str, object]:
+    conflicting = {
+        name: _distribution_version(name)
+        for name in (
+            "opencv-python",
+            "opencv-contrib-python",
+            "opencv-contrib-python-headless",
+        )
+        if _distribution_version(name) is not None
+    }
+    if conflicting:
+        raise RuntimeError(
+            "conflicting OpenCV distributions are installed: " + ", ".join(sorted(conflicting))
+        )
+    module_root = Path(cv2.__file__).resolve().parent
+    extension_candidates = tuple(
+        path
+        for path in module_root.iterdir()
+        if path.is_file() and (path.suffix.lower() == ".pyd" or path.name.endswith(".so"))
+    )
+    if len(extension_candidates) != 1:
+        raise RuntimeError("expected exactly one loaded OpenCV extension binary")
     build_information = cv2.getBuildInformation().encode("utf-8")
     return {
         "distribution_version": importlib.metadata.version("opencv-python-headless"),
         "runtime_version": cv2.__version__,
         "build_information_sha256": hashlib.sha256(build_information).hexdigest(),
+        "binary_sha256": _file_sha256(extension_candidates[0]),
         "thread_count": int(cv2.getNumThreads()),
         "optimized": bool(cv2.useOptimized()),
+        "opencl": bool(cv2.ocl.useOpenCL()),
     }
 
 
@@ -524,13 +615,46 @@ def _runtime_metadata() -> dict[str, object]:
         "machine": platform.machine(),
         "numpy": np.__version__,
         "torch": torch.__version__,
+        "pillow": _distribution_version("pillow"),
+        "networkx": _distribution_version("networkx"),
+        "pyclipper": _distribution_version("pyclipper"),
+        "shapely": _distribution_version("shapely"),
+        "torchvision": _distribution_version("torchvision"),
         "torch_threads": torch.get_num_threads(),
         "torch_interop_threads": torch.get_num_interop_threads(),
     }
 
 
+def _distribution_version(name: str) -> str | None:
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _source_evidence() -> dict[str, str]:
+    source_root = (REPOSITORY_ROOT / "backend" / "src").resolve()
+    loaded_modules = tuple(
+        (module_name, Path(module_file).resolve())
+        for module_name, module in sorted(sys.modules.items())
+        if (module_name == "mangasensei" or module_name.startswith("mangasensei."))
+        and (module_file := getattr(module, "__file__", None)) is not None
+    )
+    for module_name, module_path in loaded_modules:
+        if not module_path.is_relative_to(source_root):
+            raise RuntimeError(f"loaded MangaSensei module is outside this checkout: {module_name}")
+    evidence = {
+        source_path.relative_to(source_root).as_posix(): _file_sha256(source_path)
+        for source_path in sorted((source_root / "mangasensei").rglob("*.py"))
+    }
+    if not loaded_modules or not evidence:
+        raise RuntimeError("no local MangaSensei source modules were loaded")
+    return dict(sorted(evidence.items()))
+
+
 def _peak_rss_bytes() -> int | None:
     if os.name == "nt":
+
         class _ProcessMemoryCounters(ctypes.Structure):
             _fields_ = [
                 ("cb", ctypes.c_ulong),
@@ -564,10 +688,10 @@ def _peak_rss_bytes() -> int | None:
         )
         return int(counters.PeakWorkingSetSize) if succeeded else None
     try:
-        import resource
+        resource_module = importlib.import_module("resource")
     except ImportError:
         return None
-    usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    usage = resource_module.getrusage(resource_module.RUSAGE_SELF).ru_maxrss
     return int(usage if sys.platform == "darwin" else usage * 1024)
 
 
@@ -575,6 +699,15 @@ def _repository_sha() -> str:
     git = shutil.which("git")
     if git is None:
         raise RuntimeError("git is required to bind the probe to exact source code")
+    status = subprocess.run(  # noqa: S603
+        (git, "status", "--porcelain", "--untracked-files=normal"),
+        cwd=REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    if status.stdout.strip():
+        raise RuntimeError("probe capture requires a clean working tree")
     completed = subprocess.run(  # noqa: S603
         (git, "rev-parse", "HEAD"),
         cwd=REPOSITORY_ROOT,
@@ -597,11 +730,12 @@ def _resolve_path(path: Path) -> Path:
     return path.resolve()
 
 
-def _read_json(path: Path) -> dict[str, Any]:
-    raw: Any = json.loads(path.read_text(encoding="utf-8"))
+def _read_json_with_sha(path: Path) -> tuple[dict[str, Any], str]:
+    content = path.read_bytes()
+    raw: Any = json.loads(content)
     if not isinstance(raw, dict):
         raise ValueError(f"expected JSON object: {path}")
-    return raw
+    return raw, hashlib.sha256(content).hexdigest()
 
 
 def _object(payload: Mapping[str, Any], key: str) -> Mapping[str, Any]:
@@ -626,12 +760,25 @@ def main() -> None:
         print(
             "OCR_OPENCV_PROBE "
             f"opencv={opencv['distribution_version']} "
+            f"repository_sha={metadata['repository_sha']} "
             f"fixture_count={metadata['fixture_count']} "
-            f"elapsed_seconds={float(metadata['elapsed_seconds']):.3f}"
+            f"probe_manifest_sha256={metadata['probe_manifest_sha256']} "
+            f"elapsed_seconds={float(cast(Any, metadata['elapsed_seconds'])):.3f}"
         )
         return
-    comparison = compare_and_write(args.baseline, args.candidate, args.output)
+    comparison = compare_and_write(
+        args.baseline,
+        args.candidate,
+        args.output,
+        allow_historical=args.allow_historical,
+    )
     print(f"OCR_OPENCV_COMPARE {safe_comparison_summary(comparison)}")
+    comparison_path = validate_artifact_root(args.output, repository_root=REPOSITORY_ROOT)
+    print(f"OCR_OPENCV_COMPARISON_SHA256 sha256={_file_sha256(comparison_path)}")
+    failures = semantic_equivalence_failures(comparison)
+    if failures:
+        details = " ".join(f"{key}={value}" for key, value in failures.items())
+        raise SystemExit(f"OCR_OPENCV_REGRESSION {details}")
 
 
 if __name__ == "__main__":
