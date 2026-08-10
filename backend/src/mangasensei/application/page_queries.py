@@ -19,6 +19,12 @@ from mangasensei.infrastructure.database.analysis_models import (
     OcrRegionVertexRecord,
     OcrRunRecord,
 )
+from mangasensei.infrastructure.database.dictionary_projection_models import (
+    DictionaryProjectionItemRecord,
+    DictionaryProjectionMeaningRecord,
+    DictionaryProjectionRecord,
+    DictionaryProjectionSourceRecord,
+)
 from mangasensei.infrastructure.database.job_models import JobRecord
 from mangasensei.infrastructure.database.lexical_models import (
     LexicalMatchRecord,
@@ -89,6 +95,9 @@ class PageQueryService:
                         "contentLanguage": CONTENT_LANGUAGE.value,
                         "studyLanguage": latest_job.study_language,
                         "dictionaryLanguage": LOCAL_DICTIONARY_LANGUAGE.value,
+                        "requestedDictionaryLanguage": LOCAL_DICTIONARY_LANGUAGE.value,
+                        "fallbackDictionaryLanguage": LOCAL_DICTIONARY_LANGUAGE.value,
+                        "dictionarySources": [],
                         "regions": [],
                         "error": _public_error(latest_job),
                     }
@@ -177,6 +186,75 @@ class PageQueryService:
                 if lexical_match_ids
                 else ()
             )
+            projection = (
+                await session.execute(
+                    select(DictionaryProjectionRecord)
+                    .join(JobRecord, JobRecord.id == DictionaryProjectionRecord.job_id)
+                    .where(
+                        JobRecord.page_id == page_id,
+                        JobRecord.status == "completed",
+                        DictionaryProjectionRecord.linguistic_run_id == linguistic_run.id,
+                    )
+                    .order_by(JobRecord.created_at.desc(), JobRecord.id.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            projection_sources = (
+                tuple(
+                    (
+                        await session.execute(
+                            select(DictionaryProjectionSourceRecord)
+                            .where(
+                                DictionaryProjectionSourceRecord.projection_job_id
+                                == projection.job_id
+                            )
+                            .order_by(DictionaryProjectionSourceRecord.source_ref)
+                        )
+                    ).scalars()
+                )
+                if projection is not None
+                else ()
+            )
+            projection_items = (
+                tuple(
+                    (
+                        await session.execute(
+                            select(DictionaryProjectionItemRecord)
+                            .where(
+                                DictionaryProjectionItemRecord.projection_job_id
+                                == projection.job_id,
+                                DictionaryProjectionItemRecord.lexical_match_id.in_(
+                                    lexical_match_ids
+                                ),
+                            )
+                        )
+                    ).scalars()
+                )
+                if projection is not None and lexical_match_ids
+                else ()
+            )
+            projection_meanings = (
+                tuple(
+                    (
+                        await session.execute(
+                            select(DictionaryProjectionMeaningRecord)
+                            .where(
+                                DictionaryProjectionMeaningRecord.projection_job_id
+                                == projection.job_id,
+                                DictionaryProjectionMeaningRecord.lexical_match_id.in_(
+                                    lexical_match_ids
+                                ),
+                            )
+                            .order_by(
+                                DictionaryProjectionMeaningRecord.lexical_match_id,
+                                DictionaryProjectionMeaningRecord.meaning_ordinal,
+                            )
+                        )
+                    ).scalars()
+                )
+                if projection is not None and lexical_match_ids
+                else ()
+            )
             vertices = (
                 tuple(
                     (
@@ -226,6 +304,10 @@ class PageQueryService:
         meanings_by_match: dict[int, list[str]] = defaultdict(list)
         for meaning in meanings:
             meanings_by_match[meaning.lexical_match_id].append(meaning.meaning)
+        projected_meanings_by_match: dict[int, list[str]] = defaultdict(list)
+        for meaning in projection_meanings:
+            projected_meanings_by_match[meaning.lexical_match_id].append(meaning.meaning)
+        projection_item_by_match = {item.lexical_match_id: item for item in projection_items}
         tokens_by_region: dict[int, list[LinguisticTokenRecord]] = defaultdict(list)
         for token in tokens:
             tokens_by_region[token.region_id].append(token)
@@ -239,6 +321,17 @@ class PageQueryService:
         grammar_by_analysis: dict[int, list[str]] = defaultdict(list)
         for point in grammar:
             grammar_by_analysis[point.region_analysis_id].append(point.label)
+
+        if projection is None:
+            requested_dictionary_language = LOCAL_DICTIONARY_LANGUAGE.value
+            fallback_dictionary_language = LOCAL_DICTIONARY_LANGUAGE.value
+            legacy_source_ref = _legacy_source_ref(linguistic_run)
+            dictionary_sources = [_legacy_source(linguistic_run, legacy_source_ref)]
+        else:
+            requested_dictionary_language = projection.requested_dictionary_language
+            fallback_dictionary_language = projection.fallback_dictionary_language
+            legacy_source_ref = None
+            dictionary_sources = [_projection_source(source) for source in projection_sources]
 
         response_regions = []
         for region in regions:
@@ -258,7 +351,25 @@ class PageQueryService:
                 if identity in seen_identities:
                     continue
                 seen_identities.add(identity)
-                vocabulary.append(_vocabulary(match, meanings_by_match[match.id]))
+                item = projection_item_by_match.get(match.id)
+                if projection is not None and item is None:
+                    raise ValueError("dictionary projection is missing a canonical lexical match")
+                vocabulary.append(
+                    _vocabulary(
+                        match,
+                        projected_meanings_by_match[match.id]
+                        if item is not None
+                        else meanings_by_match[match.id],
+                        effective_language=(
+                            item.effective_dictionary_language
+                            if item is not None
+                            else LOCAL_DICTIONARY_LANGUAGE.value
+                        ),
+                        fallback_used=item.fallback_used if item is not None else False,
+                        fallback_reason=item.fallback_reason if item is not None else None,
+                        source_ref=item.source_ref if item is not None else legacy_source_ref,
+                    )
+                )
             response_regions.append(
                 {
                     "id": str(region.public_id),
@@ -296,7 +407,11 @@ class PageQueryService:
             "resultAvailable": True,
             "contentLanguage": content_language,
             "studyLanguage": study_language,
+            # Legacy compatibility field: historical StudyResult rows remain English-only.
             "dictionaryLanguage": dictionary_language,
+            "requestedDictionaryLanguage": requested_dictionary_language,
+            "fallbackDictionaryLanguage": fallback_dictionary_language,
+            "dictionarySources": dictionary_sources,
             "dimensions": {"width": run.width, "height": run.height},
             "ocr": {
                 "detector": run.detector,
@@ -335,7 +450,15 @@ def _token(token: LinguisticTokenRecord, dictionary_id: str | None) -> dict[str,
     }
 
 
-def _vocabulary(match: LexicalMatchRecord, meanings: list[str]) -> dict[str, Any]:
+def _vocabulary(
+    match: LexicalMatchRecord,
+    meanings: list[str],
+    *,
+    effective_language: str,
+    fallback_used: bool,
+    fallback_reason: str | None,
+    source_ref: str | None,
+) -> dict[str, Any]:
     return {
         "id": match.dictionary_entry_id,
         "surface": match.surface,
@@ -343,9 +466,38 @@ def _vocabulary(match: LexicalMatchRecord, meanings: list[str]) -> dict[str, Any
         "reading": match.display_reading,
         "meanings": meanings,
         "source": match.dictionary_source,
+        "effectiveLanguage": effective_language,
+        "fallbackUsed": fallback_used,
+        "fallbackReason": fallback_reason,
+        "sourceRef": source_ref,
         "jlpt": (
             {"level": match.jlpt_level, "official": False} if match.jlpt_level is not None else None
         ),
+    }
+
+
+def _legacy_source_ref(run: LinguisticRunRecord) -> str:
+    digest = run.dictionary_digest.hex()
+    return f"jmdict:en:{run.dictionary_version}:{digest[:16]}"
+
+
+def _legacy_source(run: LinguisticRunRecord, source_ref: str) -> dict[str, str]:
+    return {
+        "ref": source_ref,
+        "dataset": "JMdict",
+        "productLanguage": LOCAL_DICTIONARY_LANGUAGE.value,
+        "sourceVersion": run.dictionary_version,
+        "normalizedDigestSha256": run.dictionary_digest.hex(),
+    }
+
+
+def _projection_source(source: DictionaryProjectionSourceRecord) -> dict[str, str]:
+    return {
+        "ref": source.source_ref,
+        "dataset": source.dataset,
+        "productLanguage": source.product_language,
+        "sourceVersion": source.source_version,
+        "normalizedDigestSha256": source.normalized_digest.hex(),
     }
 
 
