@@ -45,6 +45,39 @@ export interface UploadData {
   readonly capabilities: CapabilityTokens;
 }
 
+export interface DocumentCapabilityTokens {
+  readonly readDocument: string;
+  readonly readDocumentImage: string;
+  readonly reprocessDocument: string;
+}
+
+export interface DocumentPageSummary {
+  readonly pageId: string;
+  readonly ordinal: number;
+  readonly status: JobStatus;
+  readonly resultAvailable: boolean;
+}
+
+export interface DocumentProgress {
+  readonly totalPages: number;
+  readonly completedPages: number;
+  readonly processingPages: number;
+  readonly failedPages: number;
+}
+
+export interface DocumentSnapshot {
+  readonly documentId: string;
+  readonly sourceKind: "images";
+  readonly expiresAt: string;
+  readonly orderRevision: number;
+  readonly pages: readonly DocumentPageSummary[];
+  readonly progress: DocumentProgress;
+}
+
+export interface DocumentUploadData extends DocumentSnapshot {
+  readonly capabilities: DocumentCapabilityTokens;
+}
+
 export interface ReprocessData {
   readonly jobId: string;
   readonly status: JobStatus;
@@ -158,6 +191,66 @@ export async function uploadPage(
   return parseEnvelope<UploadData>(response);
 }
 
+export async function uploadDocument(
+  files: readonly File[],
+  studyLanguage: StudyLanguage,
+  signal: AbortSignal,
+): Promise<DocumentUploadData> {
+  if (files.length < 2) throw new ApiError("document_requires_multiple_images");
+  const form = new FormData();
+  for (const file of files) {
+    validateClientFile(file);
+    form.append("images[]", file);
+  }
+  form.set("studyLanguage", studyLanguage);
+  const response = await fetch("/api/v1/documents", {
+    method: "POST",
+    headers: { "Idempotency-Key": createIdempotencyKey("document-upload") },
+    body: form,
+    signal,
+  });
+  return parseEnvelope<DocumentUploadData>(response);
+}
+
+export async function fetchDocumentSnapshot(
+  access: DocumentUploadData,
+  signal: AbortSignal,
+): Promise<DocumentSnapshot> {
+  return requestDocumentJson<DocumentSnapshot>(
+    `/api/v1/documents/${encodeURIComponent(access.documentId)}`,
+    access.capabilities.readDocument,
+    signal,
+  );
+}
+
+export async function fetchDocumentPage(
+  access: DocumentUploadData,
+  pageId: string,
+  signal: AbortSignal,
+): Promise<StudyPage> {
+  return requestDocumentJson<StudyPage>(
+    `/api/v1/documents/${encodeURIComponent(access.documentId)}/pages/${encodeURIComponent(pageId)}`,
+    access.capabilities.readDocument,
+    signal,
+  );
+}
+
+export async function fetchDocumentProtectedImage(
+  access: DocumentUploadData,
+  pageId: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const response = await fetch(
+    `/api/v1/documents/${encodeURIComponent(access.documentId)}/pages/${encodeURIComponent(pageId)}/image`,
+    {
+      headers: { "X-Document-Token": access.capabilities.readDocumentImage },
+      signal,
+    },
+  );
+  if (!response.ok) throw new ApiError("image_unavailable");
+  return URL.createObjectURL(await response.blob());
+}
+
 export async function reprocessStudyLanguage(
   upload: UploadData,
   studyLanguage: StudyLanguage,
@@ -191,6 +284,59 @@ export async function reprocessDictionaryLanguage(
     body: JSON.stringify({ dictionaryLanguage }),
     signal,
   });
+  return parseEnvelope<ReprocessData>(response);
+}
+
+export async function reprocessDocumentStudyLanguage(
+  access: DocumentUploadData,
+  pageId: string,
+  studyLanguage: StudyLanguage,
+  signal: AbortSignal,
+): Promise<ReprocessData> {
+  return reprocessDocumentPage(
+    access,
+    pageId,
+    { studyLanguage },
+    "document-study-reprocess",
+    signal,
+  );
+}
+
+export async function reprocessDocumentDictionaryLanguage(
+  access: DocumentUploadData,
+  pageId: string,
+  dictionaryLanguage: DictionaryLanguage,
+  signal: AbortSignal,
+): Promise<ReprocessData> {
+  return reprocessDocumentPage(
+    access,
+    pageId,
+    { dictionaryLanguage },
+    "document-dictionary-reprocess",
+    signal,
+  );
+}
+
+async function reprocessDocumentPage(
+  access: DocumentUploadData,
+  pageId: string,
+  payload: { readonly studyLanguage: StudyLanguage } | { readonly dictionaryLanguage: DictionaryLanguage },
+  namespace: "document-study-reprocess" | "document-dictionary-reprocess",
+  signal: AbortSignal,
+): Promise<ReprocessData> {
+  const response = await fetch(
+    `/api/v1/documents/${encodeURIComponent(access.documentId)}/pages/${encodeURIComponent(pageId)}/reprocess`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": createIdempotencyKey(namespace),
+        "X-Document-Token": access.capabilities.reprocessDocument,
+      },
+      body: JSON.stringify(payload),
+      signal,
+    },
+  );
   return parseEnvelope<ReprocessData>(response);
 }
 
@@ -238,9 +384,38 @@ export async function waitForPage(
   throw new DOMException("Operation aborted", "AbortError");
 }
 
+export async function waitForDocumentPage(
+  access: DocumentUploadData,
+  pageId: string,
+  signal: AbortSignal,
+  onStatus: (status: JobStatus) => void,
+  isSatisfied: (page: StudyPage) => boolean,
+): Promise<StudyPage> {
+  let delay = 600;
+  while (!signal.aborted) {
+    const page = await fetchDocumentPage(access, pageId, signal);
+    onStatus(page.status);
+    if (page.status === "completed" && isSatisfied(page)) return page;
+    if (page.status === "failed" || page.status === "expired") {
+      throw new ApiError(page.error?.code ?? page.status);
+    }
+    await abortableDelay(delay, signal);
+    delay = Math.min(Math.round(delay * 1.6), 5_000);
+  }
+  throw new DOMException("Operation aborted", "AbortError");
+}
+
 async function requestJson<T>(url: string, token: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(url, {
     headers: { "X-Page-Token": token },
+    signal,
+  });
+  return parseEnvelope<T>(response);
+}
+
+async function requestDocumentJson<T>(url: string, token: string, signal: AbortSignal): Promise<T> {
+  const response = await fetch(url, {
+    headers: { "X-Document-Token": token },
     signal,
   });
   return parseEnvelope<T>(response);
@@ -263,7 +438,15 @@ function validateClientFile(file: File): void {
   }
 }
 
-function createIdempotencyKey(namespace: "upload" | "study-reprocess" | "dictionary-reprocess"): string {
+type IdempotencyNamespace =
+  | "upload"
+  | "document-upload"
+  | "study-reprocess"
+  | "dictionary-reprocess"
+  | "document-study-reprocess"
+  | "document-dictionary-reprocess";
+
+function createIdempotencyKey(namespace: IdempotencyNamespace): string {
   if (typeof crypto.randomUUID === "function") {
     return `${namespace}-${crypto.randomUUID()}`;
   }
