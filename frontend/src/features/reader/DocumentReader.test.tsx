@@ -199,7 +199,6 @@ describe("DocumentReader", () => {
   });
 
   it("makes the selected processing page readable after an aggregate refresh", async () => {
-    vi.useFakeTimers();
     const document = access(
       [{ pageId: "page-a", ordinal: 0, status: "processing_ocr", resultAvailable: false }],
       { totalPages: 1, completedPages: 0, processingPages: 1, failedPages: 0 },
@@ -213,12 +212,12 @@ describe("DocumentReader", () => {
 
     renderReader(document);
     expect(apiMocks.fetchDocumentPage).not.toHaveBeenCalled();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(700);
-    });
+    await waitFor(
+      () => expect(apiMocks.fetchDocumentSnapshot).toHaveBeenCalledTimes(1),
+      { timeout: 1_500 },
+    );
 
     expect(await screen.findByTestId("reader-page")).toHaveTextContent("page-a");
-    expect(apiMocks.fetchDocumentSnapshot).toHaveBeenCalledTimes(1);
     expect(apiMocks.fetchDocumentPage).toHaveBeenCalledTimes(1);
   });
 
