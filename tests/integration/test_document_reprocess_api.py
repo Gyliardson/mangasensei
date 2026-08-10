@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -28,6 +27,10 @@ from mangasensei.infrastructure.database.document_models import (
 )
 from mangasensei.infrastructure.database.job_models import JobRecord
 from mangasensei.infrastructure.database.storage_models import PageRecord
+from tests.integration.job_fixture_helpers import (
+    advance_pending_job_to_processing_linguistics,
+    finish_processing_job,
+)
 from tests.integration.test_document_api import (
     _add_completed_result,
     _seed_readable_document,
@@ -52,9 +55,9 @@ async def _complete_initial_page(database_url: str, page_public_id: UUID) -> Non
             )
         ).scalars().first()
         assert job is not None
-        job.status = "completed"
-        job.finished_at = datetime.now(UTC)
+        await advance_pending_job_to_processing_linguistics(session, job)
         await _add_completed_result(session, job=job, digest=digest)
+        await finish_processing_job(session, job)
     await engine.dispose()
 
 

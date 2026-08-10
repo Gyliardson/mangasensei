@@ -71,9 +71,13 @@ async def test_created_document_retention_preserves_shared_live_blob(
         child_ids = tuple(child.id for child in children)
         standalone_id = standalone.id
         blob_id = standalone.image_blob_id
+
         expired_at = datetime.now(UTC) - timedelta(seconds=1)
+        created_at = expired_at - timedelta(hours=24)
+        document.created_at = created_at
         document.expires_at = expired_at
         for child in children:
+            child.created_at = created_at
             child.expires_at = expired_at
 
     deleted = await RetentionJanitor(sessions, storage).run_once(batch_size=10)

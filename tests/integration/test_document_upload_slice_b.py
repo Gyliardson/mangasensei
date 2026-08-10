@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -18,6 +17,10 @@ from mangasensei.infrastructure.database.job_models import JobRecord
 from mangasensei.infrastructure.database.storage_models import ImageBlobRecord, PageRecord
 from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.retention import RetentionJanitor
+from tests.integration.job_fixture_helpers import (
+    advance_pending_job_to_processing_linguistics,
+    finish_processing_job,
+)
 from tests.integration.test_upload_api import make_settings, page_image
 
 
@@ -318,8 +321,8 @@ async def test_nested_document_reprocess_requires_reprocess_scope_and_membership
     async with sessions.begin() as session:
         jobs = (await session.execute(select(JobRecord))).scalars().all()
         for job in jobs:
-            job.status = "completed"
-            job.finished_at = datetime.now(UTC)
+            await advance_pending_job_to_processing_linguistics(session, job)
+            await finish_processing_job(session, job)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         allowed = await client.post(
