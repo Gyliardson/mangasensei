@@ -1,3 +1,4 @@
+import type { DictionaryLanguage } from "./dictionaryLanguage";
 import type { StudyLanguage } from "./studyLanguage";
 
 export type JobStatus =
@@ -11,7 +12,6 @@ export type JobStatus =
   | "failed"
   | "expired";
 
-export type DictionaryLanguage = "en" | "de" | "pt-BR";
 export type EffectiveDictionaryLanguage = "en" | "de";
 export type DictionaryFallbackReason =
   | "unsupported_requested_language"
@@ -167,10 +167,28 @@ export async function reprocessStudyLanguage(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Idempotency-Key": createIdempotencyKey("reprocess"),
+      "Idempotency-Key": createIdempotencyKey("study-reprocess"),
       "X-Page-Token": upload.capabilities.reprocessPage,
     },
     body: JSON.stringify({ studyLanguage }),
+    signal,
+  });
+  return parseEnvelope<ReprocessData>(response);
+}
+
+export async function reprocessDictionaryLanguage(
+  upload: UploadData,
+  dictionaryLanguage: DictionaryLanguage,
+  signal: AbortSignal,
+): Promise<ReprocessData> {
+  const response = await fetch(`/api/v1/pages/${encodeURIComponent(upload.pageId)}/reprocess`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": createIdempotencyKey("dictionary-reprocess"),
+      "X-Page-Token": upload.capabilities.reprocessPage,
+    },
+    body: JSON.stringify({ dictionaryLanguage }),
     signal,
   });
   return parseEnvelope<ReprocessData>(response);
@@ -245,7 +263,7 @@ function validateClientFile(file: File): void {
   }
 }
 
-function createIdempotencyKey(namespace: "upload" | "reprocess"): string {
+function createIdempotencyKey(namespace: "upload" | "study-reprocess" | "dictionary-reprocess"): string {
   if (typeof crypto.randomUUID === "function") {
     return `${namespace}-${crypto.randomUUID()}`;
   }
