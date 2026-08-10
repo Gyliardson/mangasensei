@@ -8,7 +8,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 
 _PREVIOUS_HEAD = "b7d2f4a91c63"
-_CURRENT_HEAD = "9c2e7d4a1160"
+_CURRENT_HEAD = "e2f6a0c84b11"
 
 
 def _config(database_url: str) -> Config:
