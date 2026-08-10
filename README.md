@@ -4,52 +4,229 @@
 
 **Read manga. Understand Japanese. Keep your pages local.**
 
-A privacy-first study workspace for turning manga pages into interactive Japanese learning material with local OCR, deterministic linguistics, and optional AI explanations.
+A local-first Japanese manga study workspace with OCR, deterministic linguistics, interactive reading tools, and optional AI explanations.
+
+**Status: pre-release / active development.** MangaSensei is usable from source today, but no stable public GitHub Release has been published yet.
 
 [English](README.md) · [Português](README.pt-BR.md) · [日本語](README.ja.md) · [Español](README.es.md)
 
+[![CI](https://github.com/Gyliardson/mangasensei/actions/workflows/ci.yml/badge.svg)](https://github.com/Gyliardson/mangasensei/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-GPL--3.0--only-8f1d2c)](LICENSE)
+
 </div>
 
-[![CI](https://github.com/Gyliardson/mangasensei/actions/workflows/ci.yml/badge.svg)](https://github.com/Gyliardson/mangasensei/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Gyliardson/mangasensei?sort=semver&display_name=tag)](https://github.com/Gyliardson/mangasensei/releases)
-[![License](https://img.shields.io/badge/license-GPL--3.0--only-8f1d2c)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.11-315b7d)](docs/versions.md)
-[![React](https://img.shields.io/badge/React-19-315b7d)](docs/versions.md)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18.4-315b7d)](docs/versions.md)
+<p align="center">
+  <a href="docs/assets/reader-desktop-chromium.png"><img src="docs/assets/reader-desktop-chromium.png" alt="MangaSensei desktop reader" width="900"></a>
+  <br>
+  <sub>Current single-page reader preview. Dedicated reproducible and multi-page presentation media is a follow-up workstream.</sub>
+</p>
 
-MangaSensei extracts Japanese text from manga pages, enriches it with local linguistic data, and presents the result in a responsive reader without altering the original image. OCR model weights and JMdict-derived data stay local and are not committed or bundled into the distributable image. Gemini is optional.
-
-Japanese content can be studied with **Brazilian Portuguese (`pt-BR`) or English (`en`) contextual explanations**. Four language axes remain independent: Japanese content (`ja`), study/explanation language (`pt-BR` or `en`), deterministic dictionary language (requested `en`, `de`, or `pt-BR`), and browser-local UI locale (`en` or `pt-BR`). The UI and dictionary preferences default to English for fresh or invalid browser state. German uses the reviewed local JMdict pack where the exact canonical form is available and falls back per item to English otherwise; a requested `pt-BR` dictionary remains explicitly Portuguese-requested while deterministic meanings use English fallback because no reviewed word-level Portuguese JMdict pack exists. Changing dictionary language reuses persisted canonical linguistic analysis and does not rerun OCR, Sudachi lexical acquisition, or Gemini. See the [language-axis contract](docs/study-languages.md) and [JMdict pack contract](docs/jmdict-packs.md).
-
-The SPA can also create a temporary ordered Document from multiple JPEG, PNG, or WebP images. The displayed pre-upload order is canonical, each Page remains an independent OCR/study unit, completed children can be read while siblings process, and aggregate progress reports completed/processing/failed page counts. Document and child Pages share the same exact 24-hour expiry. PDF import and bulk retry/cancel remain deferred. See the [multi-image document import contract](docs/document-imports.md).
-
-The current development version is recorded in [`VERSION`](VERSION).
+MangaSensei preserves the original page and renders study information separately. OCR, Sudachi tokenization, and reviewed JMdict dictionary data run locally in your MangaSensei deployment. Gemini enrichment is optional and can remain completely disabled.
 
 ## Why MangaSensei?
 
 | Local-first | Original-first | Study-first |
 | --- | --- | --- |
-| OCR, models and dictionary data are local by default. | The uploaded manga image is preserved as-is and rendered separately from study overlays. | Furigana, vocabulary, independent study/dictionary languages, linguistic data and contextual explanations are organized around reading. |
+| Fundamental OCR and linguistic analysis do not depend on a cloud AI service. | Uploaded manga images stay unchanged; OCR regions and study information are separate overlays/data. | Furigana, vocabulary, language preferences, zoom/fit controls, and contextual study information are built around reading. |
 
-## Reader Preview
+## Quick Start with Docker Compose
 
-<table>
-  <tr>
-    <td width="68%" align="center"><a href="docs/assets/reader-desktop-chromium.png"><img src="docs/assets/reader-desktop-chromium.png" alt="MangaSensei desktop reader"></a><br><sub>Desktop reader</sub></td>
-    <td width="32%" align="center"><a href="docs/assets/reader-mobile-chromium.png"><img src="docs/assets/reader-mobile-chromium.png" alt="MangaSensei mobile reader"></a><br><sub>Mobile reader</sub></td>
-  </tr>
-</table>
+This is the shortest supported visitor path. It does **not** require host Python, Node.js, or `uv`; those are development-tooling requirements, not Docker Quick Start requirements.
+
+### 1. Clone and create local configuration
+
+Requirements: Git, Docker, and Docker Compose v2.
+
+```sh
+git clone https://github.com/Gyliardson/mangasensei.git
+cd mangasensei
+cp .env.example .env
+```
+
+PowerShell uses:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Generate two independent random values. The command below uses the same checksum-pinned Python base image currently used by MangaSensei, so Docker is the only runtime prerequisite for this step:
+
+```sh
+docker run --rm python:3.11-slim-bookworm@sha256:d29f48a31a8b408ed19272ca1e7b10ebae13b240a27e862d3d4217c528e2e0c3 python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Run it twice, then edit `.env`:
+
+- replace `POSTGRES_PASSWORD` with the first value;
+- replace the value inside `MANGASENSEI_CAPABILITY_PEPPERS=["..."]` with the second value;
+- leave `GOOGLE_API_KEY=` blank for local-only OCR and linguistics.
+
+`MANGASENSEI_DATABASE_URL` in `.env.example` is for direct host development. Docker Compose supplies its own container-internal database URL, so it does not need to be edited for this Quick Start.
+
+Never reuse repository placeholders or commit your `.env` file.
+
+### 2. Build and start MangaSensei
+
+```sh
+docker compose up --detach --build
+```
+
+On a fresh installation, this builds the application and runs one-shot bootstrap services for migrations, checksum-pinned OCR models, and reviewed English/German JMdict data before the worker becomes ready. **The first bootstrap requires network access** to obtain container layers, OCR model artifacts, and JMdict source data. Those artifacts are then kept in local Docker volumes for subsequent local processing.
+
+Gemini remains disabled when `GOOGLE_API_KEY` is blank. Japanese OCR, Sudachi analysis, and deterministic JMdict vocabulary still work; contextual AI translation/explanation fields may be absent.
+
+### 3. Check readiness and open the reader
+
+```sh
+docker compose ps --all
+curl --fail http://127.0.0.1:8000/ready
+```
+
+PowerShell can use:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/ready
+```
+
+Then open **http://127.0.0.1:8000** and analyze a JPEG, PNG, or WebP manga page. You can also select multiple supported images to create an ordered temporary Document.
+
+If bootstrap fails, inspect the relevant service logs:
+
+```sh
+docker compose logs models jmdict migrate api worker
+```
+
+### 4. Stop or reset
+
+Stop containers while keeping local database/model/dictionary volumes:
+
+```sh
+docker compose down
+```
+
+Delete the local MangaSensei Docker volumes as well:
+
+```sh
+docker compose down --volumes --remove-orphans
+```
+
+The second command removes local database state, uploaded-page storage, OCR models, and JMdict data; the bootstrap downloads will be required again on the next clean start.
+
+## Core workflow
+
+A normal reading session is intentionally simple:
+
+1. Select one supported manga image, or an ordered set of images.
+2. MangaSensei preserves the original image and queues each Page for local OCR and linguistic analysis.
+3. Open completed pages in the responsive reader while study overlays remain separate from the source image.
+4. Select OCR regions to inspect Japanese text, furigana, tokens, and deterministic dictionary vocabulary.
+5. Optionally enable Gemini for contextual study-language enrichment.
+
+The existing mobile reader is responsive as well:
+
+<p align="center">
+  <a href="docs/assets/reader-mobile-chromium.png"><img src="docs/assets/reader-mobile-chromium.png" alt="MangaSensei mobile reader" width="360"></a>
+  <br>
+  <sub>Current mobile reader preview.</sub>
+</p>
+
+## Multi-page workflow
+
+Merged Slice B of [#105](https://github.com/Gyliardson/mangasensei/issues/105) supports ordered multi-image Documents without turning a manga volume into one giant OCR job.
+
+**Available now:**
+
+- select multiple JPEG, PNG, or WebP images and inspect/reorder them before upload;
+- preserve that displayed pre-upload order as the Document's canonical initial order;
+- keep each Page as an independent OCR/study/job unit;
+- show aggregate completed / processing / failed page counts;
+- read a completed Page while sibling Pages are still processing;
+- navigate by direct page selection plus Previous / Next;
+- reprocess study language or dictionary language only for the current Page;
+- keep the Document and all child Pages on the same exact 24-hour retention boundary.
+
+**Still deferred under #105:** PDF import, Slice C retry/cancel recovery UX and bulk retry/cancel, persisted post-create reordering, thumbnails, a persistent manga library, and spread-aware/cross-page reading-order semantics.
+
+See the [multi-image Document contract](docs/document-imports.md) for limits, capabilities, idempotency, retention, and failure semantics.
+
+## Current validation
+
+### OCR and product-quality evidence
+
+MangaSensei does **not** currently publish a universal OCR accuracy percentage. CI test counts and code coverage are engineering assurance, not OCR accuracy.
+
+Current OCR evidence includes:
+
+- deterministic synthetic OCR regressions and a real-model CPU compatibility smoke;
+- a checksum-verified **12-page licensed real-manga pressure corpus** with documented provenance and handling rules;
+- reviewed real-page anchors for short vertical-text recall, recognizer/context regressions, and a specific graphic-texture precision guard;
+- a controlled OpenCV 4→5 compatibility study on the reviewed corpus that found bounded recognizer-warp pixel drift without changes to accepted/final text, final geometry, reading order, or the reviewed pressure cases.
+
+The 12-page pressure corpus intentionally does **not** provide exhaustive transcript-level ground truth for every page. The wider pages use regression/characterization contracts rather than invented full-page truth, so MangaSensei does not claim corpus-wide CER, detection precision/recall, or "99% accuracy" from that dataset.
+
+Known OCR limitations remain tracked, including detached bōten/emphasis geometry ([#93](https://github.com/Gyliardson/mangasensei/issues/93)), high-confidence similar-glyph substitutions ([#99](https://github.com/Gyliardson/mangasensei/issues/99)), and a high-confidence graphic-symbol false positive class ([#100](https://github.com/Gyliardson/mangasensei/issues/100)).
+
+See the [testing strategy](docs/testing.md) and [licensed corpus contract](tests/fixtures/ocr/real_manga/black_jack/README.md) for the exact assurance boundaries.
+
+### Engineering assurance
+
+The normal CI pipeline separately validates backend lint/type safety/tests with coverage, frontend lint/typecheck/unit coverage/build, mocked Playwright desktop/mobile/accessibility behavior, a real browser → FastAPI → PostgreSQL full-stack critical flow with deterministic external OCR/Gemini boundaries, production Docker build/runtime checks, wheel/sdist clean-install checks, and secret/dependency security checks. CodeQL runs independently, and the JMdict data-contract workflow verifies source-to-runtime dictionary integrity plus clean Compose bootstrap/readiness.
+
+These gates are described in [docs/testing.md](docs/testing.md) and implemented under [`.github/workflows/`](.github/workflows/).
+
+## Privacy and local-first boundaries
+
+- Original manga images stay inside your MangaSensei deployment and are never sent to Gemini.
+- OCR runs locally with checksum-verified model artifacts.
+- Sudachi tokenization and reviewed JMdict dictionary data are local.
+- Gemini is optional. When enabled, the existing contract sends OCR text plus minimal region-scoped lexical candidates (`id`, `surface`, `lemma`, `reading`) for contextual enrichment; it does not send the original image, JMdict dataset, or deterministic dictionary meanings, and requests use `store=False`.
+- Page and Document access use scoped capability tokens rather than treating a resource UUID as authorization.
+- Uploaded Page/Document data follows the current exact 24-hour retention contract; reading or language reprojection does not extend it.
+
+"Local-first" refers to processing and data boundaries after required artifacts are available. A fresh Docker bootstrap may still need network access to download pinned models, dictionary sources, container layers, and optional Gemini obviously requires provider access when enabled.
+
+See [SECURITY.md](SECURITY.md), [docs/document-imports.md](docs/document-imports.md), and [docs/testing.md](docs/testing.md) for deeper contracts.
+
+## Language and study features
+
+Four language axes are deliberately independent:
+
+| Axis | Current support |
+| --- | --- |
+| Manga content | Japanese (`ja`) |
+| Study / contextual explanation | Brazilian Portuguese (`pt-BR`) or English (`en`) |
+| Requested deterministic dictionary language | English (`en`), German (`de`), or Brazilian Portuguese (`pt-BR`) |
+| UI locale | English (`en`) or Brazilian Portuguese (`pt-BR`) |
+
+German uses the reviewed local JMdict pack when the exact canonical form is available and falls back per item to English otherwise. A `pt-BR` dictionary request remains explicitly Portuguese-requested, but deterministic word meanings currently use English fallback because there is no reviewed word-level Portuguese JMdict gloss pack. Changing dictionary language reuses persisted canonical linguistic analysis and does not rerun OCR, Sudachi lexical acquisition, or Gemini.
+
+See the [language-axis contract](docs/study-languages.md) and [JMdict pack contract](docs/jmdict-packs.md).
 
 ## Features
 
 | Area | Capability |
 | --- | --- |
-| Upload | Safe standalone image upload plus bounded ordered multi-image Documents, explicit `pt-BR`/`en` study language, idempotency and page/document-scoped HMAC capabilities |
+| Upload | Safe standalone image upload plus bounded ordered multi-image Documents with idempotency and scoped capabilities |
 | OCR | Local Manga Image Translator subset with checksum-verified model artifacts |
-| Linguistics | Sudachi tokenization plus reviewed local English/German JMdict data projected over language-neutral canonical lexical identities |
-| Gemini | Optional structured `pt-BR`/`en` contextual explanations with budget tracking and `store=False` |
-| Reader | React SPA with authenticated Blob rendering, responsive SVG overlays, document page navigation/aggregate progress, furigana, independent `en`/`pt-BR` UI locale, `pt-BR`/`en` study language, and `en`/`de`/`pt-BR` requested dictionary preferences with explicit fallback presentation |
-| Operations | PostgreSQL-backed queue, lease recovery, retention jobs, readiness checks and metrics |
+| Linguistics | Sudachi tokenization plus reviewed local English/German JMdict data over language-neutral canonical lexical identities |
+| Reader | Authenticated original-image Blob rendering, responsive SVG overlays, furigana, zoom/fit controls, multi-page navigation and partial-result reading |
+| Languages | Independent UI, study/explanation, and requested dictionary preferences with explicit fallback presentation |
+| Gemini | Optional structured contextual explanations in `pt-BR`/`en`, budget tracking, minimal text context, and `store=False` |
+| Operations | PostgreSQL queue, lease recovery, bounded retention, readiness, metrics, and hardened Compose runtime |
+
+## Known limitations and pre-release scope
+
+MangaSensei is still pre-release software. In addition to the OCR limitations listed under [Current validation](#current-validation):
+
+- PDF import is not implemented yet;
+- failed-page bulk retry/cancel and Slice C recovery UX remain deferred;
+- Documents are temporary rather than a persistent manga library;
+- post-create ordering is not persisted as an editing feature;
+- thumbnails and spread-aware/cross-page reading order are not implemented;
+- Document capability tokens are kept only in the active browser page session, so reloading loses access instead of persisting a sensitive token insecurely;
+- contextual Gemini output is optional enrichment, not required for local OCR/JMdict study functionality.
+
+The current development version is recorded in [`VERSION`](VERSION). Follow [issues](https://github.com/Gyliardson/mangasensei/issues) for roadmap and known defects.
 
 ## Architecture
 
@@ -74,15 +251,15 @@ flowchart TD
         DB[("PostgreSQL 18.4")]
         Files["Content-Addressed Image Storage"]
         Models["Local OCR Models"]
-        Dictionary["Local JMdict JSON"]
+        Dictionary["Local JMdict Data"]
     end
     Browser --> FastAPI
     FastAPI --> Capabilities
     FastAPI --> Static
     FastAPI --> DB
     FastAPI --> Files
-    Queue --> DB
     Runner --> Queue
+    Queue --> DB
     Runner --> OCR
     Runner --> Linguistics
     Runner --> Gemini
@@ -90,79 +267,38 @@ flowchart TD
     Linguistics --> Dictionary
     Runner --> DB
     Runner --> Files
-    classDef client fill:#2563eb,stroke:#1d4ed8,color:#ffffff;
-    classDef service fill:#475569,stroke:#334155,color:#ffffff;
-    classDef data fill:#059669,stroke:#047857,color:#ffffff;
-    class Browser client;
-    class FastAPI,Capabilities,Static,Runner,Queue,OCR,Linguistics,Gemini service;
-    class DB,Files,Models,Dictionary data;
 ```
 
-## API Surface
+The production Compose stack runs PostgreSQL, one-shot model/JMdict/migration bootstrap services, the FastAPI/frontend service, worker, and retention process with dropped Linux capabilities, `no-new-privileges`, non-root application execution, and a read-only application filesystem where applicable.
 
-| Method | Route | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/v1/pages` | Upload one Japanese manga page and queue analysis with optional `studyLanguage` (`pt-BR` default or `en`) |
-| `GET` | `/api/v1/pages/{page_id}` | Read standalone page status, persisted language/projection metadata and completed study data with a page token |
-| `GET` | `/api/v1/pages/{page_id}/image` | Stream the standalone original image through an authenticated Blob response |
-| `POST` | `/api/v1/pages/{page_id}/reprocess` | Queue standalone study/dictionary language reprocessing with a page reprocess capability |
-| `POST` | `/api/v1/documents` | Create an idempotent ordered multi-image Document and one normal page-analysis job per child |
-| `GET` | `/api/v1/documents/{document_id}` | Read ordered child summaries and aggregate page-count progress with `read:document` |
-| `GET` | `/api/v1/documents/{document_id}/progress` | Read the mutually exclusive completed/processing/failed page counters |
-| `GET` | `/api/v1/documents/{document_id}/pages/{page_id}` | Read a member StudyPage with the Document read capability |
-| `GET` | `/api/v1/documents/{document_id}/pages/{page_id}/image` | Stream one member original image with `read:document-image` |
-| `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | Reprocess exactly one study/dictionary language axis on one member Page with `reprocess:document` |
-| `GET` | `/health` | Process health check |
-| `GET` | `/ready` | Database, storage and schema readiness check |
-| `GET` | `/metrics` | Prometheus metrics |
+## Engineering quality and development
 
-Document capability tokens are header-only and expire exactly with the 24-hour Document. The current SPA keeps them only in the active in-memory page session; it does not place them in URLs, browser history or `localStorage`. A reload therefore loses active Document access rather than persisting a secret insecurely. PDF import, bulk retry and real document cancellation are not implemented yet.
+### Development toolchain
 
-## Local Setup
+The Docker Quick Start above is the visitor path. Host-native development additionally uses the reviewed versions in [docs/versions.md](docs/versions.md), including Python 3.11, Node.js 24 LTS as the target (`22.12+` supported for current tooling), and `uv`.
 
-Prerequisites:
+Typical dependency/bootstrap commands are:
 
-| Tool | Supported version |
-| --- | --- |
-| Python | `3.11.x` |
-| Node.js | `24 LTS` target; `22.12+` supported for local tooling |
-| Docker | `28.x` |
-| uv | Required for Python dependency and lockfile management |
-
-See [`docs/versions.md`](docs/versions.md) for the reviewed stack matrix.
-
-Install dependencies and prepare local artifacts:
-
-```powershell
-py -3.11 -m uv sync --extra ocr
+```sh
+uv sync --extra ocr
 npm install
-Copy-Item .env.example .env
-.\.venv\Scripts\mangasensei.exe models download
-.\.venv\Scripts\mangasensei.exe jmdict download
+uv run mangasensei models download
+uv run mangasensei models verify
+uv run mangasensei jmdict download
+uv run mangasensei jmdict download --language de
 ```
 
-Generate secrets and set them in `.env` before running anything that touches the database, queue or API. Replace `POSTGRES_PASSWORD`, the password inside `MANGASENSEI_DATABASE_URL`, and the value inside `MANGASENSEI_CAPABILITY_PEPPERS` with fresh random values:
+For direct host execution, create `.env` from `.env.example` and follow its comments so the host database URL uses the same generated database password. Docker Compose remains the simpler supported path for running the complete stack.
 
-```powershell
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-```
+<details>
+<summary>Local quality gates</summary>
 
-Gemini is optional. Leave `GOOGLE_API_KEY` unset or blank to run the worker with local OCR and linguistics only; set a non-empty key to enable contextual enrichment in the selected study language. When enabled, only OCR text and minimal region-scoped lexical candidates (`id`, `surface`, `lemma`, `reading`) are sent for optional enrichment. The original image, dictionary meanings and local JMdict dataset are not sent. With Gemini disabled, Japanese OCR/tokenization and deterministic local JMdict vocabulary remain available while contextual translation/explanation may be absent.
-
-Run with Docker Compose:
-
-```powershell
-docker compose up --build
-```
-
-Run local quality gates:
-
-```powershell
-.\.venv\Scripts\python.exe scripts/version.py check
-.\.venv\Scripts\python.exe scripts/check_markdown_links.py
-.\.venv\Scripts\python.exe -m ruff check backend/src tests scripts
-.\.venv\Scripts\python.exe -m mypy backend/src
-.\.venv\Scripts\python.exe -m pytest --cov
+```sh
+uv run python scripts/version.py check
+uv run python scripts/check_markdown_links.py
+uv run ruff check backend/src tests scripts
+uv run mypy backend/src
+uv run pytest --cov
 npm run lint
 npm run typecheck
 npm run test:coverage
@@ -170,46 +306,61 @@ npm run build
 npm run e2e
 ```
 
-## Directory Structure
+Heavier OCR, clean-Compose, CodeQL, and release/distribution assurance is documented in [docs/testing.md](docs/testing.md).
 
-```text
-backend/      Python API, worker, migrations, OCR and linguistics modules
-frontend/     React SPA, reader components and Playwright tests
-docs/         Architecture/contracts, version notes and visual artifacts
-tests/        Backend unit and integration tests
-var/          Local runtime data ignored by Git
-```
+</details>
 
-## Project Activity
+### Contributing and project activity
 
-[![Contributors](https://img.shields.io/github/contributors/Gyliardson/mangasensei)](https://github.com/Gyliardson/mangasensei/graphs/contributors)
-[![Commit activity](https://img.shields.io/github/commit-activity/m/Gyliardson/mangasensei)](https://github.com/Gyliardson/mangasensei/commits/main)
-[![Open issues](https://img.shields.io/github/issues/Gyliardson/mangasensei)](https://github.com/Gyliardson/mangasensei/issues)
-[![Discussions](https://img.shields.io/github/discussions/Gyliardson/mangasensei)](https://github.com/Gyliardson/mangasensei/discussions)
+Contributions are welcome in **English, Português, 日本語, or Español**.
 
-| Explore | Link |
-| --- | --- |
-| Contributors | [People building MangaSensei](https://github.com/Gyliardson/mangasensei/graphs/contributors) |
-| History | [Commit history](https://github.com/Gyliardson/mangasensei/commits/main) |
-| Roadmap and bugs | [Issues](https://github.com/Gyliardson/mangasensei/issues) |
-| Ideas and questions | [Discussions](https://github.com/Gyliardson/mangasensei/discussions) |
-| Security | [Security overview](https://github.com/Gyliardson/mangasensei/security) |
-| Releases | [GitHub Releases](https://github.com/Gyliardson/mangasensei/releases) |
+[Contributing guide](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security policy](SECURITY.md) · [Issues](https://github.com/Gyliardson/mangasensei/issues) · [Discussions](https://github.com/Gyliardson/mangasensei/discussions) · [Contributors](https://github.com/Gyliardson/mangasensei/graphs/contributors)
 
-## Contributing
+Localized contributor guides are linked from their corresponding README translations.
 
-Contributions are welcome in **English, Português, 日本語 or Español**. Read the guide in your preferred language:
+## API and deeper documentation
 
-[English](CONTRIBUTING.md) · [Português](CONTRIBUTING.pt-BR.md) · [日本語](CONTRIBUTING.ja.md) · [Español](CONTRIBUTING.es.md)
+FastAPI serves interactive API documentation at `/api/docs` when MangaSensei is running. The core API remains capability-protected for Page/Document resources.
 
-Please also follow the [Code of Conduct](CODE_OF_CONDUCT.md). For vulnerabilities, use the private reporting path described in the [Security Policy](SECURITY.md).
+<details>
+<summary>Core API surface</summary>
 
-## Data and Licensing
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/v1/pages` | Upload one Japanese manga page and queue analysis |
+| `GET` | `/api/v1/pages/{page_id}` | Read a standalone Page with its read capability |
+| `GET` | `/api/v1/pages/{page_id}/image` | Stream the protected original standalone image |
+| `POST` | `/api/v1/pages/{page_id}/reprocess` | Reprocess one standalone study/dictionary language axis |
+| `POST` | `/api/v1/documents` | Create an ordered multi-image Document |
+| `GET` | `/api/v1/documents/{document_id}` | Read ordered child summaries and aggregate progress |
+| `GET` | `/api/v1/documents/{document_id}/progress` | Read completed/processing/failed counters |
+| `GET` | `/api/v1/documents/{document_id}/pages/{page_id}` | Read a member StudyPage |
+| `GET` | `/api/v1/documents/{document_id}/pages/{page_id}/image` | Stream a protected member original image |
+| `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | Reprocess one language axis on one member Page |
+| `GET` | `/health` | Process health |
+| `GET` | `/ready` | Database, storage, and schema readiness |
+| `GET` | `/metrics` | Prometheus metrics |
 
-MangaSensei source code is licensed under GPL-3.0-only. JMdict-derived data is generated locally from verified third-party sources and remains subject to EDRDG / CC BY-SA terms. OCR model weights are local artifacts and are not redistributed by this repository.
+</details>
 
-See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for attribution, checksums and source references.
+Useful deep documentation:
+
+- [Multi-image Document imports](docs/document-imports.md)
+- [Study and language-axis contract](docs/study-languages.md)
+- [Reviewed JMdict packs](docs/jmdict-packs.md)
+- [Testing strategy](docs/testing.md)
+- [Reviewed stack versions](docs/versions.md)
+- [Security policy](SECURITY.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+## Data and licensing
+
+MangaSensei source code is licensed under GPL-3.0-only. JMdict-derived data is generated locally from checksum-verified third-party sources and remains subject to EDRDG / CC BY-SA terms. OCR model weights are local artifacts and are not redistributed by this repository.
+
+The licensed real-manga OCR pressure fixtures used for testing have their own copyright-holder terms and are **not** covered by the MangaSensei GPL license; their presence as test fixtures should not be interpreted as a general-purpose public demo/media license. See the [fixture contract](tests/fixtures/ocr/real_manga/black_jack/README.md).
+
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for attribution, integrity references, and source details.
 
 ## License
 
-Copyright (C) 2026 Gyliardson Keitison. MangaSensei is licensed under [GPL-3.0-only](LICENSE). Third-party components retain their respective notices.
+Copyright (C) 2026 Gyliardson Keitison. MangaSensei is licensed under [GPL-3.0-only](LICENSE). Third-party components and data retain their respective notices and terms.
