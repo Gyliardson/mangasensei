@@ -111,6 +111,15 @@ def downgrade() -> None:
         schema="mangasensei",
         type_="check",
     )
+    # Slice B can persist reprocess capabilities that the pre-Slice-B scope check cannot
+    # represent. Remove only those downgrade-incompatible capability rows before restoring
+    # the old constraint; read capabilities and Documents themselves are preserved.
+    op.execute(
+        sa.text(
+            "DELETE FROM mangasensei.document_capabilities "
+            "WHERE scope = 'reprocess:document'"
+        )
+    )
     op.create_check_constraint(
         op.f("ck_document_capabilities_scope"),
         "document_capabilities",
@@ -131,7 +140,7 @@ def downgrade() -> None:
         sa.text(
             "UPDATE mangasensei.pages AS p SET "
             "upload_key_id = 'document-v1-downgrade', "
-            "upload_idempotency_digest = decode(" 
+            "upload_idempotency_digest = decode("
             "replace(d.public_id::text, '-', '') || lpad(to_hex(p.ordinal::bigint), 32, '0'), 'hex') "
             "FROM mangasensei.documents AS d "
             "WHERE p.document_id = d.id AND p.upload_key_id IS NULL"
