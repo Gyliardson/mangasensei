@@ -21,6 +21,8 @@ MangaSensei は漫画ページから日本語テキストを抽出し、ロー�
 
 日本語コンテンツは、**ブラジルポルトガル語（`pt-BR`）または英語（`en`）の文脈解説**で学習できます。言語には独立した 4 つの軸があります。コンテンツは日本語（`ja`）、学習・解説言語は `pt-BR` または `en`、決定論的な辞書の要求言語は `en`・`de`・`pt-BR`、ブラウザに保存される UI locale は `en` または `pt-BR` です。UI locale と辞書言語は、新規または無効なブラウザ状態では英語を既定値とします。ドイツ語は正確な正規形がレビュー済みローカル JMdict pack に存在する場合に使われ、存在しない項目だけ英語へフォールバックします。`pt-BR` 辞書要求は要求言語として維持されますが、レビュー済みの単語レベルのポルトガル語 JMdict pack がないため、決定論的な語義は英語フォールバックです。辞書言語の変更は永続化済みの正規言語解析を再利用し、OCR、Sudachi の語彙取得、Gemini を再実行しません。詳細は[言語軸コントラクト](docs/study-languages.md)と[JMdict pack コントラクト](docs/jmdict-packs.md)を参照してください。
 
+SPA は複数の JPEG・PNG・WebP 画像から、一時的で順序付きの Document も作成できます。アップロード前に表示・変更した順序が正規順序で、各 Page は独立した OCR・学習単位のままです。完了した Page は他の Page が処理中でも読め、集約進捗は完了・処理中・失敗の件数を示します。Document と子 Page は同一の正確な 24 時間 expiry を共有します。PDF import と一括 retry/cancel はこの Slice では未実装です。詳細は[複数画像 Document import コントラクト](docs/document-imports.md)を参照してください。
+
 現在の開発バージョンは [`VERSION`](VERSION) に記録されています。
 
 ## MangaSensei の考え方
@@ -42,11 +44,11 @@ MangaSensei は漫画ページから日本語テキストを抽出し、ロー�
 
 | 領域 | 内容 |
 | --- | --- |
-| アップロード | 冪等性、明示的な `pt-BR`/`en` 学習言語、ページ単位 HMAC capability を備えた安全な画像アップロード |
+| アップロード | standalone 画像と上限付き順序付き複数画像 Document の安全な upload、明示的な `pt-BR`/`en` 学習言語、冪等性、Page/Document 単位 HMAC capability |
 | OCR | チェックサムで検証された Manga Image Translator のローカル OCR サブセット |
 | 言語解析 | Sudachi トークン化と、言語非依存の正規 lexical identity に投影されるレビュー済みローカル英語・ドイツ語 JMdict データ |
 | Gemini | 予算追跡と `store=False` を使う任意の `pt-BR`/`en` 構造化文脈解説 |
-| リーダー | 認証付き Blob、レスポンシブ SVG オーバーレイ、ふりがな、独立した `en`/`pt-BR` UI locale、`pt-BR`/`en` 学習言語、`en`/`de`/`pt-BR` 辞書要求と明示的なフォールバック表示を備えた React SPA |
+| リーダー | 認証付き Blob、レスポンシブ SVG オーバーレイ、Document navigation/集約進捗、ふりがな、独立した `en`/`pt-BR` UI locale、`pt-BR`/`en` 学習言語、`en`/`de`/`pt-BR` 辞書要求と明示的なフォールバック表示を備えた React SPA |
 | 運用 | PostgreSQL キュー、lease 回復、保持処理、readiness、metrics |
 
 ## アーキテクチャ
@@ -58,7 +60,7 @@ flowchart TD
     end
     subgraph API["API Layer"]
         FastAPI["FastAPI Application"]
-        Capabilities["Page-Scoped Capabilities"]
+        Capabilities["Page / Document Capabilities"]
         Static["Static Frontend Assets"]
     end
     subgraph Worker["Worker Layer"]
@@ -100,13 +102,21 @@ flowchart TD
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/v1/pages` | 日本語漫画ページをアップロードし、任意の `studyLanguage`（既定 `pt-BR` または `en`）で解析 job をキューに登録する |
-| `GET` | `/api/v1/pages/{page_id}` | ページトークンで状態、永続化された言語・辞書 projection メタデータ、完了済み学習データを取得する |
-| `GET` | `/api/v1/pages/{page_id}/image` | 認証付き Blob レスポンスで元画像を返す |
-| `POST` | `/api/v1/pages/{page_id}/reprocess` | reprocess capability で一般解析、または学習言語・辞書言語のいずれか 1 軸だけの再生成をキューに登録する |
+| `POST` | `/api/v1/pages` | 日本語漫画ページを standalone upload し、任意の `studyLanguage`（既定 `pt-BR` または `en`）で解析 job をキューに登録する |
+| `GET` | `/api/v1/pages/{page_id}` | Page token で standalone Page の状態、永続化された言語・辞書 projection metadata、完了済み学習データを取得する |
+| `GET` | `/api/v1/pages/{page_id}/image` | standalone 元画像を認証付き Blob response で返す |
+| `POST` | `/api/v1/pages/{page_id}/reprocess` | Page capability で standalone の学習言語・辞書言語 reprocess をキューに登録する |
+| `POST` | `/api/v1/documents` | 順序付きで冪等な複数画像 Document を作成し、各子 Page に通常の解析 job を 1 件作る |
+| `GET` | `/api/v1/documents/{document_id}` | `read:document` で順序付き子 summary と集約進捗を取得する |
+| `GET` | `/api/v1/documents/{document_id}/progress` | 完了・処理中・失敗の排他的な件数を取得する |
+| `GET` | `/api/v1/documents/{document_id}/pages/{page_id}` | Document read capability で member StudyPage を取得する |
+| `GET` | `/api/v1/documents/{document_id}/pages/{page_id}/image` | `read:document-image` で member の元画像を取得する |
+| `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | `reprocess:document` で member Page の言語軸を 1 つだけ再処理する |
 | `GET` | `/health` | プロセスの health check |
 | `GET` | `/ready` | データベース、storage、schema の readiness check |
 | `GET` | `/metrics` | Prometheus metrics |
+
+Document capability token は header のみで送信し、24 時間の Document と正確に同時に失効します。現在の SPA は token を active page session のメモリだけに保持し、URL・browser history・`localStorage` には保存しません。そのため reload 後は、secret を安全でない場所に永続化する代わりに active Document access を失います。PDF import、一括 retry、実際の Document cancel は未実装です。
 
 ## ローカル実行
 
@@ -165,7 +175,7 @@ npm run e2e
 ```text
 backend/      Python API、worker、migrations、OCR、言語解析
 frontend/     React SPA、reader components、Playwright tests
-docs/         バージョン情報とビジュアル資料
+docs/         技術コントラクト、バージョン情報、ビジュアル資料
 tests/        Backend unit/integration tests
 var/          Git 管理外のローカル runtime data
 ```
