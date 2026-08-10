@@ -45,10 +45,15 @@ afterEach(() => {
 describe("App document upload", () => {
   it("creates a multi-image document with one study language and ordered image parts", async () => {
     const user = userEvent.setup();
-    let capturedForm: FormData | null = null;
+    let capturedImages: FormDataEntryValue[] = [];
+    let capturedStudyLanguages: FormDataEntryValue[] = [];
+    let capturedDictionaryLanguage = false;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/v1/documents") {
-        capturedForm = init?.body as FormData;
+        const form = init?.body as FormData;
+        capturedImages = form.getAll("images[]");
+        capturedStudyLanguages = form.getAll("studyLanguage");
+        capturedDictionaryLanguage = form.has("dictionaryLanguage");
         return Response.json({ success: true, data: documentData(), error: null }, { status: 202 });
       }
       return new Response(null, { status: 404 });
@@ -60,10 +65,9 @@ describe("App document upload", () => {
     await user.click(screen.getByRole("button", { name: "Analisar 2 páginas" }));
 
     expect(await screen.findByText("Página 1 de 2")).toBeVisible();
-    expect(capturedForm).not.toBeNull();
-    expect(capturedForm?.getAll("images[]")).toEqual([first, second]);
-    expect(capturedForm?.getAll("studyLanguage")).toEqual(["pt-BR"]);
-    expect(capturedForm?.has("dictionaryLanguage")).toBe(false);
+    expect(capturedImages).toEqual([first, second]);
+    expect(capturedStudyLanguages).toEqual(["pt-BR"]);
+    expect(capturedDictionaryLanguage).toBe(false);
   });
 
   it.each([
