@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adaptive reader fit and zoom controls for portrait and landscape pages, with local preferences and contained pan/scroll behavior.
 - Explicit Japanese-content study-language backend contract for `pt-BR` and `en`, including persisted effective-language metadata, structured Gemini language input, backward-compatible `pt-BR` migration, and language-only reprocessing that reuses completed OCR and Japanese linguistic analysis.
 - Browser-local `pt-BR`/`en` study-language preference and reader control, independent from the Portuguese UI locale and persisted result language.
+- Controlled OpenCV OCR A/B diagnostics with spatial candidate matching, exact stage-array deltas and licensed-artifact handling notices.
 
 ### Changed
 
@@ -45,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Page and status responses now expose `resultAvailable` separately from the latest analysis-attempt status.
 - Tagged release publishing now requires the reusable JMdict source-to-consumer contract plus clean Compose prerequisite, API-readiness and worker-readiness validation on the exact tag SHA.
 - Reader page-presentation controls are now manga-scoped and sticky while normal vertical reading uses the document; mobile presents the comfortable baseline as width-fit without rewriting persisted preferences.
+- The headless OCR image runtime now uses OpenCV 5.0.0.93 after a same-code 12-page comparison against 4.14.0.94 found only bounded recognizer-warp pixel drift and no detector, transcript, geometry, order or reviewed-pressure regression.
 
 ### Fixed
 
