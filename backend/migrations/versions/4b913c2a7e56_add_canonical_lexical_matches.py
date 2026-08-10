@@ -181,7 +181,10 @@ def upgrade() -> None:
                 reading,
                 'JMdict',
                 dictionary_entry_id,
-                lemma,
+                CASE
+                    WHEN lemma = reading THEN translate(lemma, :katakana, :hiragana)
+                    ELSE lemma
+                END,
                 translate(reading, :katakana, :hiragana),
                 COALESCE(dictionary_source, 'JMdict'),
                 jlpt_level,
