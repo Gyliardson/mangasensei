@@ -267,6 +267,16 @@ async def _process_page(
 
 
 def expected_local_vocabulary() -> list[dict[str, object]]:
+    source_ref = (
+        f"jmdict:en:{LocalVocabularyDictionaryFixture.version}:"
+        f"{LocalVocabularyDictionaryFixture.digest.hex()[:16]}"
+    )
+    localized = {
+        "effectiveLanguage": "en",
+        "fallbackUsed": False,
+        "fallbackReason": None,
+        "sourceRef": source_ref,
+    }
     return [
         {
             "id": "jmdict-multi-token-fixture",
@@ -275,6 +285,7 @@ def expected_local_vocabulary() -> list[dict[str, object]]:
             "reading": "ネコネコ",
             "meanings": ["paired cats"],
             "source": "JMdict local-first test",
+            **localized,
             "jlpt": None,
         },
         {
@@ -284,6 +295,7 @@ def expected_local_vocabulary() -> list[dict[str, object]]:
             "reading": "ネコ",
             "meanings": ["cat"],
             "source": "JMdict local-first test",
+            **localized,
             "jlpt": {"level": "N5", "official": False},
         },
         {
@@ -293,6 +305,7 @@ def expected_local_vocabulary() -> list[dict[str, object]]:
             "reading": "イヌ",
             "meanings": ["dog"],
             "source": "JMdict local-first test",
+            **localized,
             "jlpt": {"level": "N5", "official": False},
         },
     ]
