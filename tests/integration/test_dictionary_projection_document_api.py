@@ -10,13 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from mangasensei.api.app import create_app
+from mangasensei.infrastructure.database.analysis_models import LinguisticRunRecord
 from mangasensei.infrastructure.database.dictionary_projection_models import (
     DictionaryProjectionRecord,
     DictionaryProjectionSourceRecord,
 )
 from mangasensei.infrastructure.database.job_models import JobRecord
 from mangasensei.infrastructure.database.storage_models import PageRecord
-from mangasensei.infrastructure.database.study_models import StudyResultRecord
 from tests.integration.test_document_api import (
     _add_completed_result,
     _seed_readable_document,
@@ -59,7 +59,13 @@ async def test_document_authorized_child_page_exposes_dictionary_projection_cont
         session.add(analysis_job)
         await session.flush()
         await _add_completed_result(session, job=analysis_job, digest=digest)
-        study_result = await session.get_one(StudyResultRecord, analysis_job.id)
+        linguistic_run_id = (
+            await session.execute(
+                select(LinguisticRunRecord.id).where(
+                    LinguisticRunRecord.job_id == analysis_job.id
+                )
+            )
+        ).scalar_one()
 
         projection_job = JobRecord(
             page_id=page.id,
@@ -75,7 +81,7 @@ async def test_document_authorized_child_page_exposes_dictionary_projection_cont
         session.add(
             DictionaryProjectionRecord(
                 job_id=projection_job.id,
-                linguistic_run_id=study_result.linguistic_run_id,
+                linguistic_run_id=linguistic_run_id,
                 requested_dictionary_language="de",
                 fallback_dictionary_language="en",
             )
