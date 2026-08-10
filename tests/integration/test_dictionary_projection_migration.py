@@ -19,7 +19,7 @@ def _alembic_config(database_url: str) -> Config:
 
 
 @pytest.mark.integration
-def test_dictionary_projection_migration_backfills_existing_english_result_and_blocks_lossy_downgrade(
+def test_dictionary_projection_migration_backfill_and_lossy_downgrade(
     clean_postgres_url: str,
 ) -> None:
     config = _alembic_config(clean_postgres_url)
