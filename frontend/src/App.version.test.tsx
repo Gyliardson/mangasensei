@@ -12,6 +12,6 @@ describe("application version presentation", () => {
   });
 
   it("formats a synthetic release version without assuming the current literal", () => {
-    expect(versionLabel("9.8.7")).toBe("Versão 9.8.7");
+    expect(versionLabel("9.8.7")).toBe("v9.8.7");
   });
 });
