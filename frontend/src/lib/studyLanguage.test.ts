@@ -6,7 +6,6 @@ import {
   isStudyLanguage,
   loadStudyLanguagePreference,
   saveStudyLanguagePreference,
-  studyLanguageLabel,
 } from "./studyLanguage";
 
 describe("study-language preference", () => {
@@ -21,8 +20,6 @@ describe("study-language preference", () => {
     expect(isStudyLanguage("en")).toBe(true);
     expect(isStudyLanguage("es")).toBe(false);
     expect(isStudyLanguage(null)).toBe(false);
-    expect(studyLanguageLabel("pt-BR")).toBe("Português (Brasil)");
-    expect(studyLanguageLabel("en")).toBe("Inglês");
   });
 
   it("persists and restores English", () => {

@@ -30,7 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reader-local furigana display preferences for Hiragana, canonical Katakana and hidden ruby, persisted safely in browser storage.
 - Adaptive reader fit and zoom controls for portrait and landscape pages, with local preferences and contained pan/scroll behavior.
 - Explicit Japanese-content study-language backend contract for `pt-BR` and `en`, including persisted effective-language metadata, structured Gemini language input, backward-compatible `pt-BR` migration, and language-only reprocessing that reuses completed OCR and Japanese linguistic analysis.
-- Browser-local `pt-BR`/`en` study-language preference and reader control, independent from the Portuguese UI locale and persisted result language.
+- Browser-local `pt-BR`/`en` study-language preference and reader control, independent from the UI locale and persisted result language.
+- Independent browser-local `en`/`pt-BR` UI localization with English as the fresh/invalid-state default, typed message catalogs, explicit preference persistence and runtime document-language synchronization.
 - Controlled OpenCV OCR A/B diagnostics with spatial candidate matching, exact stage-array deltas and licensed-artifact handling notices.
 
 ### Changed

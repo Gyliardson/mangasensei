@@ -4,11 +4,12 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./styles.css";
 import "./study-language.css";
+import "./ui-locale.css";
 
 const root = document.getElementById("root");
 
 if (!root) {
-  throw new Error("Elemento raiz não encontrado.");
+  throw new Error("Root element not found.");
 }
 
 createRoot(root).render(

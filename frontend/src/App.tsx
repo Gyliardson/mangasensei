@@ -18,9 +18,21 @@ import {
   loadStudyLanguagePreference,
   saveStudyLanguagePreference,
 } from "./lib/studyLanguage";
+import { messagesFor, type UiMessages } from "./lib/uiMessages";
+import {
+  type UiLocale,
+  isUiLocale,
+  loadUiLocalePreference,
+  saveUiLocalePreference,
+} from "./lib/uiLocale";
 import { APPLICATION_VERSION, versionLabel } from "./version";
 
 const acceptedTypes = ".jpg,.jpeg,.png,.webp";
+
+type LocalErrorCode = "one_image_only" | "select_image_first" | "unexpected_processing";
+type DisplayError =
+  | { readonly kind: "local"; readonly code: LocalErrorCode }
+  | { readonly kind: "api"; readonly code: string };
 
 export function App() {
   const [file, setFile] = useState<File | null>(null);
@@ -29,19 +41,29 @@ export function App() {
   const [page, setPage] = useState<StudyPage | null>(null);
   const [pageAccess, setPageAccess] = useState<UploadData | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<DisplayError | null>(null);
+  const [uiLocale, setUiLocale] = useState<UiLocale>(() => loadUiLocalePreference());
   const [preferredStudyLanguage, setPreferredStudyLanguage] = useState<StudyLanguage>(() =>
     loadStudyLanguagePreference(),
   );
   const [studyLanguageUpdating, setStudyLanguageUpdating] = useState(false);
-  const [studyLanguageError, setStudyLanguageError] = useState<string | null>(null);
+  const [studyLanguageErrorCode, setStudyLanguageErrorCode] = useState<string | null>(null);
   const operation = useRef<AbortController | null>(null);
+  const messages = messagesFor(uiLocale);
 
   useEffect(() => () => operation.current?.abort(), []);
 
   useEffect(() => () => {
     if (imageUrl) URL.revokeObjectURL(imageUrl);
   }, [imageUrl]);
+
+  useEffect(() => {
+    document.documentElement.lang = uiLocale;
+    document.querySelector<HTMLAnchorElement>(".skip-link")?.replaceChildren(messages.skipLink);
+    document
+      .querySelector<HTMLMetaElement>('meta[name="description"]')
+      ?.setAttribute("content", messages.documentDescription);
+  }, [messages, uiLocale]);
 
   const reset = () => {
     operation.current?.abort();
@@ -55,7 +77,13 @@ export function App() {
     setImageUrl(null);
     setError(null);
     setStudyLanguageUpdating(false);
-    setStudyLanguageError(null);
+    setStudyLanguageErrorCode(null);
+  };
+
+  const changeUiLocale = (value: string) => {
+    if (!isUiLocale(value)) return;
+    setUiLocale(value);
+    saveUiLocalePreference(value);
   };
 
   const changePreferredStudyLanguage = (value: string) => {
@@ -75,7 +103,7 @@ export function App() {
     const dropped = Array.from(event.dataTransfer.files);
     if (dropped.length !== 1) {
       setFile(null);
-      setError("Solte apenas uma imagem por vez.");
+      setError({ kind: "local", code: "one_image_only" });
       setPhase("error");
       return;
     }
@@ -85,7 +113,7 @@ export function App() {
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!file) {
-      setError("Selecione uma imagem antes de continuar.");
+      setError({ kind: "local", code: "select_image_first" });
       setPhase("error");
       return;
     }
@@ -113,7 +141,11 @@ export function App() {
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setPageAccess(null);
-      setError(caught instanceof ApiError ? caught.message : "O processamento não pôde ser concluído.");
+      setError(
+        caught instanceof ApiError
+          ? { kind: "api", code: caught.code }
+          : { kind: "local", code: "unexpected_processing" },
+      );
       setPhase("error");
     }
   };
@@ -122,7 +154,7 @@ export function App() {
     if (!page || !pageAccess || studyLanguageUpdating) return;
     setPreferredStudyLanguage(target);
     saveStudyLanguagePreference(target);
-    setStudyLanguageError(null);
+    setStudyLanguageErrorCode(null);
     if (target === page.studyLanguage) return;
 
     const previousLanguage = page.studyLanguage;
@@ -140,24 +172,27 @@ export function App() {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setPreferredStudyLanguage(previousLanguage);
       saveStudyLanguagePreference(previousLanguage);
-      setStudyLanguageError(
-        caught instanceof ApiError
-          ? caught.message
-          : "Não foi possível atualizar o idioma de estudo.",
-      );
+      setStudyLanguageErrorCode(caught instanceof ApiError ? caught.code : "study_language_update_failed");
     } finally {
       if (operation.current === controller) operation.current = null;
       setStudyLanguageUpdating(false);
     }
   };
 
+  const studyLanguageError = studyLanguageErrorCode
+    ? studyLanguageErrorCode === "study_language_update_failed"
+      ? messages.studyLanguageUpdateFailed
+      : messages.apiError(studyLanguageErrorCode)
+    : null;
+
   if (phase === "complete" && page && imageUrl) {
     return (
       <div className="app-shell">
-        <Header />
+        <Header uiLocale={uiLocale} messages={messages} onUiLocaleChange={changeUiLocale} />
         <ReaderWorkspace
           page={page}
           imageUrl={imageUrl}
+          uiLocale={uiLocale}
           preferredStudyLanguage={preferredStudyLanguage}
           studyLanguageUpdating={studyLanguageUpdating}
           studyLanguageError={studyLanguageError}
@@ -171,15 +206,13 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <Header />
+      <Header uiLocale={uiLocale} messages={messages} onUiLocaleChange={changeUiLocale} />
 
       <main id="conteudo" className="workspace">
         <section className="intro" aria-labelledby="page-title">
-          <p className="eyebrow">Leitura assistida, sem alterar a página</p>
-          <h1 id="page-title">Leia japonês no contexto</h1>
-          <p className="lede">
-            Envie uma página, selecione uma região e transforme cada fala em material de estudo.
-          </p>
+          <p className="eyebrow">{messages.introEyebrow}</p>
+          <h1 id="page-title">{messages.introTitle}</h1>
+          <p className="lede">{messages.introLede}</p>
         </section>
 
         <form className="upload-panel" aria-labelledby="upload-title" onSubmit={submit}>
@@ -187,20 +220,20 @@ export function App() {
           <div className="upload-copy">
             <div className="title-row">
               <ScanText aria-hidden="true" />
-              <h2 id="upload-title">Escolha uma página</h2>
+              <h2 id="upload-title">{messages.uploadTitle}</h2>
             </div>
-            <p>JPEG, PNG ou WebP. Até 12 MiB e 25 megapixels.</p>
+            <p>{messages.uploadRequirements}</p>
             <label className="upload-study-language">
-              <span>Idioma de estudo</span>
+              <span>{messages.studyLanguageLabel}</span>
               <select
-                aria-label="Idioma de estudo"
+                aria-label={messages.studyLanguageLabel}
                 value={preferredStudyLanguage}
                 onChange={(event) => changePreferredStudyLanguage(event.currentTarget.value)}
               >
-                <option value="pt-BR">Português (Brasil)</option>
-                <option value="en">Inglês</option>
+                <option value="pt-BR">{messages.studyLanguageName("pt-BR")}</option>
+                <option value="en">{messages.studyLanguageName("en")}</option>
               </select>
-              <small>Define explicações contextuais; o conteúdo analisado continua japonês.</small>
+              <small>{messages.studyLanguageNote}</small>
             </label>
           </div>
 
@@ -214,8 +247,8 @@ export function App() {
             onDrop={handleDrop}
           >
             <FileImage aria-hidden="true" />
-            <span className="file-action">Selecionar imagem</span>
-            <span className="file-detail">{file?.name ?? "ou arraste o arquivo para cá"}</span>
+            <span className="file-action">{messages.selectImage}</span>
+            <span className="file-detail">{file?.name ?? messages.fileDropHint}</span>
           </label>
           <input
             className="sr-only"
@@ -223,36 +256,36 @@ export function App() {
             name="page-image"
             type="file"
             accept={acceptedTypes}
-            aria-label="Imagem da página"
+            aria-label={messages.pageImageAria}
             aria-describedby="upload-retention"
             onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
           />
 
           <button className="primary-button" type="submit" disabled={!file || phase === "uploading" || phase === "processing"}>
             {phase === "uploading" || phase === "processing" ? <LoaderCircle className="spinner" aria-hidden="true" /> : <ScanText aria-hidden="true" />}
-            {phase === "uploading" ? "Enviando imagem" : phase === "processing" ? statusText(jobStatus) : "Analisar página"}
+            {phase === "uploading" ? messages.uploadingImage : phase === "processing" ? messages.jobStatus(jobStatus) : messages.analyzePage}
           </button>
 
           {phase === "uploading" || phase === "processing" ? (
             <button className="cancel-button" type="button" onClick={reset} aria-describedby="upload-retention">
-              <X aria-hidden="true" /> Parar de acompanhar
+              <X aria-hidden="true" /> {messages.stopFollowing}
             </button>
           ) : null}
 
-          {error ? <p className="form-error" role="alert">{error}</p> : null}
+          {error ? <p className="form-error" role="alert">{displayError(messages, error)}</p> : null}
 
           <p id="upload-retention" className="retention">
             <LockKeyhole aria-hidden="true" />
-            Parar de acompanhar interrompe apenas a espera nesta tela; a análise pode continuar. Originais e resultados são excluídos automaticamente após 24 horas.
+            {messages.uploadRetention}
           </p>
         </form>
 
         <aside className="study-preview" aria-labelledby="preview-title">
           <BookOpenText aria-hidden="true" />
           <div>
-            <p className="eyebrow">Próxima etapa</p>
-            <h2 id="preview-title">Texto, leitura e nuance lado a lado</h2>
-            <p>As regiões reconhecidas aparecerão sobre a imagem original e poderão ser abertas por teclado.</p>
+            <p className="eyebrow">{messages.previewEyebrow}</p>
+            <h2 id="preview-title">{messages.previewTitle}</h2>
+            <p>{messages.previewBody}</p>
           </div>
         </aside>
       </main>
@@ -262,14 +295,35 @@ export function App() {
   );
 }
 
-function Header() {
+function Header({
+  uiLocale,
+  messages,
+  onUiLocaleChange,
+}: {
+  readonly uiLocale: UiLocale;
+  readonly messages: UiMessages;
+  readonly onUiLocaleChange: (value: string) => void;
+}) {
   return (
     <header className="site-header">
-      <a className="brand" href="/" aria-label="MangaSensei, página inicial">
+      <a className="brand" href="/" aria-label={messages.brandHomeAria}>
         <span className="brand-mark" aria-hidden="true">間</span>
         <span>MangaSensei</span>
       </a>
-      <p className="privacy-note"><LockKeyhole aria-hidden="true" /> Processamento local e temporário</p>
+      <div className="header-actions">
+        <p className="privacy-note"><LockKeyhole aria-hidden="true" /> {messages.privacyNote}</p>
+        <label className="ui-locale-picker">
+          <span>{messages.uiLocaleLabel}</span>
+          <select
+            aria-label={messages.uiLocaleLabel}
+            value={uiLocale}
+            onChange={(event) => onUiLocaleChange(event.currentTarget.value)}
+          >
+            <option value="en">{messages.localeNames.en}</option>
+            <option value="pt-BR">{messages.localeNames["pt-BR"]}</option>
+          </select>
+        </label>
+      </div>
     </header>
   );
 }
@@ -284,14 +338,9 @@ function Footer() {
   );
 }
 
-function statusText(status: JobStatus | null): string {
-  const labels: Partial<Record<JobStatus, string>> = {
-    pending: "Aguardando worker",
-    claimed: "Preparando análise",
-    processing_ocr: "Reconhecendo texto",
-    processing_linguistics: "Analisando japonês",
-    processing_gemini: "Gerando contexto",
-    retryable_failure: "Tentando novamente",
-  };
-  return status ? labels[status] ?? "Processando página" : "Processando página";
+function displayError(messages: UiMessages, error: DisplayError): string {
+  if (error.kind === "api") return messages.apiError(error.code);
+  if (error.code === "one_image_only") return messages.oneImageOnly;
+  if (error.code === "select_image_first") return messages.selectImageFirst;
+  return messages.unexpectedProcessingError;
 }

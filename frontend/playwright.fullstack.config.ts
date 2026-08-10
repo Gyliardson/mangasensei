@@ -12,6 +12,15 @@ export default defineConfig({
   ],
   use: {
     baseURL: "http://127.0.0.1:8000",
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: "http://127.0.0.1:8000",
+          localStorage: [{ name: "mangasensei.ui.locale", value: "pt-BR" }],
+        },
+      ],
+    },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },

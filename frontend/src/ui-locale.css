@@ -1,0 +1,44 @@
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+.ui-locale-picker {
+  display: grid;
+  gap: 0.2rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.ui-locale-picker select {
+  min-height: 36px;
+  padding: 0.4rem 1.8rem 0.4rem 0.55rem;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+}
+
+.ui-locale-picker select:focus-visible {
+  outline: 3px solid var(--red);
+  outline-offset: 3px;
+}
+
+@media (max-width: 720px) {
+  .site-header {
+    align-items: flex-start;
+  }
+
+  .header-actions {
+    align-items: flex-end;
+    flex-direction: column-reverse;
+    gap: 0.6rem;
+  }
+
+  .ui-locale-picker {
+    justify-items: end;
+  }
+}

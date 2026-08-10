@@ -8,10 +8,6 @@ export function isStudyLanguage(value: unknown): value is StudyLanguage {
   return value === "pt-BR" || value === "en";
 }
 
-export function studyLanguageLabel(language: StudyLanguage): string {
-  return language === "en" ? "Inglês" : "Português (Brasil)";
-}
-
 export function loadStudyLanguagePreference(): StudyLanguage {
   try {
     const stored = window.localStorage.getItem(STUDY_LANGUAGE_PREFERENCE_KEY);

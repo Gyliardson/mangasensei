@@ -19,7 +19,7 @@ A privacy-first study workspace for turning manga pages into interactive Japanes
 
 MangaSensei extracts Japanese text from manga pages, enriches it with local linguistic data, and presents the result in a responsive reader without altering the original image. OCR model weights and JMdict-derived data stay local and are not committed or bundled into the distributable image. Gemini is optional.
 
-Japanese content can be studied with **Brazilian Portuguese (`pt-BR`) or English (`en`) contextual explanations**. Study language is explicit and independent from the current Portuguese UI locale. The reviewed local JMdict meanings remain English in both modes, and changing only the study language reuses completed OCR and Japanese linguistic analysis rather than rerunning it. See the [study-language contract](docs/study-languages.md) for the exact boundaries.
+Japanese content can be studied with **Brazilian Portuguese (`pt-BR`) or English (`en`) contextual explanations**. Study language is explicit and independent from the browser-local UI locale. The UI supports English (`en`) and Brazilian Portuguese (`pt-BR`), defaults to English for fresh or invalid browser state, and persists an explicit choice locally. The reviewed local JMdict meanings remain English in both study modes, and changing only the study language reuses completed OCR and Japanese linguistic analysis rather than rerunning it. See the [study-language contract](docs/study-languages.md) for the exact boundaries.
 
 The current development version is recorded in [`VERSION`](VERSION).
 
@@ -46,7 +46,7 @@ The current development version is recorded in [`VERSION`](VERSION).
 | OCR | Local Manga Image Translator subset with checksum-verified model artifacts |
 | Linguistics | Sudachi tokenization plus a normalized English-backed JMdict index generated from verified source data |
 | Gemini | Optional structured `pt-BR`/`en` contextual explanations with budget tracking and `store=False` |
-| Reader | React SPA with authenticated Blob rendering, responsive SVG overlays, furigana, study-language preference and vocabulary cards |
+| Reader | React SPA with authenticated Blob rendering, responsive SVG overlays, furigana, independent `en`/`pt-BR` UI locale and study-language preferences, and vocabulary cards |
 | Operations | PostgreSQL-backed queue, lease recovery, retention jobs, readiness checks and metrics |
 
 ## Architecture

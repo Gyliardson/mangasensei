@@ -5,8 +5,9 @@ import type { StudyPage, StudyRegion, StudyToken } from "../../lib/api";
 import {
   type StudyLanguage,
   isStudyLanguage,
-  studyLanguageLabel,
 } from "../../lib/studyLanguage";
+import { messagesFor, type UiMessages } from "../../lib/uiMessages";
+import type { UiLocale } from "../../lib/uiLocale";
 import { type FuriganaMode, furiganaReading, isFuriganaMode } from "./furigana";
 import { loadFuriganaPreference, saveFuriganaPreference } from "./furiganaPreference";
 import { toSvgBox } from "./overlay";
@@ -31,6 +32,7 @@ import "./reader-preferences.css";
 interface ReaderWorkspaceProps {
   readonly page: StudyPage;
   readonly imageUrl: string;
+  readonly uiLocale: UiLocale;
   readonly preferredStudyLanguage: StudyLanguage;
   readonly studyLanguageUpdating: boolean;
   readonly studyLanguageError: string | null;
@@ -41,6 +43,7 @@ interface ReaderWorkspaceProps {
 export function ReaderWorkspace({
   page,
   imageUrl,
+  uiLocale,
   preferredStudyLanguage,
   studyLanguageUpdating,
   studyLanguageError,
@@ -60,6 +63,7 @@ export function ReaderWorkspace({
   const readerWidth = viewportMetrics?.width ?? window.innerWidth;
   const mobileViewport = isMobileReaderViewport(readerWidth);
   const presentedFitMode = effectiveReaderFitMode(viewportPreference.fitMode, readerWidth);
+  const messages = messagesFor(uiLocale);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -146,44 +150,44 @@ export function ReaderWorkspace({
       <section className="page-stage" aria-labelledby="reader-title">
         <div className="reader-toolbar">
           <div>
-            <p className="eyebrow">Página processada</p>
-            <h1 id="reader-title">Selecione uma região</h1>
+            <p className="eyebrow">{messages.processedPage}</p>
+            <h1 id="reader-title">{messages.selectRegion}</h1>
           </div>
           <div className="reader-header-actions">
             <div
               className="reader-study-actions"
               role="group"
-              aria-label="Preferências de estudo"
+              aria-label={messages.studyPreferences}
               aria-busy={studyLanguageUpdating}
             >
               <label className="reader-preference">
-                <span>Idioma de estudo</span>
+                <span>{messages.studyLanguageLabel}</span>
                 <select
-                  aria-label="Idioma de estudo"
+                  aria-label={messages.studyLanguageLabel}
                   value={preferredStudyLanguage}
                   disabled={studyLanguageUpdating}
                   onChange={(event) => changeStudyLanguage(event.currentTarget.value)}
                 >
-                  <option value="pt-BR">Português (Brasil)</option>
-                  <option value="en">Inglês</option>
+                  <option value="pt-BR">{messages.studyLanguageName("pt-BR")}</option>
+                  <option value="en">{messages.studyLanguageName("en")}</option>
                 </select>
               </label>
               <label className="reader-preference">
-                <span>Furigana na leitura</span>
+                <span>{messages.furiganaReading}</span>
                 <select
-                  aria-label="Exibição de furigana"
+                  aria-label={messages.furiganaReading}
                   value={furiganaMode}
                   onChange={(event) => changeFuriganaMode(event.currentTarget.value)}
                 >
-                  <option value="hiragana">Hiragana</option>
-                  <option value="katakana">Katakana</option>
-                  <option value="hidden">Oculto</option>
+                  <option value="hiragana">{messages.furiganaHiragana}</option>
+                  <option value="katakana">{messages.furiganaKatakana}</option>
+                  <option value="hidden">{messages.furiganaHidden}</option>
                 </select>
               </label>
             </div>
-            <div className="reader-navigation" role="group" aria-label="Navegação">
+            <div className="reader-navigation" role="group" aria-label={messages.navigation}>
               <button className="text-button" type="button" onClick={onReset}>
-                <RotateCcw aria-hidden="true" /> Nova página
+                <RotateCcw aria-hidden="true" /> {messages.newPage}
               </button>
             </div>
           </div>
@@ -191,53 +195,55 @@ export function ReaderWorkspace({
 
         {studyLanguageUpdating && preferredStudyLanguage !== page.studyLanguage ? (
           <p className="study-language-feedback" role="status">
-            Atualizando explicações para {studyLanguageLabel(preferredStudyLanguage)}. O resultado
-            exibido continua em {studyLanguageLabel(page.studyLanguage)} até a nova análise concluir.
+            {messages.updatingStudyLanguage(
+              messages.studyLanguageName(preferredStudyLanguage),
+              messages.studyLanguageName(page.studyLanguage),
+            )}
           </p>
         ) : null}
         {studyLanguageError ? (
           <p className="study-language-feedback study-language-error" role="alert">
-            {studyLanguageError} O resultado em {studyLanguageLabel(page.studyLanguage)} foi mantido.
+            {studyLanguageError} {messages.retainedStudyLanguage(messages.studyLanguageName(page.studyLanguage))}
           </p>
         ) : null}
 
-        <div className="page-presentation-toolbar" role="group" aria-label="Apresentação da página">
+        <div className="page-presentation-toolbar" role="group" aria-label={messages.pagePresentation}>
           <label className="reader-preference page-fit-preference">
-            <span>Ajuste da página</span>
+            <span>{messages.pageFit}</span>
             <select
-              aria-label="Ajuste da página"
+              aria-label={messages.pageFit}
               value={presentedFitMode}
               onChange={(event) => changeFitMode(event.currentTarget.value)}
             >
               {mobileViewport ? (
                 <>
-                  <option value="width">Largura</option>
-                  <option value="page">Página inteira</option>
+                  <option value="width">{messages.fitWidth}</option>
+                  <option value="page">{messages.fitPage}</option>
                 </>
               ) : (
                 <>
-                  <option value="comfortable">Confortável</option>
-                  <option value="page">Página inteira</option>
-                  <option value="width">Largura</option>
+                  <option value="comfortable">{messages.fitComfortable}</option>
+                  <option value="page">{messages.fitPage}</option>
+                  <option value="width">{messages.fitWidth}</option>
                 </>
               )}
             </select>
           </label>
-          <div className="reader-zoom" role="group" aria-label="Zoom da página">
+          <div className="reader-zoom" role="group" aria-label={messages.pageZoom}>
             <button
               className="reader-zoom-button"
               type="button"
-              aria-label="Diminuir zoom"
+              aria-label={messages.decreaseZoom}
               disabled={viewportPreference.zoom <= READER_ZOOM_MIN}
               onClick={() => changeZoom(-READER_ZOOM_STEP)}
             >
               <Minus aria-hidden="true" />
             </button>
-            <output aria-label="Nível de zoom">{viewportPreference.zoom}%</output>
+            <output aria-label={messages.zoomLevel}>{viewportPreference.zoom}%</output>
             <button
               className="reader-zoom-button"
               type="button"
-              aria-label="Aumentar zoom"
+              aria-label={messages.increaseZoom}
               disabled={viewportPreference.zoom >= READER_ZOOM_MAX}
               onClick={() => changeZoom(READER_ZOOM_STEP)}
             >
@@ -250,7 +256,7 @@ export function ReaderWorkspace({
           ref={viewportRef}
           className="page-viewport"
           role={hasHorizontalPan ? "region" : undefined}
-          aria-label={hasHorizontalPan ? "Visualização da página com rolagem horizontal" : undefined}
+          aria-label={hasHorizontalPan ? messages.horizontalPan : undefined}
           tabIndex={hasHorizontalPan ? 0 : undefined}
           data-horizontal-pan={hasHorizontalPan}
         >
@@ -260,12 +266,12 @@ export function ReaderWorkspace({
             data-fit-mode={presentedFitMode}
             data-zoom={viewportPreference.zoom}
           >
-            <img src={imageUrl} alt="Página original enviada para estudo" />
+            <img src={imageUrl} alt={messages.originalPageAlt} />
             <svg
               className="region-overlay"
               viewBox={`0 0 ${page.dimensions.width} ${page.dimensions.height}`}
               role="group"
-              aria-label="Regiões de texto reconhecidas"
+              aria-label={messages.recognizedRegions}
             >
               {page.regions.map((region, index) => (
                 <RegionShape
@@ -274,6 +280,7 @@ export function ReaderWorkspace({
                   index={index}
                   selected={region.id === selected?.id}
                   dimensions={page.dimensions}
+                  messages={messages}
                   onSelect={() => setSelectedId(region.id)}
                 />
               ))}
@@ -281,7 +288,12 @@ export function ReaderWorkspace({
           </div>
         </div>
         <p className="reader-meta">
-          {page.regions.length} regiões · estudo {studyLanguageLabel(page.studyLanguage)} · OCR {page.ocr.detector}/{page.ocr.recognizer} · exclusão em 24 horas
+          {messages.readerMeta(
+            page.regions.length,
+            messages.studyLanguageName(page.studyLanguage),
+            page.ocr.detector,
+            page.ocr.recognizer,
+          )}
         </p>
       </section>
 
@@ -290,6 +302,7 @@ export function ReaderWorkspace({
         furiganaMode={furiganaMode}
         studyLanguage={page.studyLanguage}
         dictionaryLanguage={page.dictionaryLanguage}
+        messages={messages}
       />
     </main>
   );
@@ -300,10 +313,11 @@ interface RegionShapeProps {
   readonly index: number;
   readonly selected: boolean;
   readonly dimensions: StudyPage["dimensions"];
+  readonly messages: UiMessages;
   readonly onSelect: () => void;
 }
 
-function RegionShape({ region, index, selected, dimensions, onSelect }: RegionShapeProps) {
+function RegionShape({ region, index, selected, dimensions, messages, onSelect }: RegionShapeProps) {
   const box = toSvgBox(region.normalizedBbox, dimensions);
   const activate = (event: React.KeyboardEvent<SVGGElement>) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -318,7 +332,7 @@ function RegionShape({ region, index, selected, dimensions, onSelect }: RegionSh
       data-selected={selected}
       role="button"
       tabIndex={0}
-      aria-label={`Região ${index + 1}: ${region.text}`}
+      aria-label={messages.regionAria(index + 1, region.text)}
       aria-pressed={selected}
       onClick={onSelect}
       onKeyDown={activate}
@@ -336,17 +350,19 @@ function StudyPanel({
   furiganaMode,
   studyLanguage,
   dictionaryLanguage,
+  messages,
 }: {
   readonly region: StudyRegion | undefined;
   readonly furiganaMode: FuriganaMode;
   readonly studyLanguage: StudyLanguage;
   readonly dictionaryLanguage: "en";
+  readonly messages: UiMessages;
 }) {
   if (!region) {
     return (
-      <aside className="study-panel empty-study" aria-label="Painel de estudo">
+      <aside className="study-panel empty-study" aria-label={messages.studyPanel}>
         <BookOpenText aria-hidden="true" />
-        <p>Nenhuma região de texto foi reconhecida nesta página.</p>
+        <p>{messages.noRecognizedRegions}</p>
       </aside>
     );
   }
@@ -355,7 +371,7 @@ function StudyPanel({
     <aside className="study-panel" aria-labelledby="study-title" aria-live="polite">
       <div className="study-heading">
         <span>#{region.readingOrder + 1}</span>
-        <span>{Math.round(region.confidence * 100)}% de confiança</span>
+        <span>{messages.confidence(Math.round(region.confidence * 100))}</span>
       </div>
       <h2 id="study-title" lang="ja">
         {region.tokens.length > 0
@@ -366,11 +382,11 @@ function StudyPanel({
       </h2>
 
       <section aria-labelledby="translation-title">
-        <p className="panel-label" id="translation-title">Tradução contextual</p>
+        <p className="panel-label" id="translation-title">{messages.contextualTranslation}</p>
         {region.translation ? (
           <p className="translation" lang={studyLanguage}>{region.translation}</p>
         ) : (
-          <p className="translation">Análise contextual indisponível.</p>
+          <p className="translation">{messages.contextualUnavailable}</p>
         )}
         {region.explanation ? (
           <p className="explanation" lang={studyLanguage}>{region.explanation}</p>
@@ -379,7 +395,7 @@ function StudyPanel({
 
       <section aria-labelledby="vocabulary-title">
         <p className="panel-label" id="vocabulary-title">
-          Vocabulário <span className="panel-language-note">significados locais em inglês</span>
+          {messages.vocabulary} <span className="panel-language-note">{messages.dictionaryEnglishNote}</span>
         </p>
         {region.vocabulary.length > 0 ? (
           <ul className="vocabulary-list">
@@ -390,20 +406,20 @@ function StudyPanel({
                   <span lang="ja">{item.reading}</span>
                 </div>
                 <p lang={dictionaryLanguage}>{item.meanings.join("; ")}</p>
-                <small>{item.source}{item.jlpt ? ` · JLPT ${item.jlpt.level} não oficial` : ""}</small>
+                <small>{item.source}{item.jlpt ? ` · ${messages.unofficialJlpt(item.jlpt.level)}` : ""}</small>
               </li>
             ))}
           </ul>
-        ) : <p className="muted-panel">Nenhuma associação confiável ao dicionário.</p>}
+        ) : <p className="muted-panel">{messages.noDictionaryMatch}</p>}
       </section>
 
       <section aria-labelledby="grammar-title">
-        <p className="panel-label" id="grammar-title">Gramática</p>
+        <p className="panel-label" id="grammar-title">{messages.grammar}</p>
         {region.grammar.length > 0 ? (
           <ul className="grammar-list" lang={studyLanguage}>
             {region.grammar.map((point) => <li key={point}>{point}</li>)}
           </ul>
-        ) : <p className="muted-panel">Nenhum ponto gramatical adicional.</p>}
+        ) : <p className="muted-panel">{messages.noGrammarPoint}</p>}
       </section>
     </aside>
   );

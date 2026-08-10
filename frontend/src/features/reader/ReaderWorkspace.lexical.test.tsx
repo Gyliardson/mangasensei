@@ -73,6 +73,7 @@ describe("ReaderWorkspace lexical identity", () => {
       <ReaderWorkspace
         page={LEXICAL_PAGE}
         imageUrl="fixture-image"
+        uiLocale="pt-BR"
         preferredStudyLanguage="pt-BR"
         studyLanguageUpdating={false}
         studyLanguageError={null}
