@@ -7,10 +7,6 @@ const png = Buffer.from(
 );
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    window.localStorage.removeItem("mangasensei.ui.locale");
-  });
-
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -118,6 +114,8 @@ test.beforeEach(async ({ page }) => {
 
 test("persists UI locale independently through a representative reader flow", async ({ page }) => {
   await page.goto("/");
+  await page.evaluate(() => window.localStorage.removeItem("mangasensei.ui.locale"));
+  await page.reload();
 
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.getByRole("heading", { name: "Read Japanese in context" })).toBeVisible();
