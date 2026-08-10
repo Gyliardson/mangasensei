@@ -143,7 +143,7 @@ describe("DocumentReader", () => {
     );
     renderReader(document);
 
-    expect(screen.getByText("Processing")).toBeVisible();
+    expect(screen.getAllByText("Processing")).toHaveLength(2);
     expect(apiMocks.fetchDocumentPage).not.toHaveBeenCalled();
 
     const pageButtons = screen.getAllByRole("button", { name: /^Page / });
@@ -237,7 +237,9 @@ describe("DocumentReader", () => {
     expect(screen.getAllByRole("button", { name: /^Page / })).toHaveLength(200);
     expect(apiMocks.fetchDocumentPage).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(750);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(750);
+    });
 
     expect(apiMocks.fetchDocumentSnapshot).toHaveBeenCalledTimes(1);
     expect(apiMocks.fetchDocumentPage).not.toHaveBeenCalled();
