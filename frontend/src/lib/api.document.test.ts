@@ -42,7 +42,7 @@ describe("document API client", () => {
   });
 
   it("sends ordered images and one study language without dictionary parameters", async () => {
-    const fetchMock = vi.fn(async () => envelope(access, 202));
+    const fetchMock = vi.fn<typeof fetch>(async () => envelope(access, 202));
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("crypto", {
       randomUUID: vi.fn(() => "00000000-0000-4000-8000-000000000010"),
@@ -67,7 +67,7 @@ describe("document API client", () => {
   });
 
   it("preserves duplicate logical files in multipart order", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => envelope(access, 202)));
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => envelope(access, 202)));
     vi.stubGlobal("crypto", {
       randomUUID: vi.fn(() => "00000000-0000-4000-8000-000000000011"),
       getRandomValues: vi.fn(),
@@ -97,7 +97,7 @@ describe("document API client", () => {
       ocr: { detector: "default", recognizer: "48px", upstreamCommit: "commit" },
     } as const;
     const fetchMock = vi
-      .fn()
+      .fn<typeof fetch>()
       .mockResolvedValueOnce(envelope(access))
       .mockResolvedValueOnce(envelope(studyPage));
     vi.stubGlobal("fetch", fetchMock);
@@ -120,7 +120,7 @@ describe("document API client", () => {
   it("uses only readDocumentImage for the selected child image", async () => {
     const createObjectURL = vi.fn(() => "blob:document-page");
     vi.stubGlobal("URL", { ...URL, createObjectURL });
-    const fetchMock = vi.fn(async () => new Response("image"));
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response("image"));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
@@ -144,7 +144,7 @@ describe("document API client", () => {
       getRandomValues: vi.fn(),
     });
     const fetchMock = vi
-      .fn()
+      .fn<typeof fetch>()
       .mockResolvedValueOnce(
         envelope(
           { jobId: "study-job", status: "pending", studyLanguage: "en", created: true },
