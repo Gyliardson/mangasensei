@@ -8,9 +8,14 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from mangasensei.linguistics.service import DictionaryEntry
+from mangasensei.linguistics.service import (
+    DictionaryEntry,
+    DictionaryLookupResult,
+    LexicalFormIdentity,
+)
 
 NORMALIZED_CONVERTER_VERSION = "mangasensei-jmdict-v3"
+_DICTIONARY_NAMESPACE = "JMdict"
 
 
 class DictionaryDataError(ValueError):
@@ -32,17 +37,22 @@ class JsonJmdictDictionary:
         for raw_entry in payload["entries"]:
             for key, entry in _normalize_entry(raw_entry, version):
                 mutable_index[key].append(entry)
-        self._index = {key: tuple(entries) for key, entries in mutable_index.items()}
+        self._index = {
+            key: tuple(sorted(entries, key=lambda entry: entry.identity))
+            for key, entries in mutable_index.items()
+        }
         self.version = version
         self.digest = hashlib.sha256(content).digest()
         self.entry_count = len(payload["entries"])
 
-    def lookup(self, lemma: str, reading: str) -> DictionaryEntry | None:
+    def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult:
         matches = self._index.get((lemma, _hiragana(reading)), ())
-        return matches[0] if len(matches) == 1 else None
+        return DictionaryLookupResult.from_candidates(matches)
 
 
-def _normalize_entry(raw: Any, version: str) -> tuple[tuple[tuple[str, str], DictionaryEntry], ...]:
+def _normalize_entry(
+    raw: Any, version: str
+) -> tuple[tuple[tuple[str, str], DictionaryEntry], ...]:
     if not isinstance(raw, dict):
         raise DictionaryDataError("JMdict entry must be an object")
     entry_id = str(raw.get("id", "")).strip()
@@ -79,7 +89,12 @@ def _normalize_entry(raw: Any, version: str) -> tuple[tuple[tuple[str, str], Dic
             (
                 key,
                 DictionaryEntry(
-                    id=entry_id,
+                    identity=LexicalFormIdentity(
+                        dictionary_namespace=_DICTIONARY_NAMESPACE,
+                        entry_id=entry_id,
+                        lemma=key[0],
+                        reading=key[1],
+                    ),
                     meanings=meanings,
                     source=f"JMdict {version}",
                     jlpt_level=jlpt_level,
