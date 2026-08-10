@@ -61,6 +61,12 @@ interface StudyPageEnvelope {
   };
 }
 
+interface BrowserImageObservation {
+  readonly status: number;
+  readonly token: string | null;
+  readonly url: string;
+}
+
 async function waitForDocument(
   request: APIRequestContext,
   documentId: string,
@@ -80,36 +86,69 @@ async function waitForDocument(
   throw new Error("document state did not satisfy the expected predicate");
 }
 
-function collectDocumentImageBodies(page: Page): Map<string, Promise<Buffer>> {
-  const bodies = new Map<string, Promise<Buffer>>();
+function collectDocumentImageResponses(page: Page): Map<string, Promise<BrowserImageObservation>> {
+  const observations = new Map<string, Promise<BrowserImageObservation>>();
   page.on("response", (response) => {
     const path = new URL(response.url()).pathname;
     const match = path.match(/^\/api\/v1\/documents\/[^/]+\/pages\/([^/]+)\/image$/);
-    if (match?.[1] && response.ok() && !bodies.has(match[1])) {
-      bodies.set(match[1], response.body());
+    if (match?.[1] && !observations.has(match[1])) {
+      observations.set(
+        match[1],
+        response.request().headerValue("x-document-token").then((token) => ({
+          status: response.status(),
+          token,
+          url: response.url(),
+        })),
+      );
     }
   });
-  return bodies;
+  return observations;
 }
 
-async function waitForImageBody(
-  bodies: Map<string, Promise<Buffer>>,
+async function waitForBrowserImageObservation(
+  observations: Map<string, Promise<BrowserImageObservation>>,
   pageId: string,
-): Promise<Buffer> {
+): Promise<BrowserImageObservation> {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    const body = bodies.get(pageId);
-    if (body) return body;
+    const observation = observations.get(pageId);
+    if (observation) return observation;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`protected image was not fetched for ${pageId}`);
+  throw new Error(`protected browser image was not fetched for ${pageId}`);
+}
+
+async function fetchDocumentImageBytes(
+  request: APIRequestContext,
+  documentId: string,
+  pageId: string,
+  readDocumentImage: string,
+): Promise<Buffer> {
+  const response = await request.get(
+    `/api/v1/documents/${documentId}/pages/${pageId}/image`,
+    { headers: { "X-Document-Token": readDocumentImage } },
+  );
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toContain("image/png");
+  return response.body();
+}
+
+async function expectBlobImageRendered(page: Page): Promise<void> {
+  const image = page.locator(".page-canvas img");
+  await expect(image).toHaveAttribute("src", /^blob:/);
+  await expect.poll(() =>
+    image.evaluate((element) => {
+      const rendered = element as HTMLImageElement;
+      return rendered.complete && rendered.naturalWidth > 0 && rendered.naturalHeight > 0;
+    }),
+  ).toBe(true);
 }
 
 test("creates, partially reads, navigates and reprojects a real multipage document", async ({
   page,
   request,
 }) => {
-  const protectedImages = collectDocumentImageBodies(page);
+  const protectedImages = collectDocumentImageResponses(page);
 
   await page.goto("/");
   await page.getByRole("combobox", { name: "Idioma da interface" }).selectOption("en");
@@ -171,7 +210,25 @@ test("creates, partially reads, navigates and reprojects a real multipage docume
   const secondPageId = document.pages[1]?.pageId;
   expect(firstPageId).toBeTruthy();
   expect(secondPageId).toBeTruthy();
-  expect(await waitForImageBody(protectedImages, firstPageId!)).toEqual(bluePage);
+
+  const firstBrowserImage = await waitForBrowserImageObservation(protectedImages, firstPageId!);
+  const firstBrowserImageUrl = new URL(firstBrowserImage.url);
+  expect(firstBrowserImage.status).toBe(200);
+  expect(firstBrowserImage.token).toBe(document.capabilities.readDocumentImage);
+  expect(firstBrowserImageUrl.pathname).toBe(
+    `/api/v1/documents/${document.documentId}/pages/${firstPageId}/image`,
+  );
+  expect(firstBrowserImageUrl.search).toBe("");
+  expect(firstBrowserImage.url).not.toContain(document.capabilities.readDocumentImage);
+  await expectBlobImageRendered(page);
+  expect(
+    await fetchDocumentImageBytes(
+      request,
+      document.documentId,
+      firstPageId!,
+      document.capabilities.readDocumentImage,
+    ),
+  ).toEqual(bluePage);
 
   await waitForDocument(
     request,
@@ -183,7 +240,25 @@ test("creates, partially reads, navigates and reprojects a real multipage docume
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByText("Page 2 of 2")).toBeVisible();
   await expect(page.getByRole("button", { name: "Region 1: 猫です" })).toBeVisible();
-  expect(await waitForImageBody(protectedImages, secondPageId!)).toEqual(redPage);
+
+  const secondBrowserImage = await waitForBrowserImageObservation(protectedImages, secondPageId!);
+  const secondBrowserImageUrl = new URL(secondBrowserImage.url);
+  expect(secondBrowserImage.status).toBe(200);
+  expect(secondBrowserImage.token).toBe(document.capabilities.readDocumentImage);
+  expect(secondBrowserImageUrl.pathname).toBe(
+    `/api/v1/documents/${document.documentId}/pages/${secondPageId}/image`,
+  );
+  expect(secondBrowserImageUrl.search).toBe("");
+  expect(secondBrowserImage.url).not.toContain(document.capabilities.readDocumentImage);
+  await expectBlobImageRendered(page);
+  expect(
+    await fetchDocumentImageBytes(
+      request,
+      document.documentId,
+      secondPageId!,
+      document.capabilities.readDocumentImage,
+    ),
+  ).toEqual(redPage);
 
   const dictionaryMutationPromise = page.waitForResponse((response) => {
     const path = new URL(response.url()).pathname;
