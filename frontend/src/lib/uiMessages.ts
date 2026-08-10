@@ -1,4 +1,5 @@
 import type { JobStatus } from "./api";
+import type { DictionaryLanguage } from "./dictionaryLanguage";
 import type { StudyLanguage } from "./studyLanguage";
 import type { UiLocale } from "./uiLocale";
 
@@ -17,6 +18,8 @@ export interface UiMessages {
   readonly studyLanguageLabel: string;
   readonly studyLanguageNote: string;
   readonly studyLanguageName: (language: StudyLanguage) => string;
+  readonly dictionaryLanguageLabel: string;
+  readonly dictionaryLanguageName: (language: DictionaryLanguage | "de") => string;
   readonly selectImage: string;
   readonly fileDropHint: string;
   readonly pageImageAria: string;
@@ -31,6 +34,7 @@ export interface UiMessages {
   readonly selectImageFirst: string;
   readonly unexpectedProcessingError: string;
   readonly studyLanguageUpdateFailed: string;
+  readonly dictionaryLanguageUpdateFailed: string;
   readonly jobStatus: (status: JobStatus | null) => string;
   readonly apiError: (code: string) => string;
   readonly processedPage: string;
@@ -44,6 +48,8 @@ export interface UiMessages {
   readonly newPage: string;
   readonly updatingStudyLanguage: (target: string, current: string) => string;
   readonly retainedStudyLanguage: (current: string) => string;
+  readonly updatingDictionaryLanguage: (target: string, current: string) => string;
+  readonly retainedDictionaryLanguage: (current: string) => string;
   readonly pagePresentation: string;
   readonly pageFit: string;
   readonly fitWidth: string;
@@ -64,7 +70,10 @@ export interface UiMessages {
   readonly contextualTranslation: string;
   readonly contextualUnavailable: string;
   readonly vocabulary: string;
-  readonly dictionaryEnglishNote: string;
+  readonly dictionaryRequestedNote: (language: string) => string;
+  readonly englishFallbackBadge: string;
+  readonly unsupportedPortugueseDictionary: string;
+  readonly dictionaryProvenance: (dataset: string, language: string) => string;
   readonly noDictionaryMatch: string;
   readonly grammar: string;
   readonly noGrammarPoint: string;
@@ -78,6 +87,7 @@ const englishApiErrors: Readonly<Record<string, string>> = {
   expired: "This page has expired.",
   failed: "Page processing failed.",
   processing_failed: "Page processing failed.",
+  analysis_in_progress: "Another page analysis is already in progress.",
   request_failed: "The request could not be completed.",
 };
 
@@ -88,6 +98,7 @@ const portugueseApiErrors: Readonly<Record<string, string>> = {
   expired: "Esta página expirou.",
   failed: "O processamento da página falhou.",
   processing_failed: "O processamento da página falhou.",
+  analysis_in_progress: "Já existe outra análise desta página em andamento.",
   request_failed: "A requisição não pôde ser concluída.",
 };
 
@@ -106,6 +117,12 @@ const en: UiMessages = {
   studyLanguageLabel: "Study language",
   studyLanguageNote: "Controls contextual explanations; the analyzed content remains Japanese.",
   studyLanguageName: (language) => language === "en" ? "English" : "Portuguese (Brazil)",
+  dictionaryLanguageLabel: "Dictionary language",
+  dictionaryLanguageName: (language) => {
+    if (language === "de") return "German";
+    if (language === "pt-BR") return "Portuguese (Brazil)";
+    return "English";
+  },
   selectImage: "Select image",
   fileDropHint: "or drag the file here",
   pageImageAria: "Page image",
@@ -120,6 +137,7 @@ const en: UiMessages = {
   selectImageFirst: "Select an image before continuing.",
   unexpectedProcessingError: "Processing could not be completed.",
   studyLanguageUpdateFailed: "The study language could not be updated.",
+  dictionaryLanguageUpdateFailed: "The dictionary language could not be updated.",
   jobStatus: (status) => {
     const labels: Partial<Record<JobStatus, string>> = {
       pending: "Waiting for worker",
@@ -143,6 +161,8 @@ const en: UiMessages = {
   newPage: "New page",
   updatingStudyLanguage: (target, current) => `Updating explanations to ${target}. The displayed result remains in ${current} until the new analysis finishes.`,
   retainedStudyLanguage: (current) => `The result in ${current} was kept.`,
+  updatingDictionaryLanguage: (target, current) => `Updating dictionary meanings to ${target}. The completed ${current} dictionary result remains visible until reprojection finishes.`,
+  retainedDictionaryLanguage: (current) => `The completed dictionary result in ${current} was kept.`,
   pagePresentation: "Page presentation",
   pageFit: "Page fit",
   fitWidth: "Width",
@@ -163,7 +183,10 @@ const en: UiMessages = {
   contextualTranslation: "Contextual translation",
   contextualUnavailable: "Contextual analysis unavailable.",
   vocabulary: "Vocabulary",
-  dictionaryEnglishNote: "local meanings in English",
+  dictionaryRequestedNote: (language) => `Requested dictionary: ${language}`,
+  englishFallbackBadge: "English fallback",
+  unsupportedPortugueseDictionary: "Deterministic Portuguese JMdict glosses are not available. The request remains Portuguese (Brazil), while meanings are supplied by the reviewed English JMdict fallback.",
+  dictionaryProvenance: (dataset, language) => `${dataset} · ${language}`,
   noDictionaryMatch: "No reliable dictionary association.",
   grammar: "Grammar",
   noGrammarPoint: "No additional grammar point.",
@@ -185,6 +208,12 @@ const ptBR: UiMessages = {
   studyLanguageLabel: "Idioma de estudo",
   studyLanguageNote: "Define explicações contextuais; o conteúdo analisado continua japonês.",
   studyLanguageName: (language) => language === "en" ? "Inglês" : "Português (Brasil)",
+  dictionaryLanguageLabel: "Idioma do dicionário",
+  dictionaryLanguageName: (language) => {
+    if (language === "de") return "Alemão";
+    if (language === "pt-BR") return "Português (Brasil)";
+    return "Inglês";
+  },
   selectImage: "Selecionar imagem",
   fileDropHint: "ou arraste o arquivo para cá",
   pageImageAria: "Imagem da página",
@@ -199,6 +228,7 @@ const ptBR: UiMessages = {
   selectImageFirst: "Selecione uma imagem antes de continuar.",
   unexpectedProcessingError: "O processamento não pôde ser concluído.",
   studyLanguageUpdateFailed: "Não foi possível atualizar o idioma de estudo.",
+  dictionaryLanguageUpdateFailed: "Não foi possível atualizar o idioma do dicionário.",
   jobStatus: (status) => {
     const labels: Partial<Record<JobStatus, string>> = {
       pending: "Aguardando worker",
@@ -222,6 +252,8 @@ const ptBR: UiMessages = {
   newPage: "Nova página",
   updatingStudyLanguage: (target, current) => `Atualizando explicações para ${target}. O resultado exibido continua em ${current} até a nova análise concluir.`,
   retainedStudyLanguage: (current) => `O resultado em ${current} foi mantido.`,
+  updatingDictionaryLanguage: (target, current) => `Atualizando os significados do dicionário para ${target}. O resultado concluído em ${current} continua visível até a reprojeção terminar.`,
+  retainedDictionaryLanguage: (current) => `O resultado concluído do dicionário em ${current} foi mantido.`,
   pagePresentation: "Apresentação da página",
   pageFit: "Ajuste da página",
   fitWidth: "Largura",
@@ -242,7 +274,10 @@ const ptBR: UiMessages = {
   contextualTranslation: "Tradução contextual",
   contextualUnavailable: "Análise contextual indisponível.",
   vocabulary: "Vocabulário",
-  dictionaryEnglishNote: "significados locais em inglês",
+  dictionaryRequestedNote: (language) => `Dicionário solicitado: ${language}`,
+  englishFallbackBadge: "Fallback em inglês",
+  unsupportedPortugueseDictionary: "O JMdict determinístico não oferece glosas em português. A preferência solicitada continua Português (Brasil), mas os significados vêm do fallback revisado em inglês.",
+  dictionaryProvenance: (dataset, language) => `${dataset} · ${language}`,
   noDictionaryMatch: "Nenhuma associação confiável ao dicionário.",
   grammar: "Gramática",
   noGrammarPoint: "Nenhum ponto gramatical adicional.",
