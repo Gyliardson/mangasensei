@@ -66,8 +66,10 @@ class PageRecord(Base):
             name="document_membership_pair",
         ),
         CheckConstraint(
-            "(document_id IS NULL AND upload_key_id IS NOT NULL AND upload_idempotency_digest IS NOT NULL) OR "
-            "(document_id IS NOT NULL AND upload_key_id IS NULL AND upload_idempotency_digest IS NULL)",
+            "(document_id IS NULL AND upload_key_id IS NOT NULL "
+            "AND upload_idempotency_digest IS NOT NULL) OR "
+            "(document_id IS NOT NULL AND upload_key_id IS NULL "
+            "AND upload_idempotency_digest IS NULL)",
             name="standalone_idempotency_pair",
         ),
         CheckConstraint("ordinal IS NULL OR ordinal >= 0", name="ordinal_nonnegative"),

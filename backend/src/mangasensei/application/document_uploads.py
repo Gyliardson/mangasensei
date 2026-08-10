@@ -14,7 +14,11 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mangasensei.application.idempotency import idempotency_digest
-from mangasensei.application.uploads import IdempotencyConflictError, safe_filename, stage_image_blob
+from mangasensei.application.uploads import (
+    IdempotencyConflictError,
+    safe_filename,
+    stage_image_blob,
+)
 from mangasensei.domain.capabilities import DocumentCapabilityScope
 from mangasensei.domain.languages import StudyLanguage
 from mangasensei.infrastructure.capabilities import CapabilityService
@@ -90,7 +94,8 @@ class DocumentUploadService:
                 # deadlocks when two documents contain the same blobs in different page order.
                 for digest in sorted({bytes.fromhex(image.sha256) for image in images}):
                     await acquire_image_blob_lock(session, digest)
-                for ordinal, (image, filename) in enumerate(zip(images, original_filenames, strict=True)):
+                ordered_inputs = zip(images, original_filenames, strict=True)
+                for ordinal, (image, filename) in enumerate(ordered_inputs):
                     blob, pending = await stage_image_blob(
                         session,
                         storage=self._storage,
@@ -119,13 +124,12 @@ class DocumentUploadService:
                         )
                     )
                 await session.flush()
-            else:
-                if document.request_digest is None or not hmac.compare_digest(
-                    document.request_digest, request_digest
-                ):
-                    raise IdempotencyConflictError(
-                        "idempotency key is bound to another document request"
-                    )
+            elif document.request_digest is None or not hmac.compare_digest(
+                document.request_digest, request_digest
+            ):
+                raise IdempotencyConflictError(
+                    "idempotency key is bound to another document request"
+                )
             tokens = await self._issue_capabilities(session, document)
             await session.flush()
             result = DocumentCreateResult(
@@ -205,14 +209,16 @@ class DocumentUploadService:
             for scope in scopes
         }
         session.add_all(
-            DocumentCapabilityRecord(
-                document_id=document.id,
-                key_id="v1",
-                scope=scope.value,
-                digest=bytes.fromhex(capability.persisted_digest),
-                expires_at=capability.expires_at,
-            )
-            for scope, capability in issued.items()
+            [
+                DocumentCapabilityRecord(
+                    document_id=document.id,
+                    key_id="v1",
+                    scope=scope.value,
+                    digest=bytes.fromhex(capability.persisted_digest),
+                    expires_at=capability.expires_at,
+                )
+                for scope, capability in issued.items()
+            ]
         )
         return DocumentCapabilityTokens(
             read_document=issued[DocumentCapabilityScope.READ_DOCUMENT].token,

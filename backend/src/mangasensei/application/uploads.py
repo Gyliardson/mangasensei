@@ -66,7 +66,12 @@ async def stage_image_blob(
     """Stage one validated immutable image under the shared digest-locking contract."""
     await acquire_image_blob_lock(session, bytes.fromhex(image.sha256))
     pending = await storage.stage(image)
-    return await get_or_create_image_blob(session, image=image, storage_key=pending.storage_key), pending
+    blob = await get_or_create_image_blob(
+        session,
+        image=image,
+        storage_key=pending.storage_key,
+    )
+    return blob, pending
 
 
 async def get_or_create_image_blob(
@@ -154,14 +159,18 @@ class UploadService:
             value=idempotency_key,
         )
         request_digest = bytes.fromhex(image.sha256)
-        safe_filename = safe_filename(original_filename)
+        filename = safe_filename(original_filename)
 
         async with self._sessions.begin() as session:
-            blob, pending_write = await stage_image_blob(session, storage=self._storage, image=image)
+            blob, pending_write = await stage_image_blob(
+                session,
+                storage=self._storage,
+                image=image,
+            )
             page, created = await self._get_or_create_page(
                 session,
                 blob_id=blob.id,
-                filename=safe_filename,
+                filename=filename,
                 upload_digest=upload_digest,
                 request_digest=request_digest,
             )

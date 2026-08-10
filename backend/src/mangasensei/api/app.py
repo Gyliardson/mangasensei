@@ -319,7 +319,10 @@ def create_app(settings: Settings) -> FastAPI:
         ),
     ) -> dict[str, Any]:
         if not images:
-            raise DocumentLimitError("document_empty", "O documento precisa conter ao menos uma imagem.")
+            raise DocumentLimitError(
+                "document_empty",
+                "O documento precisa conter ao menos uma imagem.",
+            )
         if len(images) > settings.max_document_images:
             raise DocumentLimitError(
                 "document_page_limit_exceeded",

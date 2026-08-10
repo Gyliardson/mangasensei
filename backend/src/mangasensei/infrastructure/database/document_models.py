@@ -31,8 +31,10 @@ class DocumentRecord(Base):
         CheckConstraint("order_revision > 0", name="order_revision_positive"),
         CheckConstraint("expires_at = created_at + interval '24 hours'", name="retention_exact"),
         CheckConstraint(
-            "(upload_key_id IS NULL AND upload_idempotency_digest IS NULL AND request_digest IS NULL) OR "
-            "(upload_key_id IS NOT NULL AND upload_idempotency_digest IS NOT NULL AND request_digest IS NOT NULL)",
+            "(upload_key_id IS NULL AND upload_idempotency_digest IS NULL "
+            "AND request_digest IS NULL) OR "
+            "(upload_key_id IS NOT NULL AND upload_idempotency_digest IS NOT NULL "
+            "AND request_digest IS NOT NULL)",
             name="creation_identity_triplet",
         ),
         CheckConstraint(

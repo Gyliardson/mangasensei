@@ -28,8 +28,16 @@ class Settings(BaseSettings):
     max_image_pixels: int = Field(default=25_000_000, gt=0, le=25_000_000)
     max_image_side: int = Field(default=10_000, gt=0, le=10_000)
     max_document_images: int = Field(default=200, ge=1, le=500)
-    max_document_bytes: int = Field(default=512 * 1024 * 1024, ge=12 * 1024 * 1024, le=1024 * 1024 * 1024)
-    max_document_pixels: int = Field(default=1_000_000_000, ge=25_000_000, le=5_000_000_000)
+    max_document_bytes: int = Field(
+        default=512 * 1024 * 1024,
+        ge=12 * 1024 * 1024,
+        le=1024 * 1024 * 1024,
+    )
+    max_document_pixels: int = Field(
+        default=1_000_000_000,
+        ge=25_000_000,
+        le=5_000_000_000,
+    )
     api_rate_limit_per_minute: int = Field(default=120, ge=1, le=10_000)
     upload_rate_limit_per_minute: int = Field(default=10, ge=1, le=1_000)
     reprocess_rate_limit_per_minute: int = Field(default=6, ge=1, le=1_000)
