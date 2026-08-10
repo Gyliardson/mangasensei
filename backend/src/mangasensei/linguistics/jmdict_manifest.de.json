@@ -1,0 +1,22 @@
+{
+  "version": "2026-08-09",
+  "source": {
+    "filename": "jmdict-ger-3.6.2+20260803141815.json.zip",
+    "url": "https://github.com/scriptin/jmdict-simplified/releases/download/3.6.2%2B20260803141815/jmdict-ger-3.6.2%2B20260803141815.json.zip",
+    "sha256": "4da33c567bb03490ffc9819fd1b3e8efc6522a4a790c99b0d2677094f184b7b3",
+    "size_bytes": 7014092,
+    "max_uncompressed_bytes": 268435456,
+    "language": "ger",
+    "source_version": "jmdict-simplified-3.6.2+20260803141815",
+    "license_id": "CC-BY-SA-4.0",
+    "attribution": "JMdict data provided by the Electronic Dictionary Research and Development Group (EDRDG).",
+    "redistribution_status": "local-bootstrap-derived-data"
+  },
+  "normalized": {
+    "filename": "jmdict-de.json",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "size_bytes": 1,
+    "entry_count": 128931,
+    "converter_version": "mangasensei-jmdict-v3"
+  }
+}
