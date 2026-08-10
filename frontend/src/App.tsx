@@ -8,10 +8,17 @@ import {
   type StudyPage,
   type UploadData,
   fetchProtectedImage,
+  reprocessDictionaryLanguage,
   reprocessStudyLanguage,
   uploadPage,
   waitForPage,
 } from "./lib/api";
+import {
+  type DictionaryLanguage,
+  isDictionaryLanguage,
+  loadDictionaryLanguagePreference,
+  saveDictionaryLanguagePreference,
+} from "./lib/dictionaryLanguage";
 import {
   type StudyLanguage,
   isStudyLanguage,
@@ -33,6 +40,11 @@ type LocalErrorCode = "one_image_only" | "select_image_first" | "unexpected_proc
 type DisplayError =
   | { readonly kind: "local"; readonly code: LocalErrorCode }
   | { readonly kind: "api"; readonly code: string };
+type LanguageMutation = "study" | "dictionary" | null;
+
+function requestedDictionaryLanguageOf(page: StudyPage): DictionaryLanguage {
+  return page.requestedDictionaryLanguage ?? "en";
+}
 
 export function App() {
   const [file, setFile] = useState<File | null>(null);
@@ -46,8 +58,12 @@ export function App() {
   const [preferredStudyLanguage, setPreferredStudyLanguage] = useState<StudyLanguage>(() =>
     loadStudyLanguagePreference(),
   );
-  const [studyLanguageUpdating, setStudyLanguageUpdating] = useState(false);
+  const [preferredDictionaryLanguage, setPreferredDictionaryLanguage] = useState<DictionaryLanguage>(() =>
+    loadDictionaryLanguagePreference(),
+  );
+  const [languageMutation, setLanguageMutation] = useState<LanguageMutation>(null);
   const [studyLanguageErrorCode, setStudyLanguageErrorCode] = useState<string | null>(null);
+  const [dictionaryLanguageErrorCode, setDictionaryLanguageErrorCode] = useState<string | null>(null);
   const operation = useRef<AbortController | null>(null);
   const messages = messagesFor(uiLocale);
 
@@ -76,8 +92,9 @@ export function App() {
     setPageAccess(null);
     setImageUrl(null);
     setError(null);
-    setStudyLanguageUpdating(false);
+    setLanguageMutation(null);
     setStudyLanguageErrorCode(null);
+    setDictionaryLanguageErrorCode(null);
   };
 
   const changeUiLocale = (value: string) => {
@@ -110,6 +127,39 @@ export function App() {
     selectFile(dropped[0] ?? null);
   };
 
+  const runDictionaryReprojection = async (
+    currentPage: StudyPage,
+    access: UploadData,
+    target: DictionaryLanguage,
+    controller: AbortController,
+  ) => {
+    const previousLanguage = requestedDictionaryLanguageOf(currentPage);
+    setPreferredDictionaryLanguage(target);
+    saveDictionaryLanguagePreference(target);
+    setDictionaryLanguageErrorCode(null);
+    if (target === previousLanguage) return;
+
+    setLanguageMutation("dictionary");
+    try {
+      await reprocessDictionaryLanguage(access, target, controller.signal);
+      const result = await waitForPage(access, controller.signal, setJobStatus);
+      setPage(result);
+      const persistedLanguage = requestedDictionaryLanguageOf(result);
+      setPreferredDictionaryLanguage(persistedLanguage);
+      saveDictionaryLanguagePreference(persistedLanguage);
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
+      setPreferredDictionaryLanguage(previousLanguage);
+      saveDictionaryLanguagePreference(previousLanguage);
+      setDictionaryLanguageErrorCode(
+        caught instanceof ApiError ? caught.code : "dictionary_language_update_failed",
+      );
+    } finally {
+      if (operation.current === controller) operation.current = null;
+      setLanguageMutation(null);
+    }
+  };
+
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!file) {
@@ -138,6 +188,14 @@ export function App() {
       setPreferredStudyLanguage(result.studyLanguage);
       saveStudyLanguagePreference(result.studyLanguage);
       setPhase("complete");
+
+      const persistedDictionaryLanguage = requestedDictionaryLanguageOf(result);
+      if (preferredDictionaryLanguage === persistedDictionaryLanguage) {
+        saveDictionaryLanguagePreference(persistedDictionaryLanguage);
+        operation.current = null;
+        return;
+      }
+      await runDictionaryReprojection(result, upload, preferredDictionaryLanguage, controller);
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setPageAccess(null);
@@ -151,7 +209,7 @@ export function App() {
   };
 
   const changeStudyLanguage = async (target: StudyLanguage) => {
-    if (!page || !pageAccess || studyLanguageUpdating) return;
+    if (!page || !pageAccess || languageMutation) return;
     setPreferredStudyLanguage(target);
     saveStudyLanguagePreference(target);
     setStudyLanguageErrorCode(null);
@@ -159,9 +217,8 @@ export function App() {
 
     const previousLanguage = page.studyLanguage;
     const controller = new AbortController();
-    operation.current?.abort();
     operation.current = controller;
-    setStudyLanguageUpdating(true);
+    setLanguageMutation("study");
     try {
       await reprocessStudyLanguage(pageAccess, target, controller.signal);
       const result = await waitForPage(pageAccess, controller.signal, setJobStatus);
@@ -175,14 +232,26 @@ export function App() {
       setStudyLanguageErrorCode(caught instanceof ApiError ? caught.code : "study_language_update_failed");
     } finally {
       if (operation.current === controller) operation.current = null;
-      setStudyLanguageUpdating(false);
+      setLanguageMutation(null);
     }
+  };
+
+  const changeDictionaryLanguage = async (target: DictionaryLanguage) => {
+    if (!page || !pageAccess || languageMutation) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    await runDictionaryReprojection(page, pageAccess, target, controller);
   };
 
   const studyLanguageError = studyLanguageErrorCode
     ? studyLanguageErrorCode === "study_language_update_failed"
       ? messages.studyLanguageUpdateFailed
       : messages.apiError(studyLanguageErrorCode)
+    : null;
+  const dictionaryLanguageError = dictionaryLanguageErrorCode
+    ? dictionaryLanguageErrorCode === "dictionary_language_update_failed"
+      ? messages.dictionaryLanguageUpdateFailed
+      : messages.apiError(dictionaryLanguageErrorCode)
     : null;
 
   if (phase === "complete" && page && imageUrl) {
@@ -194,9 +263,12 @@ export function App() {
           imageUrl={imageUrl}
           uiLocale={uiLocale}
           preferredStudyLanguage={preferredStudyLanguage}
-          studyLanguageUpdating={studyLanguageUpdating}
+          preferredDictionaryLanguage={preferredDictionaryLanguage}
+          languageMutation={languageMutation}
           studyLanguageError={studyLanguageError}
+          dictionaryLanguageError={dictionaryLanguageError}
           onStudyLanguageChange={changeStudyLanguage}
+          onDictionaryLanguageChange={changeDictionaryLanguage}
           onReset={reset}
         />
         <Footer />
