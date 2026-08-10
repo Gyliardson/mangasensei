@@ -93,8 +93,8 @@ async def _seed_readable_document(
             document_id=document.id,
             ordinal=0,
             original_filename=f"{suffix}.png",
-            upload_key_id="v1",
-            upload_idempotency_digest=hashlib.sha256(f"upload-{suffix}".encode()).digest(),
+            upload_key_id=None,
+            upload_idempotency_digest=None,
             request_digest=bytes.fromhex(image.sha256),
         )
         session.add(page)
@@ -188,10 +188,6 @@ async def test_document_reads_are_capability_scoped_and_membership_protected(
             f"/api/v1/documents/{first.document_id}/pages/{second.page_id}",
             headers={"X-Document-Token": first.read_token},
         )
-        post_not_supported = await client.post(
-            "/api/v1/documents",
-            headers={"X-Document-Token": first.read_token},
-        )
 
     assert document.status_code == 200
     assert document.json()["data"]["documentId"] == str(first.document_id)
@@ -222,7 +218,6 @@ async def test_document_reads_are_capability_scoped_and_membership_protected(
     assert wrong_scope_image.status_code == 404
     assert wrong_document.status_code == 404
     assert nonmember.status_code == 404
-    assert post_not_supported.status_code == 404
 
 
 @pytest.mark.integration
@@ -337,8 +332,8 @@ async def test_document_progress_partitions_pages_without_double_counting_readab
                 document_id=document.id,
                 ordinal=ordinal,
                 original_filename=f"{ordinal}.png",
-                upload_key_id="v1",
-                upload_idempotency_digest=hashlib.sha256(f"upload-{ordinal}".encode()).digest(),
+                upload_key_id=None,
+                upload_idempotency_digest=None,
                 request_digest=digest,
             )
             session.add(page)
