@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mangasensei.domain.languages import FALLBACK_DICTIONARY_LANGUAGE, StudyLanguage
+from mangasensei.gemini.service import GeminiAdapter
 from mangasensei.infrastructure.database.dictionary_projection_models import (
     DictionaryProjectionItemRecord,
     DictionaryProjectionMeaningRecord,
@@ -21,7 +25,9 @@ from mangasensei.linguistics.jmdict_glosses import (
     LocalizedJmdictGloss,
     LocalizedJmdictGlossResolver,
 )
-from mangasensei.linguistics.service import LexicalFormIdentity
+from mangasensei.linguistics.service import LexicalFormIdentity, LinguisticService
+from mangasensei.ocr.contracts import OcrEngine
+from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.runner import (
     Worker,
     _finish_attempt,
@@ -33,8 +39,35 @@ from mangasensei.workers.runner import (
 class DictionaryProjectionWorker(Worker):
     """Extend the fenced worker with a zero-OCR dictionary projection job."""
 
-    def __init__(self, *, gloss_resolver: LocalizedJmdictGlossResolver, **kwargs: object) -> None:
-        super().__init__(**kwargs)  # type: ignore[arg-type]
+    def __init__(
+        self,
+        *,
+        sessions: async_sessionmaker[AsyncSession],
+        storage: LocalFilesystemStorage,
+        ocr: OcrEngine,
+        linguistics: LinguisticService,
+        gemini: GeminiAdapter | None,
+        worker_id: str,
+        lease_seconds: int,
+        gloss_resolver: LocalizedJmdictGlossResolver,
+        gemini_model: str = "fake-or-configured",
+        gemini_daily_budget: Decimal = Decimal("5.00"),
+        gemini_reservation: Decimal = Decimal("0.52"),
+        gemini_max_calls_per_page: int = 3,
+    ) -> None:
+        super().__init__(
+            sessions=sessions,
+            storage=storage,
+            ocr=ocr,
+            linguistics=linguistics,
+            gemini=gemini,
+            worker_id=worker_id,
+            lease_seconds=lease_seconds,
+            gemini_model=gemini_model,
+            gemini_daily_budget=gemini_daily_budget,
+            gemini_reservation=gemini_reservation,
+            gemini_max_calls_per_page=gemini_max_calls_per_page,
+        )
         self._gloss_resolver = gloss_resolver
 
     async def _load_job_contract(self, claim: ClaimedJob) -> tuple[str, StudyLanguage]:
@@ -94,6 +127,8 @@ class DictionaryProjectionWorker(Worker):
                     )
                 ).scalars()
             )
+            requested_dictionary_language = request.requested_dictionary_language
+            linguistic_run_id = latest_result.linguistic_run_id
 
         localized = tuple(
             (
@@ -105,7 +140,7 @@ class DictionaryProjectionWorker(Worker):
                         lemma=match.form_lemma,
                         reading=match.form_reading,
                     ),
-                    requested_dictionary_language=request.requested_dictionary_language,
+                    requested_dictionary_language=requested_dictionary_language,
                 ),
             )
             for match in lexical_matches
@@ -118,14 +153,14 @@ class DictionaryProjectionWorker(Worker):
             if (
                 durable_request is None
                 or durable_request.requested_dictionary_language
-                != request.requested_dictionary_language
+                != requested_dictionary_language
             ):
                 raise ValueError("dictionary projection request changed while processing")
 
             projection = DictionaryProjectionRecord(
                 job_id=job.id,
-                linguistic_run_id=latest_result.linguistic_run_id,
-                requested_dictionary_language=request.requested_dictionary_language,
+                linguistic_run_id=linguistic_run_id,
+                requested_dictionary_language=requested_dictionary_language,
                 fallback_dictionary_language=FALLBACK_DICTIONARY_LANGUAGE.value,
             )
             session.add(projection)
