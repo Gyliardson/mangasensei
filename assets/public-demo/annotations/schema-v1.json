@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Gyliardson/mangasensei/blob/main/assets/public-demo/annotations/schema-v1.json",
+  "title": "MangaSensei Public Demo Corpus Annotation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "page",
+    "regions",
+    "furiganaRelations",
+    "presentationMarks",
+    "negativeZones",
+    "readingOrderContract",
+    "review"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "page": {"$ref": "#/$defs/page"},
+    "regions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/region"}
+    },
+    "furiganaRelations": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/furigana"}
+    },
+    "presentationMarks": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/presentation"}
+    },
+    "negativeZones": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/negative"}
+    },
+    "readingOrderContract": {"$ref": "#/$defs/readingOrderContract"},
+    "review": {"$ref": "#/$defs/review"}
+  },
+  "$defs": {
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "imageSha256", "width", "height", "split", "license", "provenanceRef"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^msdemo-[0-9]{3}-[a-z0-9-]+$"},
+        "imageSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "width": {"const": 1440},
+        "height": {"const": 2048},
+        "split": {"enum": ["public-demo", "public-validation"]},
+        "license": {"const": "CC-BY-4.0"},
+        "provenanceRef": {"type": "string", "minLength": 1}
+      }
+    },
+    "point": {
+      "type": "array",
+      "prefixItems": [
+        {"type": "integer"},
+        {"type": "integer"}
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bbox", "polygon"],
+      "properties": {
+        "bbox": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "integer", "minimum": 0},
+            "y": {"type": "integer", "minimum": 0},
+            "width": {"type": "integer", "minimum": 1},
+            "height": {"type": "integer", "minimum": 1}
+          }
+        },
+        "polygon": {
+          "type": "array",
+          "minItems": 4,
+          "items": {"$ref": "#/$defs/point"}
+        }
+      }
+    },
+    "transcription": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw", "normalization"],
+      "properties": {
+        "raw": {"type": "string", "minLength": 1},
+        "normalization": {"const": "strict-nfc-v1"}
+      }
+    },
+    "regionReadingOrder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position", "scored"],
+      "properties": {
+        "position": {"type": ["integer", "null"], "minimum": 0},
+        "scored": {"type": "boolean"}
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detection", "recognition", "readingOrder"],
+      "properties": {
+        "detection": {"type": "boolean"},
+        "recognition": {"type": "boolean"},
+        "readingOrder": {"type": "boolean"}
+      }
+    },
+    "region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "geometry",
+        "transcription",
+        "orientation",
+        "textRole",
+        "textForm",
+        "readingOrder",
+        "difficultCaseTags",
+        "scoring"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^p[1-4]-r[0-9]{3}$"},
+        "geometry": {"$ref": "#/$defs/geometry"},
+        "transcription": {"$ref": "#/$defs/transcription"},
+        "orientation": {"enum": ["vertical-rl", "horizontal-ltr", "angled", "mixed"]},
+        "textRole": {"enum": ["dialogue", "thought", "narration", "environmental", "sfx", "uncertain"]},
+        "textForm": {"enum": ["base", "ruby"]},
+        "readingOrder": {"$ref": "#/$defs/regionReadingOrder"},
+        "difficultCaseTags": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "scoring": {"$ref": "#/$defs/scoring"}
+      }
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 1}
+      }
+    },
+    "furigana": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "rubyRegionId", "baseRegionId", "baseTextSpan", "reading"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^p[1-4]-f[0-9]{3}$"},
+        "rubyRegionId": {"type": "string"},
+        "baseRegionId": {"type": "string"},
+        "baseTextSpan": {"$ref": "#/$defs/span"},
+        "reading": {"type": "string", "minLength": 1}
+      }
+    },
+    "presentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "associatedRegionId",
+        "baseTextSpan",
+        "geometry",
+        "transcriptionEffect",
+        "challengeTags"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^p[1-4]-pm[0-9]{3}$"},
+        "kind": {"enum": ["boten"]},
+        "associatedRegionId": {"type": "string"},
+        "baseTextSpan": {"$ref": "#/$defs/span"},
+        "geometry": {"$ref": "#/$defs/geometry"},
+        "transcriptionEffect": {"const": "none"},
+        "challengeTags": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "negative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "geometry", "expected", "challengeTags"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^p[1-4]-n[0-9]{3}-[a-z0-9-]+$"},
+        "kind": {"type": "string", "minLength": 1},
+        "geometry": {"$ref": "#/$defs/geometry"},
+        "expected": {"const": "no-text-region"},
+        "challengeTags": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "readingOrderContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "sequence"],
+      "properties": {
+        "kind": {"const": "total"},
+        "sequence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string"}
+        },
+        "panelSequence": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "reviewer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["human", "automated"]}
+      }
+    },
+    "adjudication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "adjudicator", "notes"],
+      "properties": {
+        "status": {"enum": ["not-required", "pending", "adjudicated"]},
+        "adjudicator": {"type": ["string", "null"]},
+        "notes": {"type": "string"}
+      }
+    },
+    "languageReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reviewer", "humanNativeReviewClaimed"],
+      "properties": {
+        "status": {"enum": ["reviewed-no-uncertain-lines", "human-review-required"]},
+        "reviewer": {"type": "string", "minLength": 1},
+        "humanNativeReviewClaimed": {"type": "boolean"}
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "revision",
+        "groundTruthSource",
+        "reviewers",
+        "adjudication",
+        "languageReview",
+        "ocrConsultedDuringAuthoring"
+      ],
+      "properties": {
+        "status": {"enum": ["source-intent-reviewed", "human-review-required", "adjudicated"]},
+        "revision": {"type": "integer", "minimum": 1},
+        "groundTruthSource": {"const": "project-authored-svg-source-intent"},
+        "reviewers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/reviewer"}
+        },
+        "adjudication": {"$ref": "#/$defs/adjudication"},
+        "languageReview": {"$ref": "#/$defs/languageReview"},
+        "ocrConsultedDuringAuthoring": {"const": false}
+      }
+    }
+  }
+}
