@@ -46,7 +46,7 @@ jobs:
       - name: Generate one representative screenshot and provenance manifest
         env:
           MANGASENSEI_MEDIA_OUTPUT: ${{ runner.temp }}/mangasensei-media-smoke
-        run: npm run media:capture -- --project media-desktop --grep '^reader-desktop'
+        run: npm run media:capture -- --project media-desktop --grep '@media-smoke'
 
       - name: Upload media diagnostics on failure
         if: failure()

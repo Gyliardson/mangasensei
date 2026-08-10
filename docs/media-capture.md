@@ -55,7 +55,7 @@ npm run media:capture
 Capture one story/profile:
 
 ```bash
-npm run media:capture -- --project media-desktop --grep '^reader-desktop'
+npm run media:capture -- --project media-desktop --grep '@media-smoke'
 ```
 
 Override the output root without changing filenames:
