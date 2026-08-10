@@ -55,15 +55,7 @@ class ReprocessResult:
     status: str
     study_language: str
     created: bool
-
-
-@dataclass(frozen=True, slots=True)
-class DictionaryReprocessResult:
-    job_id: UUID
-    status: str
-    study_language: str
-    requested_dictionary_language: str
-    created: bool
+    requested_dictionary_language: str | None = None
 
 
 class ReprocessService:
@@ -142,7 +134,7 @@ class ReprocessService:
         page_id: int,
         idempotency_key: str,
         dictionary_language: DictionaryLanguage,
-    ) -> DictionaryReprocessResult:
+    ) -> ReprocessResult:
         digest = idempotency_digest(
             pepper=self._idempotency_pepper,
             namespace="reprocess",
@@ -165,7 +157,7 @@ class ReprocessService:
                     raise ReprocessIdempotencyConflictError(
                         "idempotency key is bound to another reprocess request"
                     )
-                return DictionaryReprocessResult(
+                return ReprocessResult(
                     job_id=existing.public_id,
                     status=existing.status,
                     study_language=existing.study_language,
@@ -189,7 +181,7 @@ class ReprocessService:
                     requested_dictionary_language=dictionary_language.value,
                 )
             )
-            return DictionaryReprocessResult(
+            return ReprocessResult(
                 job_id=job.public_id,
                 status=job.status,
                 study_language=job.study_language,
