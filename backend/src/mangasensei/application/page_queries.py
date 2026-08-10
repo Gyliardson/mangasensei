@@ -305,8 +305,10 @@ class PageQueryService:
         for meaning in meanings:
             meanings_by_match[meaning.lexical_match_id].append(meaning.meaning)
         projected_meanings_by_match: dict[int, list[str]] = defaultdict(list)
-        for meaning in projection_meanings:
-            projected_meanings_by_match[meaning.lexical_match_id].append(meaning.meaning)
+        for projected_meaning in projection_meanings:
+            projected_meanings_by_match[projected_meaning.lexical_match_id].append(
+                projected_meaning.meaning
+            )
         projection_item_by_match = {item.lexical_match_id: item for item in projection_items}
         tokens_by_region: dict[int, list[LinguisticTokenRecord]] = defaultdict(list)
         for token in tokens:
