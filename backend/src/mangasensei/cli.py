@@ -18,10 +18,11 @@ from pydantic_settings import SettingsError
 from mangasensei.api.app import create_app
 from mangasensei.config import Settings
 from mangasensei.linguistics.jmdict import DictionaryDataError
-from mangasensei.linguistics.jmdict_bootstrap import (
-    JmdictIntegrityError,
-    download_jmdict,
-    verify_jmdict,
+from mangasensei.linguistics.jmdict_bootstrap import JmdictIntegrityError
+from mangasensei.linguistics.jmdict_packs import (
+    DEFAULT_DICTIONARY_LANGUAGE,
+    download_jmdict_pack,
+    verify_jmdict_pack,
 )
 from mangasensei.ocr.models.downloader import download_models, verify_models
 from mangasensei.ocr.models.manifest import ModelIntegrityError
@@ -47,10 +48,16 @@ def build_parser() -> argparse.ArgumentParser:
     model_commands.add_parser("download", help="download and verify reviewed artifacts")
     model_commands.add_parser("verify", help="verify local artifact size and checksum")
 
-    jmdict = subcommands.add_parser("jmdict", help="manage the local JMdict JSON")
+    jmdict = subcommands.add_parser("jmdict", help="manage reviewed local JMdict packs")
     jmdict_commands = jmdict.add_subparsers(dest="jmdict_command", required=True)
-    jmdict_commands.add_parser("download", help="download, normalize and verify JMdict")
-    jmdict_commands.add_parser("verify", help="verify local JMdict size and checksum")
+    jmdict_download = jmdict_commands.add_parser(
+        "download", help="download, normalize and verify a reviewed JMdict pack"
+    )
+    jmdict_download.add_argument("--language", default=DEFAULT_DICTIONARY_LANGUAGE)
+    jmdict_verify = jmdict_commands.add_parser(
+        "verify", help="verify a reviewed local JMdict pack"
+    )
+    jmdict_verify.add_argument("--language", default=DEFAULT_DICTIONARY_LANGUAGE)
 
     migrate = subcommands.add_parser("migrate", help="upgrade the database schema")
     migrate.add_argument("--config", type=Path, default=Path("backend/alembic.ini"))
@@ -80,9 +87,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "models" and args.models_command == "verify":
             verify_models(settings.model_cache)
         elif args.command == "jmdict" and args.jmdict_command == "download":
-            asyncio.run(download_jmdict(settings.jmdict_path))
+            asyncio.run(
+                download_jmdict_pack(
+                    settings.jmdict_path,
+                    language=args.language,
+                )
+            )
         elif args.command == "jmdict" and args.jmdict_command == "verify":
-            verify_jmdict(settings.jmdict_path)
+            verify_jmdict_pack(settings.jmdict_path, language=args.language)
         elif args.command == "migrate":
             _migrate(settings, args.config)
         return 0

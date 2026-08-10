@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -25,7 +26,12 @@ from mangasensei.infrastructure.database.analysis_models import (
 )
 from mangasensei.infrastructure.database.job_models import JobAttemptRecord, JobRecord
 from mangasensei.infrastructure.database.session import create_database
-from mangasensei.linguistics.service import DictionaryEntry, LinguisticService
+from mangasensei.linguistics.service import (
+    DictionaryEntry,
+    DictionaryLookupResult,
+    LexicalFormIdentity,
+    LinguisticService,
+)
 from mangasensei.ocr.contracts import OcrImage, OcrRegionResult, OcrResult
 from mangasensei.ocr.fake import DEFAULT_FAKE_PROVENANCE
 from mangasensei.storage.local import LocalFilesystemStorage
@@ -77,24 +83,33 @@ class DictionaryFixture:
     version = "JMdict test"
     digest = hashlib.sha256(b"JMdict test").digest()
 
-    def lookup(self, lemma: str, reading: str) -> DictionaryEntry | None:
+    def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult:
         del reading
-        if lemma == "猫":
-            return DictionaryEntry(
-                id="jmdict-1467640",
+        entry = (
+            DictionaryEntry(
+                identity=LexicalFormIdentity(
+                    dictionary_namespace="JMdict",
+                    entry_id="jmdict-1467640",
+                    lemma="猫",
+                    reading="ねこ",
+                ),
                 meanings=("cat",),
                 source="JMdict test",
                 jlpt_level="N5",
                 jlpt_official=False,
             )
-        return None
+            if lemma == "猫"
+            else None
+        )
+        return DictionaryLookupResult.from_candidates((entry,) if entry is not None else ())
 
 
 class SuccessfulGeminiFixture:
     async def analyze(
         self, *, prompt: str, schema: type[GeminiPageAnalysis]
     ) -> GeminiPageAnalysis:
-        assert _REGION_ID in prompt
+        payload = json.loads(prompt)
+        vocabulary_id = payload["regions"][0]["vocabulary_candidates"][0]["id"]
         return schema(
             regions=(
                 GeminiRegionAnalysis(
@@ -102,7 +117,7 @@ class SuccessfulGeminiFixture:
                     translation="Synthetic translation.",
                     explanation="Synthetic explanation.",
                     grammar_points=("synthetic grammar",),
-                    vocabulary_ids=("jmdict-1467640",),
+                    vocabulary_ids=(vocabulary_id,),
                 ),
             )
         )

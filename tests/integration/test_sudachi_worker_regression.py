@@ -12,7 +12,7 @@ from mangasensei.api.app import create_app
 from mangasensei.config import Settings
 from mangasensei.domain.models import BoundingBox, PageDimensions
 from mangasensei.infrastructure.database.session import create_database
-from mangasensei.linguistics.service import DictionaryEntry, LinguisticService
+from mangasensei.linguistics.service import DictionaryLookupResult, LinguisticService
 from mangasensei.linguistics.sudachi import SudachiTokenizer
 from mangasensei.ocr.contracts import OcrImage, OcrRegionResult, OcrResult
 from mangasensei.ocr.fake import DEFAULT_FAKE_PROVENANCE
@@ -56,8 +56,9 @@ class _NoMatchDictionary:
     version = "JMdict test"
     digest = hashlib.sha256(b"JMdict test").digest()
 
-    def lookup(self, lemma: str, reading: str) -> DictionaryEntry | None:
-        return None
+    def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult:
+        del lemma, reading
+        return DictionaryLookupResult.from_candidates(())
 
 
 def _settings(database_url: str, root: Path) -> Settings:

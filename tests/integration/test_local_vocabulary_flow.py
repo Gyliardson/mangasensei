@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,12 @@ from mangasensei.config import Settings
 from mangasensei.domain.models import BoundingBox, PageDimensions
 from mangasensei.gemini.contracts import GeminiPageAnalysis, GeminiRegionAnalysis
 from mangasensei.infrastructure.database.session import create_database
-from mangasensei.linguistics.service import DictionaryEntry, LinguisticService
+from mangasensei.linguistics.service import (
+    DictionaryEntry,
+    DictionaryLookupResult,
+    LexicalFormIdentity,
+    LinguisticService,
+)
 from mangasensei.ocr.contracts import OcrImage, OcrRegionResult, OcrResult
 from mangasensei.ocr.fake import DEFAULT_FAKE_PROVENANCE
 from mangasensei.storage.local import LocalFilesystemStorage
@@ -70,31 +76,34 @@ class LocalVocabularyDictionaryFixture:
     version = "JMdict local-first test"
     digest = hashlib.sha256(version.encode()).digest()
 
-    def lookup(self, lemma: str, reading: str) -> DictionaryEntry | None:
+    def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult:
         del reading
+        entry: DictionaryEntry | None = None
         if lemma == "猫":
-            return DictionaryEntry(
-                id="jmdict-1467640",
+            entry = DictionaryEntry(
+                identity=LexicalFormIdentity("JMdict", "jmdict-1467640", "猫", "ねこ"),
                 meanings=("cat",),
                 source="JMdict local-first test",
                 jlpt_level="N5",
                 jlpt_official=False,
             )
-        if lemma == "犬":
-            return DictionaryEntry(
-                id="jmdict-1186080",
+        elif lemma == "犬":
+            entry = DictionaryEntry(
+                identity=LexicalFormIdentity("JMdict", "jmdict-1186080", "犬", "いぬ"),
                 meanings=("dog",),
                 source="JMdict local-first test",
                 jlpt_level="N5",
                 jlpt_official=False,
             )
-        return None
+        return DictionaryLookupResult.from_candidates((entry,) if entry is not None else ())
 
 
 class PartialGeminiFixture:
     async def analyze(
         self, *, prompt: str, schema: type[GeminiPageAnalysis]
     ) -> GeminiPageAnalysis:
+        payload = json.loads(prompt)
+        candidates = payload["regions"][0]["vocabulary_candidates"]
         assert "猫猫犬です" in prompt
         return schema(
             regions=(
@@ -103,7 +112,7 @@ class PartialGeminiFixture:
                     translation="There are cats and a dog.",
                     explanation="Contextual fixture analysis.",
                     grammar_points=("です",),
-                    vocabulary_ids=("jmdict-1467640",),
+                    vocabulary_ids=(candidates[0]["id"],),
                 ),
             )
         )
@@ -122,6 +131,12 @@ async def test_no_gemini_page_exposes_local_vocabulary_in_token_order(
     assert region["explanation"] is None
     assert region["grammar"] == []
     assert region["vocabulary"] == expected_local_vocabulary()
+    assert [token["dictionaryId"] for token in region["tokens"]] == [
+        "jmdict-1467640",
+        "jmdict-1467640",
+        "jmdict-1186080",
+        None,
+    ]
 
 
 @pytest.mark.integration

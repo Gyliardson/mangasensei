@@ -1,4 +1,4 @@
-"""Application service that constrains Gemini to known deterministic IDs."""
+"""Application service that constrains Gemini to known deterministic lexical matches."""
 
 from __future__ import annotations
 
@@ -10,14 +10,14 @@ from typing import Protocol
 
 from mangasensei.domain.languages import DEFAULT_STUDY_LANGUAGE, StudyLanguage
 from mangasensei.gemini.contracts import GeminiPageAnalysis
-from mangasensei.linguistics.service import LinguisticToken
+from mangasensei.linguistics.service import LinguisticAnalysis
 
-PAGE_STUDY_PROMPT_VERSION = "page-study-v3"
+PAGE_STUDY_PROMPT_VERSION = "page-study-v4"
 
 
 @dataclass(frozen=True, slots=True)
 class GeminiVocabularyCandidate:
-    """Minimal local lexical context exposed to optional Gemini enrichment."""
+    """Minimal resolved local lexical context exposed to optional Gemini enrichment."""
 
     id: str
     surface: str
@@ -44,29 +44,25 @@ class RegionCompletenessError(ValueError):
 
 
 def build_vocabulary_candidates_by_region(
-    tokens_by_region: Mapping[str, Sequence[LinguisticToken]],
+    analyses_by_region: Mapping[str, LinguisticAnalysis],
 ) -> dict[str, tuple[GeminiVocabularyCandidate, ...]]:
-    """Build one candidate per stable dictionary ID and region.
-
-    Repeated occurrences of the same dictionary entry in one region use the first
-    local token as lexical context. The same dictionary entry in different regions
-    remains an allowed candidate in each of those regions.
-    """
+    """Build one Gemini candidate per canonical lexical identity and region."""
 
     result: dict[str, tuple[GeminiVocabularyCandidate, ...]] = {}
-    for region_id, tokens in tokens_by_region.items():
+    for region_id, analysis in analyses_by_region.items():
         seen_ids: set[str] = set()
         candidates: list[GeminiVocabularyCandidate] = []
-        for token in tokens:
-            if token.dictionary_id is None or token.dictionary_id in seen_ids:
+        for match in analysis.lexical_matches:
+            candidate_id = match.identity.transport_id
+            if candidate_id in seen_ids:
                 continue
-            seen_ids.add(token.dictionary_id)
+            seen_ids.add(candidate_id)
             candidates.append(
                 GeminiVocabularyCandidate(
-                    id=token.dictionary_id,
-                    surface=token.surface,
-                    lemma=token.lemma,
-                    reading=token.reading,
+                    id=candidate_id,
+                    surface=match.surface,
+                    lemma=match.display_lemma,
+                    reading=match.display_reading,
                 )
             )
         result[region_id] = tuple(candidates)

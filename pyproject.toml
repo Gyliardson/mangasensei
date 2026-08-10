@@ -74,7 +74,7 @@ include = ["mangasensei*"]
 
 [tool.setuptools.package-data]
 "mangasensei.ocr.models" = ["manifest.json"]
-"mangasensei.linguistics" = ["jmdict_manifest.json"]
+"mangasensei.linguistics" = ["jmdict_manifest*.json", "jmdict_packs.json"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"

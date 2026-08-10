@@ -178,7 +178,7 @@ async def test_operational_endpoints_and_static_frontend(
 
     assert health.status_code == 200
     assert ready.status_code == 200
-    assert ready.json()["data"]["databaseRevision"] == "e63b0c4d129a"
+    assert ready.json()["data"]["databaseRevision"] == "4b913c2a7e56"
     assert metrics.status_code == 200
     assert "mangasensei_http_requests_total" in metrics.text
     assert index.status_code == 200
