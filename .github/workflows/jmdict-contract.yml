@@ -9,12 +9,14 @@ on:
       - "backend/src/mangasensei/cli.py"
       - "backend/src/mangasensei/linguistics/jmdict.py"
       - "backend/src/mangasensei/linguistics/jmdict_bootstrap.py"
+      - "backend/src/mangasensei/linguistics/jmdict_glosses.py"
       - "backend/src/mangasensei/linguistics/jmdict_packs.py"
       - "backend/src/mangasensei/linguistics/jmdict_manifest*.json"
       - "backend/src/mangasensei/linguistics/jmdict_packs.json"
       - "scripts/update_jmdict_manifest.py"
       - "scripts/measure_jmdict_load.py"
       - "tests/unit/test_jmdict_bootstrap.py"
+      - "tests/unit/test_jmdict_glosses.py"
       - "tests/unit/test_jmdict_packs.py"
       - "tests/unit/test_cli.py"
       - "tests/fullstack/fixtures/jmdict.json"
@@ -32,12 +34,14 @@ on:
       - "backend/src/mangasensei/cli.py"
       - "backend/src/mangasensei/linguistics/jmdict.py"
       - "backend/src/mangasensei/linguistics/jmdict_bootstrap.py"
+      - "backend/src/mangasensei/linguistics/jmdict_glosses.py"
       - "backend/src/mangasensei/linguistics/jmdict_packs.py"
       - "backend/src/mangasensei/linguistics/jmdict_manifest*.json"
       - "backend/src/mangasensei/linguistics/jmdict_packs.json"
       - "scripts/update_jmdict_manifest.py"
       - "scripts/measure_jmdict_load.py"
       - "tests/unit/test_jmdict_bootstrap.py"
+      - "tests/unit/test_jmdict_glosses.py"
       - "tests/unit/test_jmdict_packs.py"
       - "tests/unit/test_cli.py"
       - "tests/fullstack/fixtures/jmdict.json"
@@ -81,8 +85,14 @@ jobs:
       - name: Verify all reviewed sources, normalized metadata and runtime loads
         run: uv run python scripts/update_jmdict_manifest.py --check
 
-      - name: Validate focused producer, pack and CLI regressions
-        run: uv run pytest tests/unit/test_jmdict_bootstrap.py tests/unit/test_jmdict_packs.py tests/unit/test_cli.py -q
+      - name: Validate focused producer, resolver, pack and CLI regressions
+        run: |
+          uv run pytest \
+            tests/unit/test_jmdict_bootstrap.py \
+            tests/unit/test_jmdict_glosses.py \
+            tests/unit/test_jmdict_packs.py \
+            tests/unit/test_cli.py \
+            -q
 
       - name: Exercise backward-compatible English and explicit German bootstrap
         run: |
