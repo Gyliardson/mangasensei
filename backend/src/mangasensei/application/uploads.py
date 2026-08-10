@@ -25,7 +25,7 @@ from mangasensei.infrastructure.database.storage_models import (
     PageRecord,
 )
 from mangasensei.storage.images import ValidatedImage
-from mangasensei.storage.local import LocalFilesystemStorage
+from mangasensei.storage.local import LocalFilesystemStorage, PendingStorageWrite
 
 
 class IdempotencyConflictError(ValueError):
@@ -55,6 +55,70 @@ class UploadResult:
     capabilities: CapabilityTokens
     study_language: str
     created: bool
+
+
+async def stage_image_blob(
+    session: AsyncSession,
+    *,
+    storage: LocalFilesystemStorage,
+    image: ValidatedImage,
+) -> tuple[ImageBlobRecord, PendingStorageWrite]:
+    """Stage one validated immutable image under the shared digest-locking contract."""
+    await acquire_image_blob_lock(session, bytes.fromhex(image.sha256))
+    pending = await storage.stage(image)
+    return await get_or_create_image_blob(session, image=image, storage_key=pending.storage_key), pending
+
+
+async def get_or_create_image_blob(
+    session: AsyncSession,
+    *,
+    image: ValidatedImage,
+    storage_key: str,
+) -> ImageBlobRecord:
+    values = {
+        "sha256": bytes.fromhex(image.sha256),
+        "byte_size": len(image.content),
+        "width": image.width,
+        "height": image.height,
+        "media_type": image.media_type,
+        "storage_key": storage_key,
+    }
+    inserted_id = (
+        await session.execute(
+            insert(ImageBlobRecord)
+            .values(**values)
+            .on_conflict_do_nothing(index_elements=[ImageBlobRecord.sha256])
+            .returning(ImageBlobRecord.id)
+        )
+    ).scalar_one_or_none()
+    if inserted_id is not None:
+        return await session.get_one(ImageBlobRecord, inserted_id)
+    existing = (
+        await session.execute(
+            select(ImageBlobRecord).where(ImageBlobRecord.sha256 == values["sha256"])
+        )
+    ).scalar_one()
+    immutable_metadata = (
+        existing.byte_size,
+        existing.width,
+        existing.height,
+        existing.media_type,
+        existing.storage_key,
+    )
+    expected_metadata = (
+        values["byte_size"],
+        values["width"],
+        values["height"],
+        values["media_type"],
+        values["storage_key"],
+    )
+    if immutable_metadata != expected_metadata:
+        raise StorageMetadataConflictError("immutable blob metadata conflict")
+    if existing.state == "deleting":
+        existing.state = "ready"
+    elif existing.state != "ready":
+        raise StorageMetadataConflictError("immutable blob metadata conflict")
+    return existing
 
 
 class UploadService:
@@ -90,12 +154,10 @@ class UploadService:
             value=idempotency_key,
         )
         request_digest = bytes.fromhex(image.sha256)
-        safe_filename = _safe_filename(original_filename)
+        safe_filename = safe_filename(original_filename)
 
         async with self._sessions.begin() as session:
-            await acquire_image_blob_lock(session, request_digest)
-            pending_write = await self._storage.stage(image)
-            blob = await self._get_or_create_blob(session, image, pending_write.storage_key)
+            blob, pending_write = await stage_image_blob(session, storage=self._storage, image=image)
             page, created = await self._get_or_create_page(
                 session,
                 blob_id=blob.id,
@@ -156,57 +218,6 @@ class UploadService:
         with suppress(OSError):
             await self._storage.confirm(pending_write)
         return result
-
-    async def _get_or_create_blob(
-        self,
-        session: AsyncSession,
-        image: ValidatedImage,
-        storage_key: str,
-    ) -> ImageBlobRecord:
-        values = {
-            "sha256": bytes.fromhex(image.sha256),
-            "byte_size": len(image.content),
-            "width": image.width,
-            "height": image.height,
-            "media_type": image.media_type,
-            "storage_key": storage_key,
-        }
-        inserted_id = (
-            await session.execute(
-                insert(ImageBlobRecord)
-                .values(**values)
-                .on_conflict_do_nothing(index_elements=[ImageBlobRecord.sha256])
-                .returning(ImageBlobRecord.id)
-            )
-        ).scalar_one_or_none()
-        if inserted_id is not None:
-            return await session.get_one(ImageBlobRecord, inserted_id)
-        existing = (
-            await session.execute(
-                select(ImageBlobRecord).where(ImageBlobRecord.sha256 == values["sha256"])
-            )
-        ).scalar_one()
-        immutable_metadata = (
-            existing.byte_size,
-            existing.width,
-            existing.height,
-            existing.media_type,
-            existing.storage_key,
-        )
-        expected_metadata = (
-            values["byte_size"],
-            values["width"],
-            values["height"],
-            values["media_type"],
-            values["storage_key"],
-        )
-        if immutable_metadata != expected_metadata:
-            raise StorageMetadataConflictError("immutable blob metadata conflict")
-        if existing.state == "deleting":
-            existing.state = "ready"
-        elif existing.state != "ready":
-            raise StorageMetadataConflictError("immutable blob metadata conflict")
-        return existing
 
     async def _get_or_create_page(
         self,
@@ -275,7 +286,7 @@ class UploadService:
         )
 
 
-def _safe_filename(filename: str) -> str:
+def safe_filename(filename: str) -> str:
     basename = Path(filename or "page").name
     cleaned = "".join(character for character in basename if character.isprintable()).strip()
     return (cleaned or "page")[:255]
