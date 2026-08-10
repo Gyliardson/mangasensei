@@ -287,7 +287,7 @@ describe("App", () => {
 
     await user.selectOptions(screen.getByRole("combobox", { name: "Idioma de estudo" }), "en");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Falha controlada.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("O processamento da página falhou.");
     expect(screen.getByText("É um gato.")).toBeVisible();
     expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("pt-BR");
     expect(window.localStorage.getItem(STUDY_LANGUAGE_PREFERENCE_KEY)).toBe("pt-BR");
@@ -304,7 +304,7 @@ describe("App", () => {
     );
   });
 
-  it("shows the sanitized API message when upload is rejected", async () => {
+  it("localizes a sanitized API error code when upload is rejected", async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
       "fetch",
@@ -327,7 +327,7 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Analisar página" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Imagem recusada.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Use uma imagem JPEG, PNG ou WebP.");
   });
 
   it("uses a generic message for unexpected client failures", async () => {
