@@ -20,7 +20,7 @@ class LazyJmdictGlossPackProvider:
         english_dictionary: JsonJmdictDictionary,
     ) -> None:
         self._configured_english_path = configured_english_path
-        english_pack = resolve_jmdict_pack(configured_english_path, "en")
+        english_pack = resolve_jmdict_pack("en")
         self._english = JsonJmdictGlossPack.from_reviewed_pack(
             english_pack,
             english_dictionary,
@@ -36,8 +36,12 @@ class LazyJmdictGlossPackProvider:
         if language != "de":
             raise LookupError(language)
         if self._optional is None:
-            reviewed = verify_jmdict_pack(self._configured_english_path, "de")
-            dictionary = JsonJmdictDictionary(reviewed.path)
+            reviewed = resolve_jmdict_pack("de")
+            verified_path = verify_jmdict_pack(
+                self._configured_english_path,
+                language="de",
+            )
+            dictionary = JsonJmdictDictionary(verified_path)
             self._optional = JsonJmdictGlossPack.from_reviewed_pack(reviewed, dictionary)
         return self._optional
 
