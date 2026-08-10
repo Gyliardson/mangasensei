@@ -139,7 +139,7 @@ def test_demo_span_is_attempted_but_remains_ambiguous(tmp_path: Path) -> None:
         "jmdict-1008460",
         "jmdict-1084000",
     )
-    assert ("でも", "デモ") in dictionary.calls
+    assert dictionary.calls.count(("でも", "デモ")) == 2
     assert all(match.surface != "でも" for match in analysis.lexical_matches)
 
 
