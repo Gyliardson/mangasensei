@@ -115,7 +115,9 @@ def test_slice_b_upgrade_preserves_slice_a_document_and_standalone_identity(
         command.upgrade(config, "head")
 
         with engine.connect() as connection:
-            revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            revision = connection.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
             child_identity = connection.execute(
                 text(
                     """
