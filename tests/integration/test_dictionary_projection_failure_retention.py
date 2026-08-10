@@ -108,13 +108,15 @@ async def test_failed_dictionary_projection_keeps_prior_result_and_retention_cas
         assert tokenizer.calls == 1
 
     page_public_id = UUID(data["pageId"])
+    created_at = datetime.now(UTC) - timedelta(hours=25)
     async with sessions.begin() as session:
         page = (
             await session.execute(
                 select(PageRecord).where(PageRecord.public_id == page_public_id).with_for_update()
             )
         ).scalar_one()
-        page.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        page.created_at = created_at
+        page.expires_at = created_at + timedelta(hours=24)
 
     janitor = RetentionJanitor(sessions, LocalFilesystemStorage(tmp_path))
     assert await janitor.run_once() == 1
