@@ -9,6 +9,15 @@ export default defineConfig({
   reporter: [["list"], ["html", { outputFolder: "../playwright-report", open: "never" }]],
   use: {
     baseURL: "http://127.0.0.1:4173",
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: "http://127.0.0.1:4173",
+          localStorage: [{ name: "mangasensei.ui.locale", value: "pt-BR" }],
+        },
+      ],
+    },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
