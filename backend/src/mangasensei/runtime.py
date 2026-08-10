@@ -12,13 +12,15 @@ from mangasensei.config import Settings
 from mangasensei.gemini.adapter import GoogleGenAiAdapter
 from mangasensei.infrastructure.database.session import create_database
 from mangasensei.linguistics.jmdict import JsonJmdictDictionary
+from mangasensei.linguistics.jmdict_glosses import LocalizedJmdictGlossResolver
+from mangasensei.linguistics.runtime_glosses import LazyJmdictGlossPackProvider
 from mangasensei.linguistics.service import LinguisticService
 from mangasensei.linguistics.sudachi import SudachiTokenizer
 from mangasensei.ocr.adapter.manga_image_translator import MangaImageTranslatorEngine
 from mangasensei.ocr.models.downloader import verify_models
 from mangasensei.storage.local import LocalFilesystemStorage
+from mangasensei.workers.dictionary_projection import DictionaryProjectionWorker
 from mangasensei.workers.retention import RetentionJanitor
-from mangasensei.workers.runner import Worker
 
 
 class WorkerCycle(Protocol):
@@ -51,10 +53,11 @@ async def run_retention_loop(
 async def run_worker_process(settings: Settings, *, once: bool = False) -> None:
     verify_models(settings.model_cache)
     dictionary = JsonJmdictDictionary(settings.jmdict_path)
+    gloss_provider = LazyJmdictGlossPackProvider(settings.jmdict_path, dictionary)
     database_url = settings.require_database_url()
     engine, sessions = create_database(database_url)
     gemini = _gemini_adapter(settings)
-    worker = Worker(
+    worker = DictionaryProjectionWorker(
         sessions=sessions,
         storage=LocalFilesystemStorage(settings.storage_root),
         ocr=MangaImageTranslatorEngine(
@@ -65,6 +68,7 @@ async def run_worker_process(settings: Settings, *, once: bool = False) -> None:
         gemini=gemini,
         worker_id=_worker_id(),
         lease_seconds=settings.worker_lease_seconds,
+        gloss_resolver=LocalizedJmdictGlossResolver(gloss_provider),
         gemini_model=settings.gemini_model,
         gemini_daily_budget=Decimal(str(settings.gemini_daily_budget_usd)),
         gemini_max_calls_per_page=settings.gemini_max_calls_per_page,

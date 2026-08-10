@@ -11,6 +11,22 @@ export type JobStatus =
   | "failed"
   | "expired";
 
+export type DictionaryLanguage = "en" | "de" | "pt-BR";
+export type EffectiveDictionaryLanguage = "en" | "de";
+export type DictionaryFallbackReason =
+  | "unsupported_requested_language"
+  | "requested_entry_not_found"
+  | "requested_form_not_found"
+  | "requested_glosses_not_found";
+
+export interface DictionarySourceReference {
+  readonly ref: string;
+  readonly dataset: "JMdict";
+  readonly productLanguage: EffectiveDictionaryLanguage;
+  readonly sourceVersion: string;
+  readonly normalizedDigestSha256: string;
+}
+
 export interface CapabilityTokens {
   readonly readPage: string;
   readonly readImage: string;
@@ -33,6 +49,7 @@ export interface ReprocessData {
   readonly jobId: string;
   readonly status: JobStatus;
   readonly studyLanguage: StudyLanguage;
+  readonly requestedDictionaryLanguage?: DictionaryLanguage;
   readonly created: boolean;
 }
 
@@ -51,6 +68,10 @@ export interface VocabularyItem {
   readonly reading: string;
   readonly meanings: readonly string[];
   readonly source: string;
+  readonly effectiveLanguage?: EffectiveDictionaryLanguage;
+  readonly fallbackUsed?: boolean;
+  readonly fallbackReason?: DictionaryFallbackReason | null;
+  readonly sourceRef?: string | null;
   readonly jlpt: { readonly level: string; readonly official: false } | null;
 }
 
@@ -83,7 +104,11 @@ export interface StudyPage {
   readonly resultAvailable: boolean;
   readonly contentLanguage: "ja";
   readonly studyLanguage: StudyLanguage;
+  /** Legacy English-only StudyResult field. */
   readonly dictionaryLanguage: "en";
+  readonly requestedDictionaryLanguage?: DictionaryLanguage;
+  readonly fallbackDictionaryLanguage?: "en";
+  readonly dictionarySources?: readonly DictionarySourceReference[];
   readonly expiresAt: string;
   readonly imageUrl: string;
   readonly dimensions: { readonly width: number; readonly height: number };

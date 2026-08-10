@@ -10,6 +10,13 @@ from mangasensei.infrastructure.database.analysis_models import (
     OcrRunRecord,
 )
 from mangasensei.infrastructure.database.base import Base
+from mangasensei.infrastructure.database.dictionary_projection_models import (
+    DictionaryProjectionItemRecord,
+    DictionaryProjectionMeaningRecord,
+    DictionaryProjectionRecord,
+    DictionaryProjectionRequestRecord,
+    DictionaryProjectionSourceRecord,
+)
 from mangasensei.infrastructure.database.document_models import (
     DocumentCapabilityRecord,
     DocumentRecord,
@@ -30,6 +37,11 @@ from mangasensei.infrastructure.database.study_models import StudyResultRecord
 
 __all__ = [
     "Base",
+    "DictionaryProjectionItemRecord",
+    "DictionaryProjectionMeaningRecord",
+    "DictionaryProjectionRecord",
+    "DictionaryProjectionRequestRecord",
+    "DictionaryProjectionSourceRecord",
     "DocumentCapabilityRecord",
     "DocumentRecord",
     "GeminiAnalysisRecord",
