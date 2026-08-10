@@ -1,4 +1,4 @@
-"""Recompute normalized JMdict metadata from the reviewed manifest-pinned source."""
+"""Recompute normalized metadata for the reviewed JMdict language packs."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import secrets
+from collections.abc import Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -18,59 +19,91 @@ from mangasensei.linguistics.jmdict_bootstrap import (
     CONVERTER_VERSION,
     JmdictManifest,
     build_normalized_jmdict,
-    default_manifest_path,
+)
+from mangasensei.linguistics.jmdict_packs import (
+    default_pack_registry_path,
+    load_jmdict_packs,
 )
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", type=Path, default=default_manifest_path())
+    parser.add_argument("--registry", type=Path, default=default_pack_registry_path())
+    parser.add_argument(
+        "--language",
+        action="append",
+        dest="languages",
+        help="limit refresh/check to one reviewed product language; repeatable",
+    )
     parser.add_argument(
         "--check",
         action="store_true",
-        help="verify derived metadata without modifying the manifest",
+        help="verify derived metadata without modifying pack manifests",
     )
     return parser
 
 
-async def update_manifest(path: Path, *, check: bool) -> dict[str, object]:
-    manifest = JmdictManifest.load(path)
+async def update_manifests(
+    registry_path: Path,
+    *,
+    languages: Sequence[str] | None,
+    check: bool,
+) -> dict[str, dict[str, object]]:
+    packs = load_jmdict_packs(registry_path)
+    selected = tuple(dict.fromkeys(languages)) if languages else tuple(sorted(packs))
+    unknown = sorted(set(selected) - set(packs))
+    if unknown:
+        raise ValueError(f"unsupported dictionary language(s): {', '.join(unknown)}")
+
     timeout = httpx.Timeout(300.0, connect=30.0)
+    derived_by_language: dict[str, dict[str, object]] = {}
+    stale: dict[str, dict[str, object]] = {}
     async with httpx.AsyncClient(timeout=timeout) as client:
-        normalized = await build_normalized_jmdict(manifest, client)
-
-    payload = json.loads(normalized.decode("utf-8"))
-    entries = payload.get("entries")
-    if not isinstance(entries, list):
-        raise ValueError("normalized JMdict output must contain entries")
-    _validate_runtime_dictionary(
-        normalized,
-        expected_entry_count=len(entries),
-        expected_version=manifest.source.source_version,
-    )
-    derived = {
-        "filename": manifest.normalized.filename,
-        "sha256": hashlib.sha256(normalized).hexdigest(),
-        "size_bytes": len(normalized),
-        "entry_count": len(entries),
-        "converter_version": CONVERTER_VERSION,
-    }
-    current = manifest.normalized.model_dump()
-    if check:
-        if current != derived:
-            raise ValueError(
-                "JMdict normalized manifest metadata is stale; run "
-                "uv run python scripts/update_jmdict_manifest.py"
+        for language in selected:
+            pack = packs[language]
+            normalized = await build_normalized_jmdict(pack.manifest, client)
+            payload = json.loads(normalized.decode("utf-8"))
+            entries = payload.get("entries")
+            if not isinstance(entries, list):
+                raise ValueError("normalized JMdict output must contain entries")
+            _validate_runtime_dictionary(
+                normalized,
+                expected_entry_count=len(entries),
+                expected_version=pack.manifest.source.source_version,
             )
-        return derived
+            derived: dict[str, object] = {
+                "filename": pack.manifest.normalized.filename,
+                "sha256": hashlib.sha256(normalized).hexdigest(),
+                "size_bytes": len(normalized),
+                "entry_count": len(entries),
+                "converter_version": CONVERTER_VERSION,
+            }
+            derived_by_language[language] = derived
+            current = pack.manifest.normalized.model_dump()
+            if current == derived:
+                continue
+            if check:
+                stale[language] = {"current": current, "derived": derived}
+                continue
+            updated = pack.manifest.model_copy(
+                update={
+                    "normalized": pack.manifest.normalized.model_copy(update=derived),
+                }
+            )
+            _write_manifest(pack.manifest_path, updated)
 
-    updated = manifest.model_copy(
-        update={
-            "normalized": manifest.normalized.model_copy(update=derived),
-        }
-    )
+    if stale:
+        details = json.dumps(stale, ensure_ascii=False, sort_keys=True)
+        raise ValueError(
+            "JMdict normalized pack metadata is stale; run "
+            f"uv run python scripts/update_jmdict_manifest.py; details={details}"
+        )
+    return derived_by_language
+
+
+def _write_manifest(path: Path, manifest: JmdictManifest) -> None:
     content = json.dumps(
-        updated.model_dump(mode="json"),
+        manifest.model_dump(mode="json"),
         ensure_ascii=False,
         indent=2,
     ) + "\n"
@@ -83,7 +116,6 @@ async def update_manifest(path: Path, *, check: bool) -> dict[str, object]:
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
-    return derived
 
 
 def _validate_runtime_dictionary(
@@ -107,7 +139,13 @@ def _validate_runtime_dictionary(
 
 def main() -> int:
     args = build_parser().parse_args()
-    derived = asyncio.run(update_manifest(args.manifest, check=args.check))
+    derived = asyncio.run(
+        update_manifests(
+            args.registry,
+            languages=args.languages,
+            check=args.check,
+        )
+    )
     print(json.dumps(derived, sort_keys=True))
     return 0
 
