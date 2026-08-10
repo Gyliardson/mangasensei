@@ -23,6 +23,7 @@ def _tiny_page() -> bytes:
 async def test_document_scale_near_configured_page_limit_reports_creation_query_and_payload_metrics(
     clean_postgres_url: str,
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     page = _tiny_page()
     total_pages = 200
@@ -56,11 +57,12 @@ async def test_document_scale_near_configured_page_limit_reports_creation_query_
     assert len(data["pages"]) == total_pages
     assert aggregate.json()["data"]["progress"]["processingPages"] == total_pages
     assert len(aggregate.content) < 100_000
-    print(
-        "slice_b_scale_metrics "
-        f"pages={total_pages} "
-        f"create_seconds={create_seconds:.6f} "
-        f"aggregate_query_seconds={query_seconds:.6f} "
-        f"create_payload_bytes={len(created.content)} "
-        f"aggregate_payload_bytes={len(aggregate.content)}"
-    )
+    with capsys.disabled():
+        print(
+            "slice_b_scale_metrics "
+            f"pages={total_pages} "
+            f"create_seconds={create_seconds:.6f} "
+            f"aggregate_query_seconds={query_seconds:.6f} "
+            f"create_payload_bytes={len(created.content)} "
+            f"aggregate_payload_bytes={len(aggregate.content)}"
+        )
