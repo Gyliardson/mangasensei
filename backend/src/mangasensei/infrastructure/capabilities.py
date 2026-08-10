@@ -8,7 +8,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from mangasensei.domain.capabilities import CapabilityScope
+from mangasensei.domain.capabilities import CapabilityScopeValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +28,7 @@ class CapabilityService:
         self,
         *,
         resource_id: str,
-        scope: CapabilityScope,
+        scope: CapabilityScopeValue,
         expires_at: datetime,
     ) -> IssuedCapability:
         self._validate_expiry(expires_at)
@@ -42,7 +42,7 @@ class CapabilityService:
         token: str,
         persisted_digest: str,
         resource_id: str,
-        scope: CapabilityScope,
+        scope: CapabilityScopeValue,
         expires_at: datetime,
     ) -> bool:
         if not token or expires_at.tzinfo is None or expires_at <= datetime.now(UTC):
@@ -53,7 +53,12 @@ class CapabilityService:
         )
 
     @staticmethod
-    def _digest(pepper: bytes, token: str, resource_id: str, scope: CapabilityScope) -> str:
+    def _digest(
+        pepper: bytes,
+        token: str,
+        resource_id: str,
+        scope: CapabilityScopeValue,
+    ) -> str:
         message = "\0".join((token, resource_id, scope.value)).encode()
         return hmac.new(pepper, message, hashlib.sha256).hexdigest()
 

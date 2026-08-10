@@ -53,11 +53,18 @@ class PageRecord(Base):
     __tablename__ = "pages"
     __table_args__ = (
         UniqueConstraint("upload_key_id", "upload_idempotency_digest"),
+        UniqueConstraint("document_id", "ordinal"),
         CheckConstraint(
             "octet_length(upload_idempotency_digest) = 32", name="idempotency_digest_length"
         ),
         CheckConstraint("octet_length(request_digest) = 32", name="request_digest_length"),
         CheckConstraint("expires_at = created_at + interval '24 hours'", name="retention_exact"),
+        CheckConstraint(
+            "(document_id IS NULL AND ordinal IS NULL) OR "
+            "(document_id IS NOT NULL AND ordinal IS NOT NULL)",
+            name="document_membership_pair",
+        ),
+        CheckConstraint("ordinal IS NULL OR ordinal >= 0", name="ordinal_nonnegative"),
         Index("ix_pages_expires_at_id", "expires_at", "id"),
         Index("ix_pages_image_blob_id", "image_blob_id"),
     )
@@ -69,6 +76,10 @@ class PageRecord(Base):
     image_blob_id: Mapped[int] = mapped_column(
         ForeignKey("mangasensei.image_blobs.id", ondelete="RESTRICT"), nullable=False
     )
+    document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mangasensei.documents.id", ondelete="CASCADE")
+    )
+    ordinal: Mapped[int | None] = mapped_column()
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     upload_key_id: Mapped[str] = mapped_column(String(32), nullable=False)
     upload_idempotency_digest: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
