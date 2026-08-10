@@ -7,6 +7,13 @@ from uuid import UUID
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
+from tests.integration.test_dictionary_projection_flow import (
+    CountingOcr,
+    CountingTokenizer,
+    EnglishDictionary,
+    _image,
+    _settings,
+)
 
 from mangasensei.api.app import create_app
 from mangasensei.infrastructure.database.dictionary_projection_models import (
@@ -24,13 +31,6 @@ from mangasensei.linguistics.service import LinguisticService
 from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.dictionary_projection import DictionaryProjectionWorker
 from mangasensei.workers.retention import RetentionJanitor
-from tests.integration.test_dictionary_projection_flow import (
-    CountingOcr,
-    CountingTokenizer,
-    EnglishDictionary,
-    _image,
-    _settings,
-)
 
 
 class _FailingProvider:
