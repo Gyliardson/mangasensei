@@ -19,6 +19,8 @@ from sqlalchemy import text
 
 import mangasensei
 from mangasensei.application.authorization import PageAuthorizer, ResourceNotFoundError
+from mangasensei.application.document_authorization import DocumentAuthorizer
+from mangasensei.application.document_queries import DocumentQueryService
 from mangasensei.application.idempotency import InvalidIdempotencyKeyError
 from mangasensei.application.page_queries import PageQueryService
 from mangasensei.application.reprocessing import (
@@ -35,7 +37,7 @@ from mangasensei.infrastructure.rate_limits import PostgreSQLRateLimiter
 from mangasensei.storage.images import ImageValidationError, ImageValidator
 from mangasensei.storage.local import LocalFilesystemStorage
 
-_EXPECTED_DATABASE_REVISION = "e63b0c4d129a"
+_EXPECTED_DATABASE_REVISION = "b7d2f4a91c63"
 _HTTP_REQUESTS = Counter(
     "http_requests",
     "HTTP requests completed by method and status code.",
@@ -94,7 +96,9 @@ def create_app(settings: Settings) -> FastAPI:
         idempotency_pepper=capability_peppers[0],
     )
     authorizer = PageAuthorizer(sessions, capability_service)
+    document_authorizer = DocumentAuthorizer(sessions, capability_service)
     page_queries = PageQueryService(sessions)
+    document_queries = DocumentQueryService(sessions)
     reprocess_service = ReprocessService(
         sessions,
         idempotency_pepper=capability_peppers[0],
@@ -298,6 +302,72 @@ def create_app(settings: Settings) -> FastAPI:
                 "error": data["error"],
                 "resultAvailable": data["resultAvailable"],
             }
+        )
+
+    @app.get("/api/v1/documents/{document_id}")
+    async def get_document(
+        document_id: UUID,
+        document_token: Annotated[str, Header(alias="X-Document-Token")],
+    ) -> dict[str, Any]:
+        authorized = await document_authorizer.authorize_document(
+            document_id=document_id,
+            token=document_token,
+        )
+        data = await document_queries.get(authorized.internal_id)
+        data["documentId"] = str(authorized.public_id)
+        data["sourceKind"] = authorized.source_kind
+        data["orderRevision"] = authorized.order_revision
+        data["expiresAt"] = authorized.expires_at.isoformat()
+        return _success(data)
+
+    @app.get("/api/v1/documents/{document_id}/progress")
+    async def get_document_progress(
+        document_id: UUID,
+        document_token: Annotated[str, Header(alias="X-Document-Token")],
+    ) -> dict[str, Any]:
+        authorized = await document_authorizer.authorize_document(
+            document_id=document_id,
+            token=document_token,
+        )
+        return _success(await document_queries.get_progress(authorized.internal_id))
+
+    @app.get("/api/v1/documents/{document_id}/pages/{page_id}")
+    async def get_document_page(
+        document_id: UUID,
+        page_id: UUID,
+        document_token: Annotated[str, Header(alias="X-Document-Token")],
+    ) -> dict[str, Any]:
+        authorized = await document_authorizer.authorize_page(
+            document_id=document_id,
+            page_id=page_id,
+            token=document_token,
+        )
+        data = await page_queries.get(authorized.internal_id)
+        data["pageId"] = str(authorized.public_id)
+        data["expiresAt"] = authorized.expires_at.isoformat()
+        data["imageUrl"] = f"/api/v1/documents/{document_id}/pages/{page_id}/image"
+        return _success(data)
+
+    @app.get("/api/v1/documents/{document_id}/pages/{page_id}/image")
+    async def download_document_image(
+        document_id: UUID,
+        page_id: UUID,
+        document_token: Annotated[str, Header(alias="X-Document-Token")],
+    ) -> Response:
+        authorized = await document_authorizer.authorize_image(
+            document_id=document_id,
+            page_id=page_id,
+            token=document_token,
+        )
+        content = await storage.read(authorized.storage_key)
+        return Response(
+            content=content,
+            media_type=authorized.media_type,
+            headers={
+                "Cache-Control": "private, no-store",
+                "Content-Disposition": "inline",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     @app.get("/health")

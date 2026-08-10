@@ -1,10 +1,11 @@
-"""Crash-safe 24-hour page and unreferenced blob cleanup."""
+"""Crash-safe 24-hour document, page and unreferenced blob cleanup."""
 
 from __future__ import annotations
 
 from sqlalchemy import delete, exists, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from mangasensei.infrastructure.database.document_models import DocumentRecord
 from mangasensei.infrastructure.database.gemini_accounting import (
     reconcile_abandoned_gemini_calls,
 )
@@ -36,22 +37,57 @@ class RetentionJanitor:
                     RateLimitBucketRecord.window_start < func.now() - text("interval '1 day'")
                 )
             )
-            expired = tuple(
+            expired_document_ids = tuple(
+                (
+                    await session.execute(
+                        select(DocumentRecord.id)
+                        .where(DocumentRecord.expires_at <= func.now())
+                        .order_by(DocumentRecord.expires_at, DocumentRecord.id)
+                        .limit(batch_size)
+                        .with_for_update(skip_locked=True)
+                    )
+                ).scalars()
+            )
+            document_pages = (
+                tuple(
+                    (
+                        await session.execute(
+                            select(PageRecord.id, PageRecord.image_blob_id).where(
+                                PageRecord.document_id.in_(expired_document_ids)
+                            )
+                        )
+                    ).all()
+                )
+                if expired_document_ids
+                else ()
+            )
+            expired_standalone = tuple(
                 (
                     await session.execute(
                         select(PageRecord.id, PageRecord.image_blob_id)
-                        .where(PageRecord.expires_at <= func.now())
+                        .where(
+                            PageRecord.document_id.is_(None),
+                            PageRecord.expires_at <= func.now(),
+                        )
                         .order_by(PageRecord.expires_at, PageRecord.id)
                         .limit(batch_size)
                         .with_for_update(skip_locked=True)
                     )
                 ).all()
             )
-            if expired:
-                page_ids = tuple(row.id for row in expired)
+            expired_pages = (*document_pages, *expired_standalone)
+            if expired_pages:
+                page_ids = tuple(row.id for row in expired_pages)
                 await reconcile_abandoned_gemini_calls(session, page_ids=page_ids)
-                await session.execute(delete(PageRecord).where(PageRecord.id.in_(page_ids)))
-            expired_blob_ids = tuple(dict.fromkeys(row.image_blob_id for row in expired))
+            if expired_document_ids:
+                await session.execute(
+                    delete(DocumentRecord).where(DocumentRecord.id.in_(expired_document_ids))
+                )
+            if expired_standalone:
+                standalone_ids = tuple(row.id for row in expired_standalone)
+                await session.execute(delete(PageRecord).where(PageRecord.id.in_(standalone_ids)))
+
+            expired_blob_ids = tuple(dict.fromkeys(row.image_blob_id for row in expired_pages))
             unreferenced_blob_ids = tuple(
                 (
                     await session.execute(
@@ -66,7 +102,7 @@ class RetentionJanitor:
         blob_ids = tuple(dict.fromkeys((*expired_blob_ids, *unreferenced_blob_ids)))
         for blob_id in blob_ids:
             await self._delete_if_unreferenced(blob_id)
-        return len(expired)
+        return len(expired_pages)
 
     async def _reconcile_pending_write(self, pending: PendingStorageWrite) -> None:
         digest = bytes.fromhex(pending.sha256)
