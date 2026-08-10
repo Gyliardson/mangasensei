@@ -91,9 +91,11 @@ async def test_licensed_page21_orders_offset_neighboring_panels_by_panel_flow() 
     lower_right = [index for index, label in enumerate(labels) if label == "lower-right"]
     lower_left = [index for index, label in enumerate(labels) if label == "lower-left"]
 
-    assert upper_right and upper_left, labels
+    assert upper_right, labels
+    assert upper_left, labels
     assert max(upper_right) < min(upper_left), labels
-    assert lower_right and lower_left, labels
+    assert lower_right, labels
+    assert lower_left, labels
     assert max(lower_right) < min(lower_left), labels
 
 
