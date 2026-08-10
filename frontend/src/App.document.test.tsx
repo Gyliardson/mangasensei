@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 import { documentMessagesFor } from "./lib/documentUiMessages";
+import { messagesFor } from "./lib/uiMessages";
 
 function documentData() {
   return {
@@ -103,7 +104,9 @@ describe("App document upload", () => {
     await user.click(screen.getByRole("button", { name: "Analisar 2 páginas" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent(/erro inesperado/i);
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        messagesFor("pt-BR").unexpectedProcessingError,
+      );
     });
   });
 });
