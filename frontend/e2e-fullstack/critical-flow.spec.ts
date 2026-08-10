@@ -18,27 +18,43 @@ interface PersistedStudyPageEnvelope {
     readonly contentLanguage: string;
     readonly studyLanguage: string;
     readonly dictionaryLanguage: string;
+    readonly requestedDictionaryLanguage?: string;
+    readonly dictionarySources?: readonly {
+      readonly ref: string;
+      readonly dataset: string;
+      readonly productLanguage: string;
+    }[];
     readonly regions: readonly {
       readonly text: string;
       readonly translation: string | null;
       readonly explanation: string | null;
       readonly grammar: readonly string[];
-      readonly vocabulary: readonly { readonly meanings: readonly string[] }[];
+      readonly vocabulary: readonly {
+        readonly meanings: readonly string[];
+        readonly effectiveLanguage?: string;
+        readonly fallbackUsed?: boolean;
+        readonly sourceRef?: string | null;
+      }[];
     }[];
   };
 }
 
-test("completes real page analysis and pt-BR to English language reprocessing", async ({ page }) => {
+test("completes real page analysis plus study and dictionary language reprojections", async ({ page }) => {
   const initialStatusResponses: Array<Promise<string | null>> = [];
-  const reprocessStatusResponses: Array<Promise<string | null>> = [];
-  let trackingReprocess = false;
+  const studyStatusResponses: Array<Promise<string | null>> = [];
+  const dictionaryStatusResponses: Array<Promise<string | null>> = [];
+  let mutationPhase: "initial" | "study" | "dictionary" = "initial";
   let protectedImageReads = 0;
   let protectedPageReads = 0;
 
   page.on("response", (response) => {
     const url = new URL(response.url());
     if (/^\/api\/v1\/pages\/[^/]+\/status$/.test(url.pathname) && response.ok()) {
-      const target = trackingReprocess ? reprocessStatusResponses : initialStatusResponses;
+      const target = mutationPhase === "dictionary"
+        ? dictionaryStatusResponses
+        : mutationPhase === "study"
+          ? studyStatusResponses
+          : initialStatusResponses;
       target.push(
         response
           .json()
@@ -73,9 +89,7 @@ test("completes real page analysis and pt-BR to English language reprocessing", 
   expect(uploaded.data.studyLanguage).toBe("pt-BR");
 
   const regionButton = page.getByRole("button", { name: "Região 1: 猫です" });
-  await expect(regionButton).toBeVisible({
-    timeout: 20_000,
-  });
+  await expect(regionButton).toBeVisible({ timeout: 20_000 });
   const studyTitle = page.locator("#study-title");
   const rubyTokens = studyTitle.locator("ruby");
   await expect(studyTitle).toBeVisible();
@@ -89,7 +103,7 @@ test("completes real page analysis and pt-BR to English language reprocessing", 
   await expect(page.getByText("Frase nominal polida.")).toHaveAttribute("lang", "pt-BR");
   await expect(page.getByText("cópula polida", { exact: true })).toBeVisible();
   await expect(page.getByText("cat", { exact: true })).toHaveAttribute("lang", "en");
-  await expect(page.getByText("JMdict fullstack-fixture · JLPT N5 não oficial")).toBeVisible();
+  await expect(page.getByText("Dicionário solicitado: Inglês")).toBeVisible();
 
   const initialStatuses = (await Promise.all(initialStatusResponses)).filter(
     (status): status is string => status !== null,
@@ -98,8 +112,8 @@ test("completes real page analysis and pt-BR to English language reprocessing", 
   expect(initialStatuses.some((status) => status !== "completed")).toBe(true);
   expect(initialStatuses.at(-1)).toBe("completed");
 
-  trackingReprocess = true;
-  const reprocessResponsePromise = page.waitForResponse((response) => {
+  mutationPhase = "study";
+  const studyReprocessResponsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return response.request().method() === "POST" && /\/api\/v1\/pages\/[^/]+\/reprocess$/.test(url.pathname);
   });
@@ -112,22 +126,22 @@ test("completes real page analysis and pt-BR to English language reprocessing", 
   const studyControls = page.getByRole("group", { name: "Preferências de estudo" });
   await studyControls.getByRole("combobox", { name: "Idioma de estudo" }).selectOption("en");
 
-  const reprocessResponse = await reprocessResponsePromise;
-  expect(reprocessResponse.status()).toBe(202);
-  expect(reprocessResponse.request().postDataJSON()).toEqual({ studyLanguage: "en" });
-  expect(await reprocessResponse.request().headerValue("x-page-token")).toBeTruthy();
+  const studyReprocessResponse = await studyReprocessResponsePromise;
+  expect(studyReprocessResponse.status()).toBe(202);
+  expect(studyReprocessResponse.request().postDataJSON()).toEqual({ studyLanguage: "en" });
+  expect(await studyReprocessResponse.request().headerValue("x-page-token")).toBeTruthy();
 
   const englishPersistedResponse = await englishPersistedResponsePromise;
-  const persisted = (await englishPersistedResponse.json()) as PersistedStudyPageEnvelope;
-  expect(persisted.data.contentLanguage).toBe("ja");
-  expect(persisted.data.studyLanguage).toBe("en");
-  expect(persisted.data.dictionaryLanguage).toBe("en");
-  expect(persisted.data.regions).toHaveLength(1);
-  expect(persisted.data.regions[0]?.text).toBe("猫です");
-  expect(persisted.data.regions[0]?.translation).toBe("It is a cat.");
-  expect(persisted.data.regions[0]?.explanation).toBe("A polite nominal sentence.");
-  expect(persisted.data.regions[0]?.grammar).toEqual(["polite copula"]);
-  expect(persisted.data.regions[0]?.vocabulary[0]?.meanings).toEqual(["cat"]);
+  const persistedEnglish = (await englishPersistedResponse.json()) as PersistedStudyPageEnvelope;
+  expect(persistedEnglish.data.contentLanguage).toBe("ja");
+  expect(persistedEnglish.data.studyLanguage).toBe("en");
+  expect(persistedEnglish.data.dictionaryLanguage).toBe("en");
+  expect(persistedEnglish.data.regions).toHaveLength(1);
+  expect(persistedEnglish.data.regions[0]?.text).toBe("猫です");
+  expect(persistedEnglish.data.regions[0]?.translation).toBe("It is a cat.");
+  expect(persistedEnglish.data.regions[0]?.explanation).toBe("A polite nominal sentence.");
+  expect(persistedEnglish.data.regions[0]?.grammar).toEqual(["polite copula"]);
+  expect(persistedEnglish.data.regions[0]?.vocabulary[0]?.meanings).toEqual(["cat"]);
 
   await expect(page.getByText("It is a cat.")).toHaveAttribute("lang", "en");
   await expect(page.getByText("A polite nominal sentence.")).toHaveAttribute("lang", "en");
@@ -136,15 +150,66 @@ test("completes real page analysis and pt-BR to English language reprocessing", 
   await expect(regionButton).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("lang", "pt-BR");
   await expect(studyControls.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("en");
+  await expect(studyControls.getByRole("combobox", { name: "Idioma do dicionário" })).toHaveValue("en");
 
-  const reprocessStatuses = (await Promise.all(reprocessStatusResponses)).filter(
+  const studyStatuses = (await Promise.all(studyStatusResponses)).filter(
     (status): status is string => status !== null,
   );
-  expect(reprocessStatuses.length).toBeGreaterThanOrEqual(1);
-  expect(reprocessStatuses.some((status) => status !== "completed")).toBe(true);
-  expect(reprocessStatuses.at(-1)).toBe("completed");
+  expect(studyStatuses.length).toBeGreaterThanOrEqual(1);
+  expect(studyStatuses.some((status) => status !== "completed")).toBe(true);
+  expect(studyStatuses.at(-1)).toBe("completed");
+
+  mutationPhase = "dictionary";
+  const dictionaryReprocessResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "POST" && /\/api\/v1\/pages\/[^/]+\/reprocess$/.test(url.pathname);
+  });
+  const germanPersistedResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "GET"
+      && /^\/api\/v1\/pages\/[^/]+$/.test(url.pathname)
+      && response.ok();
+  });
+  const dictionaryLanguage = studyControls.getByRole("combobox", { name: "Idioma do dicionário" });
+  await dictionaryLanguage.selectOption("de");
+
+  const dictionaryReprocessResponse = await dictionaryReprocessResponsePromise;
+  expect(dictionaryReprocessResponse.status()).toBe(202);
+  expect(dictionaryReprocessResponse.request().postDataJSON()).toEqual({ dictionaryLanguage: "de" });
+  expect(await dictionaryReprocessResponse.request().headerValue("x-page-token")).toBeTruthy();
+
+  const germanPersistedResponse = await germanPersistedResponsePromise;
+  const persistedGerman = (await germanPersistedResponse.json()) as PersistedStudyPageEnvelope;
+  expect(persistedGerman.data.contentLanguage).toBe("ja");
+  expect(persistedGerman.data.studyLanguage).toBe("en");
+  expect(persistedGerman.data.dictionaryLanguage).toBe("en");
+  expect(persistedGerman.data.requestedDictionaryLanguage).toBe("de");
+  const germanVocabulary = persistedGerman.data.regions[0]?.vocabulary[0];
+  expect(germanVocabulary?.meanings).toEqual(["Katze"]);
+  expect(germanVocabulary?.effectiveLanguage).toBe("de");
+  expect(germanVocabulary?.fallbackUsed).toBe(false);
+  expect(germanVocabulary?.sourceRef).toBeTruthy();
+  expect(
+    persistedGerman.data.dictionarySources?.some(
+      (source) => source.ref === germanVocabulary?.sourceRef
+        && source.dataset === "JMdict"
+        && source.productLanguage === "de",
+    ),
+  ).toBe(true);
+
+  await expect(page.getByText("Katze", { exact: true })).toHaveAttribute("lang", "de");
+  await expect(page.getByText("Dicionário solicitado: Alemão")).toBeVisible();
+  await expect(dictionaryLanguage).toHaveValue("de");
+  await expect(page.getByText("It is a cat.")).toHaveAttribute("lang", "en");
+  await expect(regionButton).toBeVisible();
+
+  const dictionaryStatuses = (await Promise.all(dictionaryStatusResponses)).filter(
+    (status): status is string => status !== null,
+  );
+  expect(dictionaryStatuses.length).toBeGreaterThanOrEqual(1);
+  expect(dictionaryStatuses.at(-1)).toBe("completed");
   expect(protectedImageReads).toBeGreaterThanOrEqual(1);
-  expect(protectedPageReads).toBeGreaterThanOrEqual(2);
+  expect(protectedPageReads).toBeGreaterThanOrEqual(3);
 
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "pt-BR");
