@@ -24,6 +24,7 @@ from mangasensei.linguistics.jmdict_packs import (
     download_jmdict_pack,
     load_jmdict_packs,
     resolve_jmdict_pack,
+    verify_jmdict_pack,
 )
 
 
@@ -124,6 +125,116 @@ async def test_english_and_german_bootstrap_use_same_safe_v3_conversion(
     assert german_hanpei.meanings == ("Fischkuchen",)
     assert english.lookup("半片", "ハンペイ") is None
     assert german.lookup("半片", "ハンペイ") is None
+
+
+@pytest.mark.asyncio
+async def test_pack_download_rejects_source_checksum_mismatch(tmp_path: Path) -> None:
+    registry_path, source_by_url = write_fixture_registry(tmp_path)
+    german_url = "https://example.test/jmdict-ger.json.zip"
+    tampered = bytearray(source_by_url[german_url])
+    tampered[-1] ^= 1
+    source_by_url[german_url] = bytes(tampered)
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=source_by_url[str(request.url)], request=request)
+
+    target = tmp_path / "data" / "jmdict.json"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        with pytest.raises(JmdictIntegrityError, match="checksum mismatch"):
+            await download_jmdict_pack(
+                target, language="de", registry_path=registry_path, client=client
+            )
+
+    assert not (target.parent / "jmdict-de.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_pack_download_rejects_source_size_mismatch(tmp_path: Path) -> None:
+    registry_path, source_by_url = write_fixture_registry(tmp_path)
+    german_path = tmp_path / "jmdict_manifest.de.json"
+    german = json.loads(german_path.read_text(encoding="utf-8"))
+    german["source"]["size_bytes"] -= 1
+    german_path.write_text(json.dumps(german), encoding="utf-8")
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=source_by_url[str(request.url)], request=request)
+
+    target = tmp_path / "data" / "jmdict.json"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        with pytest.raises(JmdictIntegrityError, match="size mismatch"):
+            await download_jmdict_pack(
+                target, language="de", registry_path=registry_path, client=client
+            )
+
+
+@pytest.mark.asyncio
+async def test_pack_download_enforces_uncompressed_size_limit(tmp_path: Path) -> None:
+    registry_path, source_by_url = write_fixture_registry(tmp_path)
+    german_path = tmp_path / "jmdict_manifest.de.json"
+    german = json.loads(german_path.read_text(encoding="utf-8"))
+    german["source"]["max_uncompressed_bytes"] = 1
+    german_path.write_text(json.dumps(german), encoding="utf-8")
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=source_by_url[str(request.url)], request=request)
+
+    target = tmp_path / "data" / "jmdict.json"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        with pytest.raises(JmdictIntegrityError, match="uncompressed size limit"):
+            await download_jmdict_pack(
+                target, language="de", registry_path=registry_path, client=client
+            )
+
+
+@pytest.mark.asyncio
+async def test_pack_download_rejects_unsafe_archive_filename(tmp_path: Path) -> None:
+    registry_path, source_by_url = write_fixture_registry(tmp_path)
+    german_url = "https://example.test/jmdict-ger.json.zip"
+    unsafe_source = zipped_source(
+        restricted_payload("ger", "Fischkuchen", "halbe Karte"),
+        filename="../jmdict-ger.json",
+    )
+    source_by_url[german_url] = unsafe_source
+    german_path = tmp_path / "jmdict_manifest.de.json"
+    german = json.loads(german_path.read_text(encoding="utf-8"))
+    german["source"]["sha256"] = hashlib.sha256(unsafe_source).hexdigest()
+    german["source"]["size_bytes"] = len(unsafe_source)
+    german_path.write_text(json.dumps(german), encoding="utf-8")
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=source_by_url[str(request.url)], request=request)
+
+    target = tmp_path / "data" / "jmdict.json"
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        with pytest.raises(JmdictIntegrityError, match="unsafe filename"):
+            await download_jmdict_pack(
+                target, language="de", registry_path=registry_path, client=client
+            )
+
+
+def test_pack_verify_rejects_normalized_checksum_mismatch(tmp_path: Path) -> None:
+    registry_path, _ = write_fixture_registry(tmp_path)
+    german = resolve_jmdict_pack("de", registry_path=registry_path)
+    target = german.target_path(tmp_path / "data" / "jmdict.json")
+    target.parent.mkdir(parents=True)
+    normalized = convert_simplified_jmdict(
+        restricted_payload("ger", "Fischkuchen", "halbe Karte"),
+        version=german.manifest.source.source_version,
+        language="ger",
+        source_url=german.manifest.source.url,
+        license_id=german.manifest.source.license_id,
+        attribution=german.manifest.source.attribution,
+    )
+    tampered = bytearray(normalized)
+    tampered[-2] ^= 1
+    target.write_bytes(tampered)
+
+    with pytest.raises(JmdictIntegrityError, match="checksum mismatch"):
+        verify_jmdict_pack(
+            tmp_path / "data" / "jmdict.json",
+            language="de",
+            registry_path=registry_path,
+        )
 
 
 def test_third_party_notice_tracks_manifest_backed_provenance() -> None:
