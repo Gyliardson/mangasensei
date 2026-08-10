@@ -9,6 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from PIL import Image
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from mangasensei.api.app import create_app
 from mangasensei.config import Settings
@@ -122,22 +123,19 @@ class EnglishDictionary:
         if raw is None:
             return DictionaryLookupResult.from_candidates(())
         entry_id, meanings = raw
-        return DictionaryLookupResult.from_candidates(
-            (
-                DictionaryEntry(
-                    identity=LexicalFormIdentity(
-                        dictionary_namespace="JMdict",
-                        entry_id=entry_id,
-                        lemma=lemma,
-                        reading=key[1],
-                    ),
-                    meanings=meanings,
-                    source=_VERSION,
-                    jlpt_level=None,
-                    jlpt_official=False,
-                ),
-            )
+        entry = DictionaryEntry(
+            identity=LexicalFormIdentity(
+                dictionary_namespace="JMdict",
+                entry_id=entry_id,
+                lemma=lemma,
+                reading=key[1],
+            ),
+            meanings=meanings,
+            source=_VERSION,
+            jlpt_level=None,
+            jlpt_official=False,
         )
+        return DictionaryLookupResult.from_candidates((entry,))
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,7 +225,7 @@ def _worker(
     ocr: CountingOcr,
     tokenizer: CountingTokenizer,
     provider: _Provider,
-) -> tuple[DictionaryProjectionWorker, object]:
+) -> tuple[DictionaryProjectionWorker, AsyncEngine]:
     engine, sessions = create_database(database_url)
     worker = DictionaryProjectionWorker(
         sessions=sessions,
@@ -262,7 +260,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         upload = await client.post(
             "/api/v1/pages",
-            headers={"Idempotency-Key": "dictionary-upload-0001"},
+            headers={"Idempotency-Key": "key-1"},
             files={
                 "image": ("page.png", _image(), "image/png"),
                 "studyLanguage": (None, "en"),
@@ -288,24 +286,50 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             for item in original_data["regions"][0]["vocabulary"]
         )
 
+        english_request = await client.post(
+            f"/api/v1/pages/{upload_data['pageId']}/reprocess",
+            headers={
+                "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
+                "Idempotency-Key": "key-2",
+            },
+            json={"dictionaryLanguage": "en"},
+        )
+        assert english_request.status_code == 202
+        assert await worker.run_once()
+        english_page = (
+            await client.get(
+                f"/api/v1/pages/{upload_data['pageId']}",
+                headers={"X-Page-Token": upload_data["capabilities"]["readPage"]},
+            )
+        ).json()["data"]
+        assert english_page["requestedDictionaryLanguage"] == "en"
+        assert {source["productLanguage"] for source in english_page["dictionarySources"]} == {
+            "en"
+        }
+        assert all(
+            item["effectiveLanguage"] == "en"
+            and item["fallbackUsed"] is False
+            and item["fallbackReason"] is None
+            for item in english_page["regions"][0]["vocabulary"]
+        )
+
         de_request = await client.post(
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "dictionary-de-0001",
+                "Idempotency-Key": "key-3",
             },
             json={"dictionaryLanguage": "de"},
         )
         assert de_request.status_code == 202
         de_job_id = de_request.json()["data"]["jobId"]
         assert de_request.json()["data"]["studyLanguage"] == "en"
-        assert de_request.json()["data"]["requestedDictionaryLanguage"] == "de"
 
         duplicate = await client.post(
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "dictionary-de-0001",
+                "Idempotency-Key": "key-3",
             },
             json={"dictionaryLanguage": "de"},
         )
@@ -350,7 +374,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "dictionary-ptbr-0001",
+                "Idempotency-Key": "key-4",
             },
             json={"dictionaryLanguage": "pt-BR"},
         )
@@ -376,7 +400,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "study-after-dictionary-0001",
+                "Idempotency-Key": "key-5",
             },
             json={"studyLanguage": "pt-BR"},
         )
@@ -395,7 +419,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "dictionary-invalid-0001",
+                "Idempotency-Key": "key-6",
             },
             json={"dictionaryLanguage": "es"},
         )
@@ -404,7 +428,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "dictionary-both-0001",
+                "Idempotency-Key": "key-7",
             },
             json={"studyLanguage": "en", "dictionaryLanguage": "de"},
         )
@@ -412,12 +436,22 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
 
     _, sessions = create_database(clean_postgres_url)
     async with sessions() as session:
-        assert await session.scalar(select(func.count()).select_from(OcrRunRecord)) == 1
-        assert await session.scalar(select(func.count()).select_from(LinguisticRunRecord)) == 1
-        assert await session.scalar(select(func.count()).select_from(GeminiCallRecord)) == 0
-        assert await session.scalar(select(func.count()).select_from(StudyResultRecord)) == 2
-        assert await session.scalar(select(func.count()).select_from(DictionaryProjectionRecord)) == 2
-        assert await session.scalar(select(func.count()).select_from(DictionaryProjectionItemRecord)) == 8
+        ocr_run_count = await session.scalar(select(func.count()).select_from(OcrRunRecord))
+        linguistic_run_count = await session.scalar(
+            select(func.count()).select_from(LinguisticRunRecord)
+        )
+        gemini_call_count = await session.scalar(
+            select(func.count()).select_from(GeminiCallRecord)
+        )
+        study_result_count = await session.scalar(
+            select(func.count()).select_from(StudyResultRecord)
+        )
+        projection_count = await session.scalar(
+            select(func.count()).select_from(DictionaryProjectionRecord)
+        )
+        projection_item_count = await session.scalar(
+            select(func.count()).select_from(DictionaryProjectionItemRecord)
+        )
         identities = tuple(
             (
                 await session.execute(
@@ -430,14 +464,20 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
                 )
             ).all()
         )
-        assert {identity[1] for identity in identities} >= {
-            "jmdict-cat",
-            "jmdict-dog",
-            "jmdict-go",
-            "jmdict-catdog",
-        }
+
+    assert ocr_run_count == 1
+    assert linguistic_run_count == 1
+    assert gemini_call_count == 0
+    assert study_result_count == 2
+    assert projection_count == 3
+    assert projection_item_count == 12
+    assert {identity[1] for identity in identities} >= {
+        "jmdict-cat",
+        "jmdict-dog",
+        "jmdict-go",
+        "jmdict-catdog",
+    }
     assert ocr.calls == 1
     assert tokenizer.calls == 1
-    # German is only touched by the explicit German projection; pt-BR asks English directly.
     assert "de" in provider.loads
-    await engine.dispose()  # type: ignore[attr-defined]
+    await engine.dispose()
