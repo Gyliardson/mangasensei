@@ -15,7 +15,6 @@ import {
 } from "./lib/api";
 import {
   type DictionaryLanguage,
-  isDictionaryLanguage,
   loadDictionaryLanguagePreference,
   saveDictionaryLanguagePreference,
 } from "./lib/dictionaryLanguage";
@@ -137,7 +136,10 @@ export function App() {
     setPreferredDictionaryLanguage(target);
     saveDictionaryLanguagePreference(target);
     setDictionaryLanguageErrorCode(null);
-    if (target === previousLanguage) return;
+    if (target === previousLanguage) {
+      if (operation.current === controller) operation.current = null;
+      return;
+    }
 
     setLanguageMutation("dictionary");
     try {
@@ -238,6 +240,12 @@ export function App() {
 
   const changeDictionaryLanguage = async (target: DictionaryLanguage) => {
     if (!page || !pageAccess || languageMutation) return;
+    if (target === requestedDictionaryLanguageOf(page)) {
+      setPreferredDictionaryLanguage(target);
+      saveDictionaryLanguagePreference(target);
+      setDictionaryLanguageErrorCode(null);
+      return;
+    }
     const controller = new AbortController();
     operation.current = controller;
     await runDictionaryReprojection(page, pageAccess, target, controller);
