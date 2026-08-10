@@ -5,6 +5,7 @@ import {
   ApiError,
   type DocumentSnapshot,
   type DocumentUploadData,
+  type JobStatus,
   type StudyPage,
   fetchDocumentPage,
   fetchDocumentProtectedImage,
@@ -44,6 +45,10 @@ type LanguageMutation = "study" | "dictionary" | null;
 
 function requestedDictionaryLanguageOf(page: StudyPage): DictionaryLanguage {
   return page.requestedDictionaryLanguage ?? "en";
+}
+
+function isFailedStatus(status: JobStatus | undefined): boolean {
+  return status === "failed" || status === "expired";
 }
 
 export function DocumentReader({
@@ -310,6 +315,8 @@ export function DocumentReader({
           {documentMessages.documentProgress(
             snapshot.progress.completedPages,
             snapshot.progress.totalPages,
+            snapshot.progress.processingPages,
+            snapshot.progress.failedPages,
           )}
         </span>
       </div>
@@ -332,49 +339,45 @@ export function DocumentReader({
         </button>
       </div>
       <ol className="document-page-index">
-        {snapshot.pages.map((summary) => (
-          <li key={summary.pageId}>
-            <button
-              type="button"
-              aria-current={summary.pageId === currentPageId ? "page" : undefined}
-              aria-label={documentMessages.pageStatus(
-                summary.ordinal + 1,
-                summary.status,
-                summary.resultAvailable,
-              )}
-              data-page-status={
-                summary.resultAvailable
-                  ? "readable"
-                  : summary.status === "failed"
-                    ? "failed"
-                    : "processing"
-              }
-              onClick={() => selectPage(summary.pageId)}
-            >
-              <span>{summary.ordinal + 1}</span>
-              <small>
-                {summary.resultAvailable
-                  ? documentMessages.readablePage
-                  : summary.status === "failed"
-                    ? documentMessages.failedPage
-                    : documentMessages.processingPage}
-              </small>
-            </button>
-          </li>
-        ))}
+        {snapshot.pages.map((summary) => {
+          const failed = isFailedStatus(summary.status);
+          return (
+            <li key={summary.pageId}>
+              <button
+                type="button"
+                aria-current={summary.pageId === currentPageId ? "page" : undefined}
+                aria-label={documentMessages.pageStatus(
+                  summary.ordinal + 1,
+                  summary.status,
+                  summary.resultAvailable,
+                )}
+                data-page-status={summary.resultAvailable ? "readable" : failed ? "failed" : "processing"}
+                onClick={() => selectPage(summary.pageId)}
+              >
+                <span>{summary.ordinal + 1}</span>
+                <small>
+                  {summary.resultAvailable
+                    ? documentMessages.readablePage
+                    : failed
+                      ? documentMessages.failedPage
+                      : documentMessages.processingPage}
+                </small>
+              </button>
+            </li>
+          );
+        })}
       </ol>
       <p className="document-session-note">{documentMessages.documentReloadNote}</p>
     </section>
   );
 
   if (!page || !imageUrl || !currentSummary?.resultAvailable) {
+    const currentFailed = isFailedStatus(currentSummary?.status);
     return (
       <main id="conteudo" className="document-reader-loading">
         {navigation}
-        <p role={currentSummary?.status === "failed" ? "alert" : "status"}>
-          {currentSummary?.status === "failed"
-            ? documentMessages.failedPage
-            : documentMessages.processingPage}
+        <p role={currentFailed ? "alert" : "status"}>
+          {currentFailed ? documentMessages.failedPage : documentMessages.processingPage}
         </p>
       </main>
     );
