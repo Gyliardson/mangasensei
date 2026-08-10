@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   ApiError,
@@ -11,12 +11,15 @@ import {
   fetchDocumentSnapshot,
   reprocessDocumentDictionaryLanguage,
   reprocessDocumentStudyLanguage,
-  waitForDocumentPage,
 } from "../../lib/api";
 import {
   type DictionaryLanguage,
   saveDictionaryLanguagePreference,
 } from "../../lib/dictionaryLanguage";
+import {
+  documentNeedsPolling,
+  waitForDocumentPageResult,
+} from "../../lib/documentPolling";
 import { documentMessagesFor } from "../../lib/documentUiMessages";
 import {
   type StudyLanguage,
@@ -64,22 +67,41 @@ export function DocumentReader({
   const requestGeneration = useRef(0);
   const autoDictionaryAttempt = useRef<string | null>(null);
   const currentPageIdRef = useRef(currentPageId);
+  const preferredDictionaryLanguageRef = useRef(preferredDictionaryLanguage);
+  const imageUrlRef = useRef<string | null>(null);
   const messages = messagesFor(uiLocale);
   const documentMessages = documentMessagesFor(uiLocale);
 
   currentPageIdRef.current = currentPageId;
+  preferredDictionaryLanguageRef.current = preferredDictionaryLanguage;
+
+  const rawCurrentIndex = snapshot.pages.findIndex(
+    (summary) => summary.pageId === currentPageId,
+  );
+  const currentIndex = Math.max(0, rawCurrentIndex);
+  const currentSummary = snapshot.pages[currentIndex];
+  const currentResultAvailable = currentSummary?.resultAvailable ?? false;
+  const shouldPollDocument = documentNeedsPolling(snapshot);
+
+  const replaceImageUrl = useCallback((next: string | null) => {
+    if (imageUrlRef.current && imageUrlRef.current !== next) {
+      URL.revokeObjectURL(imageUrlRef.current);
+    }
+    imageUrlRef.current = next;
+    setImageUrl(next);
+  }, []);
 
   useEffect(() => () => {
     pageRequest.current?.abort();
     mutationRequest.current?.abort();
+    if (imageUrlRef.current) {
+      URL.revokeObjectURL(imageUrlRef.current);
+      imageUrlRef.current = null;
+    }
   }, []);
 
-  useEffect(() => () => {
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
-  }, [imageUrl]);
-
   useEffect(() => {
-    if (snapshot.progress.processingPages === 0) return;
+    if (!shouldPollDocument || languageMutation !== null) return;
     const controller = new AbortController();
     let timer = 0;
 
@@ -87,12 +109,7 @@ export function DocumentReader({
       try {
         const next = await fetchDocumentSnapshot(access, controller.signal);
         setSnapshot(next);
-        const current = next.pages.find((summary) => summary.pageId === currentPageIdRef.current);
-        if (!current?.resultAvailable) {
-          const readable = next.pages.find((summary) => summary.resultAvailable);
-          if (readable) setCurrentPageId(readable.pageId);
-        }
-        if (next.progress.processingPages > 0) timer = window.setTimeout(poll, 1_000);
+        if (documentNeedsPolling(next)) timer = window.setTimeout(poll, 1_000);
       } catch (caught) {
         if (!(caught instanceof DOMException && caught.name === "AbortError")) {
           timer = window.setTimeout(poll, 2_000);
@@ -105,7 +122,7 @@ export function DocumentReader({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [access, snapshot.progress.processingPages]);
+  }, [access, languageMutation, shouldPollDocument]);
 
   useEffect(() => {
     pageRequest.current?.abort();
@@ -115,14 +132,10 @@ export function DocumentReader({
     setStudyLanguageErrorCode(null);
     setDictionaryLanguageErrorCode(null);
     setPage(null);
-    setImageUrl((current) => {
-      if (current) URL.revokeObjectURL(current);
-      return null;
-    });
+    replaceImageUrl(null);
     autoDictionaryAttempt.current = null;
 
-    const summary = snapshot.pages.find((candidate) => candidate.pageId === currentPageId);
-    if (!summary?.resultAvailable) return;
+    if (!currentResultAvailable) return;
 
     const controller = new AbortController();
     pageRequest.current = controller;
@@ -141,14 +154,13 @@ export function DocumentReader({
           return;
         }
         setPage(loadedPage);
-        setImageUrl(loadedImage);
+        replaceImageUrl(loadedImage);
         protectedImage = null;
-        onPreferredStudyLanguageChange(loadedPage.studyLanguage);
-        saveStudyLanguagePreference(loadedPage.studyLanguage);
 
+        const targetDictionaryLanguage = preferredDictionaryLanguageRef.current;
         const persistedDictionaryLanguage = requestedDictionaryLanguageOf(loadedPage);
-        if (persistedDictionaryLanguage !== preferredDictionaryLanguage) {
-          const attemptKey = `${currentPageId}:${preferredDictionaryLanguage}`;
+        if (persistedDictionaryLanguage !== targetDictionaryLanguage) {
+          const attemptKey = `${currentPageId}:${targetDictionaryLanguage}`;
           if (autoDictionaryAttempt.current !== attemptKey) {
             autoDictionaryAttempt.current = attemptKey;
             const mutation = new AbortController();
@@ -158,15 +170,16 @@ export function DocumentReader({
               await reprocessDocumentDictionaryLanguage(
                 access,
                 currentPageId,
-                preferredDictionaryLanguage,
+                targetDictionaryLanguage,
                 mutation.signal,
               );
-              const refreshed = await waitForDocumentPage(
+              const refreshed = await waitForDocumentPageResult(
                 access,
                 currentPageId,
                 mutation.signal,
-                () => undefined,
-                (candidate) => requestedDictionaryLanguageOf(candidate) === preferredDictionaryLanguage,
+                setSnapshot,
+                (candidate) =>
+                  requestedDictionaryLanguageOf(candidate) === targetDictionaryLanguage,
               );
               if (currentPageIdRef.current === currentPageId) setPage(refreshed);
             } catch (caught) {
@@ -176,8 +189,10 @@ export function DocumentReader({
                 );
               }
             } finally {
-              if (mutationRequest.current === mutation) mutationRequest.current = null;
-              setLanguageMutation(null);
+              if (mutationRequest.current === mutation) {
+                mutationRequest.current = null;
+                setLanguageMutation(null);
+              }
             }
           }
         }
@@ -192,13 +207,7 @@ export function DocumentReader({
     })();
 
     return () => controller.abort();
-  }, [
-    access,
-    currentPageId,
-    onPreferredStudyLanguageChange,
-    preferredDictionaryLanguage,
-    snapshot.pages,
-  ]);
+  }, [access, currentPageId, currentResultAvailable, replaceImageUrl]);
 
   const selectPage = (pageId: string) => {
     if (pageId === currentPageId) return;
@@ -206,49 +215,48 @@ export function DocumentReader({
     setCurrentPageId(pageId);
   };
 
-  const currentIndex = Math.max(
-    0,
-    snapshot.pages.findIndex((summary) => summary.pageId === currentPageId),
-  );
-  const currentSummary = snapshot.pages[currentIndex];
-
   const changeStudyLanguage = async (target: StudyLanguage) => {
-    if (!page || languageMutation || target === page.studyLanguage) return;
+    if (!page || languageMutation) return;
+    const previousPreference = preferredStudyLanguage;
     onPreferredStudyLanguageChange(target);
     saveStudyLanguagePreference(target);
     setStudyLanguageErrorCode(null);
-    const previousLanguage = page.studyLanguage;
+    if (target === page.studyLanguage) return;
+
     const controller = new AbortController();
     mutationRequest.current?.abort();
     mutationRequest.current = controller;
     setLanguageMutation("study");
     try {
       await reprocessDocumentStudyLanguage(access, page.pageId, target, controller.signal);
-      const refreshed = await waitForDocumentPage(
+      const refreshed = await waitForDocumentPageResult(
         access,
         page.pageId,
         controller.signal,
-        () => undefined,
+        setSnapshot,
         (candidate) => candidate.studyLanguage === target,
       );
       if (currentPageIdRef.current === page.pageId) setPage(refreshed);
-      onPreferredStudyLanguageChange(refreshed.studyLanguage);
-      saveStudyLanguagePreference(refreshed.studyLanguage);
+      onPreferredStudyLanguageChange(target);
+      saveStudyLanguagePreference(target);
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
-      onPreferredStudyLanguageChange(previousLanguage);
-      saveStudyLanguagePreference(previousLanguage);
+      onPreferredStudyLanguageChange(previousPreference);
+      saveStudyLanguagePreference(previousPreference);
       setStudyLanguageErrorCode(
         caught instanceof ApiError ? caught.code : "study_language_update_failed",
       );
     } finally {
-      if (mutationRequest.current === controller) mutationRequest.current = null;
-      setLanguageMutation(null);
+      if (mutationRequest.current === controller) {
+        mutationRequest.current = null;
+        setLanguageMutation(null);
+      }
     }
   };
 
   const changeDictionaryLanguage = async (target: DictionaryLanguage) => {
     if (!page || languageMutation) return;
+    const previousPreference = preferredDictionaryLanguage;
     onPreferredDictionaryLanguageChange(target);
     saveDictionaryLanguagePreference(target);
     setDictionaryLanguageErrorCode(null);
@@ -260,22 +268,26 @@ export function DocumentReader({
     setLanguageMutation("dictionary");
     try {
       await reprocessDocumentDictionaryLanguage(access, page.pageId, target, controller.signal);
-      const refreshed = await waitForDocumentPage(
+      const refreshed = await waitForDocumentPageResult(
         access,
         page.pageId,
         controller.signal,
-        () => undefined,
+        setSnapshot,
         (candidate) => requestedDictionaryLanguageOf(candidate) === target,
       );
       if (currentPageIdRef.current === page.pageId) setPage(refreshed);
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
+      onPreferredDictionaryLanguageChange(previousPreference);
+      saveDictionaryLanguagePreference(previousPreference);
       setDictionaryLanguageErrorCode(
         caught instanceof ApiError ? caught.code : "dictionary_language_update_failed",
       );
     } finally {
-      if (mutationRequest.current === controller) mutationRequest.current = null;
-      setLanguageMutation(null);
+      if (mutationRequest.current === controller) {
+        mutationRequest.current = null;
+        setLanguageMutation(null);
+      }
     }
   };
 
@@ -294,7 +306,12 @@ export function DocumentReader({
     <section className="document-navigation-shell" aria-label={documentMessages.documentNavigation}>
       <div className="document-progress" role="status">
         <strong>{documentMessages.pageOf(currentIndex + 1, snapshot.progress.totalPages)}</strong>
-        <span>{documentMessages.documentProgress(snapshot.progress.completedPages, snapshot.progress.totalPages)}</span>
+        <span>
+          {documentMessages.documentProgress(
+            snapshot.progress.completedPages,
+            snapshot.progress.totalPages,
+          )}
+        </span>
       </div>
       <div className="document-prev-next" role="group" aria-label={documentMessages.documentNavigation}>
         <button
@@ -320,8 +337,18 @@ export function DocumentReader({
             <button
               type="button"
               aria-current={summary.pageId === currentPageId ? "page" : undefined}
-              aria-label={documentMessages.pageStatus(summary.ordinal + 1, summary.status, summary.resultAvailable)}
-              data-page-status={summary.resultAvailable ? "readable" : summary.status === "failed" ? "failed" : "processing"}
+              aria-label={documentMessages.pageStatus(
+                summary.ordinal + 1,
+                summary.status,
+                summary.resultAvailable,
+              )}
+              data-page-status={
+                summary.resultAvailable
+                  ? "readable"
+                  : summary.status === "failed"
+                    ? "failed"
+                    : "processing"
+              }
               onClick={() => selectPage(summary.pageId)}
             >
               <span>{summary.ordinal + 1}</span>
