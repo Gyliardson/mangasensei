@@ -35,6 +35,7 @@ on:
       - "docs/jmdict-pack-measurement.md"
       - "docs/versions.md"
       - "pyproject.toml"
+      - ".env.example"
       - "compose.yaml"
       - "Dockerfile"
       - ".github/workflows/jmdict-contract.yml"
@@ -70,6 +71,7 @@ on:
       - "docs/jmdict-pack-measurement.md"
       - "docs/versions.md"
       - "pyproject.toml"
+      - ".env.example"
       - "compose.yaml"
       - "Dockerfile"
       - ".github/workflows/jmdict-contract.yml"
@@ -128,16 +130,46 @@ jobs:
           uv run python scripts/measure_jmdict_load.py "$(dirname "${MANGASENSEI_JMDICT_PATH}")/jmdict-de.json"
 
   docker-bootstrap:
-    name: Fresh Compose prerequisites, API and worker readiness
+    name: Fresh Compose prerequisites, API, worker and first-analysis readiness
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      POSTGRES_PASSWORD: jmdict-contract-database-password
-      MANGASENSEI_CAPABILITY_PEPPERS: '["jmdict-contract-capability-pepper-000000000001"]'
       MANGASENSEI_VERSION: jmdict-contract
       MANGASENSEI_PORT: "18000"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create fresh Quick Start environment
+        run: |
+          test ! -e .env
+          cp .env.example .env
+          python - <<'PY'
+          from pathlib import Path
+          import secrets
+
+          path = Path(".env")
+          text = path.read_text(encoding="utf-8")
+          database_password = secrets.token_urlsafe(32)
+          capability_pepper = secrets.token_urlsafe(32)
+          text = text.replace(
+              "POSTGRES_PASSWORD=replace-with-a-long-random-password",
+              f"POSTGRES_PASSWORD={database_password}",
+          )
+          text = text.replace(
+              "postgresql+psycopg://mangasensei:replace-with-a-long-random-password@localhost:5432/mangasensei",
+              f"postgresql+psycopg://mangasensei:{database_password}@localhost:5432/mangasensei",
+          )
+          text = text.replace(
+              'MANGASENSEI_CAPABILITY_PEPPERS=["replace-with-a-long-random-pepper"]',
+              f'MANGASENSEI_CAPABILITY_PEPPERS=["{capability_pepper}"]',
+          )
+          assert "replace-with-a-long-random-password" not in text
+          assert "replace-with-a-long-random-pepper" not in text
+          assert "GOOGLE_API_KEY=\n" in text
+          path.write_text(text, encoding="utf-8")
+          PY
+          git check-ignore --quiet .env
+          git diff --exit-code
 
       - name: Ensure clean named volumes
         run: docker compose down --volumes --remove-orphans
@@ -203,6 +235,85 @@ jobs:
           done
           docker compose logs models jmdict migrate api worker
           exit 1
+
+      - name: Complete one local-only analysis through production Compose
+        run: |
+          image_path="${RUNNER_TEMP}/mangasensei-quickstart.png"
+          upload_path="${RUNNER_TEMP}/mangasensei-quickstart-upload.json"
+          access_path="${RUNNER_TEMP}/mangasensei-quickstart-access.txt"
+          status_path="${RUNNER_TEMP}/mangasensei-quickstart-status.json"
+          roundtrip_path="${RUNNER_TEMP}/mangasensei-quickstart-roundtrip.png"
+
+          docker compose run --rm --no-deps -T jmdict python -c 'from PIL import Image, ImageDraw; import sys; image=Image.new("RGB", (800, 1200), "white"); draw=ImageDraw.Draw(image); draw.rectangle((40, 40, 760, 560), outline="black", width=12); draw.ellipse((160, 180, 640, 420), outline="black", width=8); draw.rectangle((40, 620, 760, 1160), outline="black", width=12); image.save(sys.stdout.buffer, format="PNG")' > "${image_path}"
+
+          curl --fail --silent --show-error \
+            -H "Idempotency-Key: quickstart-compose-smoke-0001" \
+            -F "image=@${image_path};type=image/png" \
+            -F "studyLanguage=pt-BR" \
+            "http://127.0.0.1:${MANGASENSEI_PORT}/api/v1/pages" \
+            > "${upload_path}"
+
+          UPLOAD_PATH="${upload_path}" ACCESS_PATH="${access_path}" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path(os.environ["UPLOAD_PATH"]).read_text(encoding="utf-8"))
+          data = payload["data"]
+          assert payload["success"] is True
+          assert data["studyLanguage"] == "pt-BR"
+          Path(os.environ["ACCESS_PATH"]).write_text(
+              "\n".join(
+                  [
+                      data["pageId"],
+                      data["capabilities"]["readPage"],
+                      data["capabilities"]["readImage"],
+                  ]
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+          mapfile -t access < "${access_path}"
+          page_id="${access[0]}"
+          read_page_token="${access[1]}"
+          read_image_token="${access[2]}"
+
+          completed=false
+          for attempt in $(seq 1 180); do
+            curl --fail --silent --show-error \
+              -H "X-Page-Token: ${read_page_token}" \
+              "http://127.0.0.1:${MANGASENSEI_PORT}/api/v1/pages/${page_id}/status" \
+              > "${status_path}"
+            read -r page_status result_available < <(
+              STATUS_PATH="${status_path}" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          data = json.loads(Path(os.environ["STATUS_PATH"]).read_text(encoding="utf-8"))["data"]
+          print(data["status"], str(data["resultAvailable"]).lower())
+          PY
+            )
+            if test "${page_status}" = "completed" && test "${result_available}" = "true"; then
+              completed=true
+              break
+            fi
+            sleep 2
+          done
+
+          if test "${completed}" != "true"; then
+            cat "${status_path}"
+            docker compose logs worker api
+            exit 1
+          fi
+
+          curl --fail --silent --show-error \
+            -H "X-Page-Token: ${read_image_token}" \
+            "http://127.0.0.1:${MANGASENSEI_PORT}/api/v1/pages/${page_id}/image" \
+            > "${roundtrip_path}"
+          cmp "${image_path}" "${roundtrip_path}"
 
       - name: Show bootstrap status on failure
         if: failure()
