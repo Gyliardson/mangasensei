@@ -20,6 +20,7 @@ from mangasensei.infrastructure.database.job_models import JobRecord
 from mangasensei.infrastructure.database.session import create_database
 from mangasensei.infrastructure.database.storage_models import PageRecord
 from mangasensei.linguistics.jmdict_glosses import LocalizedJmdictGlossResolver
+from mangasensei.linguistics.service import LinguisticService
 from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.dictionary_projection import DictionaryProjectionWorker
 from mangasensei.workers.retention import RetentionJanitor
@@ -30,7 +31,6 @@ from tests.integration.test_dictionary_projection_flow import (
     _image,
     _settings,
 )
-from mangasensei.linguistics.service import LinguisticService
 
 
 class _FailingProvider:
