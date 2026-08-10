@@ -15,9 +15,9 @@ Current reviewed packs:
 - `de` -> upstream `ger`: additional deterministic pack.
 
 There is no reviewed word-level Portuguese JMdict pack. `pt-BR` can be requested through the
-backend dictionary-projection contract, but its deterministic effective vocabulary is English with
-`unsupported_requested_language`; it is never represented as Portuguese JMdict. KANJIDIC
-Portuguese data and generated translations are not used as vocabulary substitutes.
+backend dictionary-projection contract and the browser preference, but its deterministic effective
+vocabulary is English with `unsupported_requested_language`; it is never represented as Portuguese
+JMdict. KANJIDIC Portuguese data and generated translations are not used as vocabulary substitutes.
 
 Artifact bootstrap remains explicit:
 
@@ -80,7 +80,7 @@ matches and identities are not rewritten.
 A multilingual downgrade is intentionally blocked because removing these tables would discard
 requested/effective/fallback state that the previous schema cannot represent losslessly.
 
-## Dictionary-only reprojection API
+## Dictionary-only reprojection API and browser preference
 
 The existing capability-protected and idempotent page reprocess endpoint accepts one language axis
 at a time. For dictionary reprojection, clients send a body equivalent to:
@@ -111,7 +111,12 @@ Protected page JSON keeps the legacy `dictionaryLanguage: "en"` field and adds:
 An English response remains a natural compatible subset: requested/effective/fallback are English,
 `fallbackUsed` is false, and existing vocabulary fields retain their previous meaning.
 
-No browser dictionary selector or preference is implemented by this backend slice.
+The React reader persists a validated browser-local dictionary-language preference under a key
+separate from study language and UI locale. Fresh/invalid state defaults to English. The reader can
+request English, German, or `pt-BR`; it keeps the previous completed projection visible during a
+reprojection, restores the still-visible requested language after failure, and labels vocabulary by
+per-item effective language. `pt-BR` remains a requested preference and is explicitly presented as
+English deterministic fallback rather than fabricated Portuguese JMdict content.
 
 ## Runtime loading and memory
 
