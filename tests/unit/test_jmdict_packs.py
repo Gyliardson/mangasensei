@@ -44,14 +44,20 @@ def test_reviewed_pack_metadata_matches_pinned_sources() -> None:
     german = packs["de"].manifest
 
     assert english.source.filename == "jmdict-eng-3.6.2+20260803141815.json.zip"
-    assert english.source.sha256 == "1806d2817215ebe7ded997c8dac4831a3335d83ed12f321ac869a97e745d3a5c"
+    assert english.source.sha256 == (
+        "1806d2817215ebe7ded997c8dac4831a3335d83ed12f321ac869a97e745d3a5c"
+    )
     assert english.source.size_bytes == 11_475_140
-    assert english.normalized.sha256 == "93026b2540d40e9175a11d9b770e77b21ef6be5daf136cee680fa550c62193dc"
+    assert english.normalized.sha256 == (
+        "93026b2540d40e9175a11d9b770e77b21ef6be5daf136cee680fa550c62193dc"
+    )
     assert english.normalized.size_bytes == 65_872_497
     assert english.normalized.entry_count == 218_290
 
     assert german.source.filename == "jmdict-ger-3.6.2+20260803141815.json.zip"
-    assert german.source.sha256 == "4da33c567bb03490ffc9819fd1b3e8efc6522a4a790c99b0d2677094f184b7b3"
+    assert german.source.sha256 == (
+        "4da33c567bb03490ffc9819fd1b3e8efc6522a4a790c99b0d2677094f184b7b3"
+    )
     assert german.source.size_bytes == 7_014_092
     assert german.normalized.entry_count == 128_931
 
@@ -99,10 +105,19 @@ async def test_english_and_german_bootstrap_use_same_safe_v3_conversion(
 
     english = JsonJmdictDictionary(configured)
     german = JsonJmdictDictionary(configured.parent / "jmdict-de.json")
-    assert english.lookup("半片", "ハンペン").meanings == ("fish cake", "half ticket")  # type: ignore[union-attr]
-    assert german.lookup("半片", "ハンペン").meanings == ("Fischkuchen", "halbe Karte")  # type: ignore[union-attr]
-    assert english.lookup("半平", "ハンペイ").meanings == ("fish cake",)  # type: ignore[union-attr]
-    assert german.lookup("半平", "ハンペイ").meanings == ("Fischkuchen",)  # type: ignore[union-attr]
+    english_hanpen = english.lookup("半片", "ハンペン")
+    german_hanpen = german.lookup("半片", "ハンペン")
+    english_hanpei = english.lookup("半平", "ハンペイ")
+    german_hanpei = german.lookup("半平", "ハンペイ")
+
+    assert english_hanpen is not None
+    assert german_hanpen is not None
+    assert english_hanpei is not None
+    assert german_hanpei is not None
+    assert english_hanpen.meanings == ("fish cake", "half ticket")
+    assert german_hanpen.meanings == ("Fischkuchen", "halbe Karte")
+    assert english_hanpei.meanings == ("fish cake",)
+    assert german_hanpei.meanings == ("Fischkuchen",)
     assert english.lookup("半片", "ハンペイ") is None
     assert german.lookup("半片", "ハンペイ") is None
 
@@ -111,8 +126,8 @@ def test_third_party_notice_tracks_manifest_backed_provenance() -> None:
     root = Path(__file__).parents[2]
     notice = (root / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
 
-    for pack in load_jmdict_packs():
-        manifest = load_jmdict_packs()[pack].manifest
+    for pack in load_jmdict_packs().values():
+        manifest = pack.manifest
         expected_values = (
             manifest.source.filename,
             manifest.source.sha256,
