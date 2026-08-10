@@ -1,0 +1,1 @@
+"""MangaSensei test suite package."""
