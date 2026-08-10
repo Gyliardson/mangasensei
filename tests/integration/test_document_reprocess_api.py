@@ -166,7 +166,11 @@ async def test_nested_dictionary_reprojection_creates_no_ocr_sudachi_or_gemini_w
     clean_postgres_url: str,
     tmp_path: Path,
 ) -> None:
-    seeded = await _seed_readable_document(clean_postgres_url, tmp_path, suffix="dictionary-reprocess")
+    seeded = await _seed_readable_document(
+        clean_postgres_url,
+        tmp_path,
+        suffix="dictionary-reprocess",
+    )
     await _complete_initial_page(clean_postgres_url, seeded.page_id)
     reprocess_token = await _issue_reprocess_token(clean_postgres_url, seeded.document_id)
     async_url = clean_postgres_url.replace("postgresql://", "postgresql+psycopg://", 1)
@@ -176,8 +180,12 @@ async def test_nested_dictionary_reprojection_creates_no_ocr_sudachi_or_gemini_w
     async with sessions() as session:
         before = {
             "ocr": await session.scalar(select(func.count()).select_from(OcrRunRecord)),
-            "linguistic": await session.scalar(select(func.count()).select_from(LinguisticRunRecord)),
-            "gemini_calls": await session.scalar(select(func.count()).select_from(GeminiCallRecord)),
+            "linguistic": await session.scalar(
+                select(func.count()).select_from(LinguisticRunRecord)
+            ),
+            "gemini_calls": await session.scalar(
+                select(func.count()).select_from(GeminiCallRecord)
+            ),
             "gemini_analyses": await session.scalar(
                 select(func.count()).select_from(GeminiAnalysisRecord)
             ),
@@ -211,8 +219,12 @@ async def test_nested_dictionary_reprojection_creates_no_ocr_sudachi_or_gemini_w
         request = await session.get(DictionaryProjectionRequestRecord, projection_job.id)
         after = {
             "ocr": await session.scalar(select(func.count()).select_from(OcrRunRecord)),
-            "linguistic": await session.scalar(select(func.count()).select_from(LinguisticRunRecord)),
-            "gemini_calls": await session.scalar(select(func.count()).select_from(GeminiCallRecord)),
+            "linguistic": await session.scalar(
+                select(func.count()).select_from(LinguisticRunRecord)
+            ),
+            "gemini_calls": await session.scalar(
+                select(func.count()).select_from(GeminiCallRecord)
+            ),
             "gemini_analyses": await session.scalar(
                 select(func.count()).select_from(GeminiAnalysisRecord)
             ),
