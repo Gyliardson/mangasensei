@@ -45,8 +45,10 @@ afterEach(() => {
 describe("App document upload", () => {
   it("creates a multi-image document with one study language and ordered image parts", async () => {
     const user = userEvent.setup();
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    let capturedForm: FormData | null = null;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/v1/documents") {
+        capturedForm = init?.body as FormData;
         return Response.json({ success: true, data: documentData(), error: null }, { status: 202 });
       }
       return new Response(null, { status: 404 });
@@ -58,13 +60,10 @@ describe("App document upload", () => {
     await user.click(screen.getByRole("button", { name: "Analisar 2 páginas" }));
 
     expect(await screen.findByText("Página 1 de 2")).toBeVisible();
-    const createCall = fetchMock.mock.calls.find(([input]) => String(input) === "/api/v1/documents");
-    expect(createCall).toBeDefined();
-    const request = createCall?.[1] as RequestInit;
-    const form = request.body as FormData;
-    expect(form.getAll("images[]")).toEqual([first, second]);
-    expect(form.getAll("studyLanguage")).toEqual(["pt-BR"]);
-    expect(form.has("dictionaryLanguage")).toBe(false);
+    expect(capturedForm).not.toBeNull();
+    expect(capturedForm?.getAll("images[]")).toEqual([first, second]);
+    expect(capturedForm?.getAll("studyLanguage")).toEqual(["pt-BR"]);
+    expect(capturedForm?.has("dictionaryLanguage")).toBe(false);
   });
 
   it.each([
