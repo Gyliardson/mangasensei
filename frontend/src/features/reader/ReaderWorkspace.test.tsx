@@ -65,6 +65,7 @@ function renderWorkspace(
     <ReaderWorkspace
       page={studyPage}
       imageUrl="fixture-image"
+      uiLocale="pt-BR"
       preferredStudyLanguage={options.preferredStudyLanguage ?? studyPage.studyLanguage}
       studyLanguageUpdating={options.studyLanguageUpdating ?? false}
       studyLanguageError={options.studyLanguageError ?? null}
@@ -283,6 +284,7 @@ describe("ReaderWorkspace", () => {
       <ReaderWorkspace
         page={studyPage}
         imageUrl="fixture-image"
+        uiLocale="pt-BR"
         preferredStudyLanguage="en"
         studyLanguageUpdating
         studyLanguageError={null}
