@@ -57,6 +57,7 @@ function renderReader() {
     <ReaderWorkspace
       page={studyPage}
       imageUrl="fixture-image"
+      uiLocale="pt-BR"
       preferredStudyLanguage={studyPage.studyLanguage}
       studyLanguageUpdating={false}
       studyLanguageError={null}
