@@ -15,7 +15,7 @@ from mangasensei.linguistics.service import (
 )
 
 NORMALIZED_CONVERTER_VERSION = "mangasensei-jmdict-v3"
-_DICTIONARY_NAMESPACE = "JMdict"
+DICTIONARY_NAMESPACE = "JMdict"
 
 
 class DictionaryDataError(ValueError):
@@ -34,13 +34,22 @@ class JsonJmdictDictionary:
             )
         version = str(payload.get("version", "unknown"))
         mutable_index: dict[tuple[str, str], list[DictionaryEntry]] = defaultdict(list)
+        identity_index: dict[LexicalFormIdentity, DictionaryEntry] = {}
+        entry_ids: set[str] = set()
         for raw_entry in payload["entries"]:
-            for key, entry in _normalize_entry(raw_entry, version):
+            normalized_forms = _normalize_entry(raw_entry, version)
+            for key, entry in normalized_forms:
                 mutable_index[key].append(entry)
+                if entry.identity in identity_index:
+                    raise DictionaryDataError("JMdict contains a duplicate lexical identity")
+                identity_index[entry.identity] = entry
+                entry_ids.add(entry.identity.entry_id)
         self._index = {
             key: tuple(sorted(entries, key=lambda entry: entry.identity))
             for key, entries in mutable_index.items()
         }
+        self._identity_index = identity_index
+        self._entry_ids = frozenset(entry_ids)
         self.version = version
         self.digest = hashlib.sha256(content).digest()
         self.entry_count = len(payload["entries"])
@@ -48,6 +57,16 @@ class JsonJmdictDictionary:
     def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult:
         matches = self._index.get((lemma, _hiragana(reading)), ())
         return DictionaryLookupResult.from_candidates(matches)
+
+    def lookup_identity(self, identity: LexicalFormIdentity) -> DictionaryEntry | None:
+        """Return one already-resolved canonical form without rerunning candidate selection."""
+        if identity.dictionary_namespace != DICTIONARY_NAMESPACE:
+            return None
+        return self._identity_index.get(identity)
+
+    def contains_entry(self, entry_id: str) -> bool:
+        """Return whether this language pack contains any form for a canonical JMdict entry."""
+        return entry_id in self._entry_ids
 
 
 def _normalize_entry(
@@ -90,7 +109,7 @@ def _normalize_entry(
                 key,
                 DictionaryEntry(
                     identity=LexicalFormIdentity(
-                        dictionary_namespace=_DICTIONARY_NAMESPACE,
+                        dictionary_namespace=DICTIONARY_NAMESPACE,
                         entry_id=entry_id,
                         lemma=key[0],
                         reading=key[1],
