@@ -134,7 +134,7 @@ describe("API client", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("surfaces sanitized API envelope failures", async () => {
+  it("surfaces stable API error codes without coupling presentation copy", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -155,7 +155,7 @@ describe("API client", () => {
         "pt-BR",
         new AbortController().signal,
       ),
-    ).rejects.toEqual(new ApiError("invalid_request", "Requisição inválida."));
+    ).rejects.toEqual(new ApiError("invalid_request"));
   });
 
   it("loads a protected image as an object URL and rejects failed downloads", async () => {
@@ -222,7 +222,7 @@ describe("API client", () => {
     );
     await expect(
       waitForPage(upload, new AbortController().signal, vi.fn()),
-    ).rejects.toEqual(new ApiError("ocr_failed", "OCR falhou."));
+    ).rejects.toEqual(new ApiError("ocr_failed"));
 
     const controller = new AbortController();
     vi.stubGlobal(
