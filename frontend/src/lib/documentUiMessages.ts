@@ -13,7 +13,12 @@ export interface DocumentUiMessages {
   readonly previousPage: string;
   readonly nextPage: string;
   readonly documentNavigation: string;
-  readonly documentProgress: (completed: number, total: number) => string;
+  readonly documentProgress: (
+    completed: number,
+    total: number,
+    processing: number,
+    failed: number,
+  ) => string;
   readonly processingPage: string;
   readonly failedPage: string;
   readonly readablePage: string;
@@ -37,7 +42,8 @@ const en: DocumentUiMessages = {
   previousPage: "Previous",
   nextPage: "Next",
   documentNavigation: "Document pages",
-  documentProgress: (completed, total) => `${completed} / ${total} pages complete`,
+  documentProgress: (completed, total, processing, failed) =>
+    `${completed} / ${total} pages complete · ${processing} processing · ${failed} failed`,
   processingPage: "Processing",
   failedPage: "Failed",
   readablePage: "Readable",
@@ -61,7 +67,8 @@ const ptBR: DocumentUiMessages = {
   previousPage: "Anterior",
   nextPage: "Próxima",
   documentNavigation: "Páginas do documento",
-  documentProgress: (completed, total) => `${completed} / ${total} páginas concluídas`,
+  documentProgress: (completed, total, processing, failed) =>
+    `${completed} / ${total} páginas concluídas · ${processing} processando · ${failed} falharam`,
   processingPage: "Processando",
   failedPage: "Falhou",
   readablePage: "Disponível",
