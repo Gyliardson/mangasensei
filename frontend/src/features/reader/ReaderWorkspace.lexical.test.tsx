@@ -19,8 +19,8 @@ const LEXICAL_PAGE: StudyPage = {
   regions: [
     {
       id: "region-lexical",
-      text: "表記一表記二",
-      rawText: "表記一表記二",
+      text: "表記一表記二なんとか",
+      rawText: "表記一表記二なんとか",
       correctedText: null,
       bbox: { x: 0, y: 0, width: 100, height: 100 },
       normalizedBbox: { x: 0, y: 0, width: 1, height: 1 },
@@ -51,6 +51,15 @@ const LEXICAL_PAGE: StudyPage = {
           source: "JMdict",
           jlpt: null,
         },
+        {
+          id: "jmdict-1188420",
+          surface: "なんとか",
+          lemma: "なんとか",
+          reading: "なんとか",
+          meanings: ["somehow"],
+          source: "JMdict",
+          jlpt: null,
+        },
       ],
     },
   ],
@@ -59,7 +68,7 @@ const LEXICAL_PAGE: StudyPage = {
 const noop = () => undefined;
 
 describe("ReaderWorkspace lexical identity", () => {
-  it("renders distinct canonical forms that share one JMdict entry id", () => {
+  it("renders distinct canonical forms and a resolved multi-token vocabulary match", () => {
     render(
       <ReaderWorkspace
         page={LEXICAL_PAGE}
@@ -76,5 +85,9 @@ describe("ReaderWorkspace lexical identity", () => {
     expect(screen.getByText("表記二")).toBeVisible();
     expect(screen.getByText("first form")).toBeVisible();
     expect(screen.getByText("second form")).toBeVisible();
+    for (const element of screen.getAllByText("なんとか")) {
+      expect(element).toBeVisible();
+    }
+    expect(screen.getByText("somehow")).toBeVisible();
   });
 });
