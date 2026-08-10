@@ -260,7 +260,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         upload = await client.post(
             "/api/v1/pages",
-            headers={"Idempotency-Key": "key-1"},
+            headers={"Idempotency-Key": "dictionary-flow-upload"},
             files={
                 "image": ("page.png", _image(), "image/png"),
                 "studyLanguage": (None, "en"),
@@ -290,7 +290,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "key-2",
+                "Idempotency-Key": "dictionary-flow-english" ,
             },
             json={"dictionaryLanguage": "en"},
         )
@@ -317,7 +317,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "key-3",
+                "Idempotency-Key": "dictionary-flow-german",
             },
             json={"dictionaryLanguage": "de"},
         )
@@ -329,7 +329,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "key-3",
+                "Idempotency-Key": "dictionary-flow-german",
             },
             json={"dictionaryLanguage": "de"},
         )
@@ -374,7 +374,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "key-4",
+                "Idempotency-Key": "dictionary-flow-portuguese",
             },
             json={"dictionaryLanguage": "pt-BR"},
         )
@@ -400,7 +400,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "key-5",
+                "Idempotency-Key": "dictionary-flow-study-language",
             },
             json={"studyLanguage": "pt-BR"},
         )
@@ -419,7 +419,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "key-6",
+                "Idempotency-Key": "dictionary-flow-invalid-language",
             },
             json={"dictionaryLanguage": "es"},
         )
@@ -428,7 +428,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "key-7",
+                "Idempotency-Key": "dictionary-flow-both-axes",
             },
             json={"studyLanguage": "en", "dictionaryLanguage": "de"},
         )
