@@ -46,18 +46,21 @@ def test_default_english_provider_does_not_instantiate_german(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     english = _pack("en")
+    resolved_languages: list[str] = []
     verified_languages: list[str] = []
 
-    monkeypatch.setattr(
-        runtime_glosses,
-        "resolve_jmdict_pack",
-        lambda _path, language: SimpleNamespace(product_language=language),
-    )
-    monkeypatch.setattr(
-        runtime_glosses,
-        "verify_jmdict_pack",
-        lambda _path, language: verified_languages.append(language),
-    )
+    def resolve(language: str) -> object:
+        resolved_languages.append(language)
+        return SimpleNamespace(product_language=language)
+
+    monkeypatch.setattr(runtime_glosses, "resolve_jmdict_pack", resolve)
+
+    def verify(_path: Path, *, language: str = "en", registry_path: Path | None = None) -> Path:
+        del registry_path
+        verified_languages.append(language)
+        return tmp_path / f"jmdict-{language}.json"
+
+    monkeypatch.setattr(runtime_glosses, "verify_jmdict_pack", verify)
     monkeypatch.setattr(
         runtime_glosses.JsonJmdictGlossPack,
         "from_reviewed_pack",
@@ -68,6 +71,7 @@ def test_default_english_provider_does_not_instantiate_german(
 
     assert provider.get_pack("en") is english
     assert provider.optional_pack_loaded is False
+    assert resolved_languages == ["en"]
     assert verified_languages == []
     assert provider.is_supported_language("pt-BR") is False
 
@@ -80,13 +84,18 @@ def test_german_pack_is_verified_loaded_once_and_bounded(
     verified_languages: list[str] = []
     dictionary_paths: list[Path] = []
     reviewed_en = SimpleNamespace(product_language="en")
-    reviewed_de = SimpleNamespace(product_language="de", path=tmp_path / "jmdict-de.json")
+    reviewed_de = SimpleNamespace(product_language="de")
+    verified_de_path = tmp_path / "jmdict-de.json"
 
-    monkeypatch.setattr(runtime_glosses, "resolve_jmdict_pack", lambda _path, _lang: reviewed_en)
+    def resolve(language: str) -> object:
+        return reviewed_de if language == "de" else reviewed_en
 
-    def verify(_path: Path, language: str) -> object:
+    monkeypatch.setattr(runtime_glosses, "resolve_jmdict_pack", resolve)
+
+    def verify(_path: Path, *, language: str = "en", registry_path: Path | None = None) -> Path:
+        del registry_path
         verified_languages.append(language)
-        return reviewed_de
+        return verified_de_path
 
     monkeypatch.setattr(runtime_glosses, "verify_jmdict_pack", verify)
     monkeypatch.setattr(
@@ -106,4 +115,4 @@ def test_german_pack_is_verified_loaded_once_and_bounded(
     assert provider.get_pack("de") is german
     assert provider.optional_pack_loaded is True
     assert verified_languages == ["de"]
-    assert dictionary_paths == [reviewed_de.path]
+    assert dictionary_paths == [verified_de_path]
