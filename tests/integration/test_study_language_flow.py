@@ -21,7 +21,12 @@ from mangasensei.infrastructure.database.analysis_models import (
 )
 from mangasensei.infrastructure.database.session import create_database
 from mangasensei.infrastructure.database.study_models import StudyResultRecord
-from mangasensei.linguistics.service import DictionaryEntry, LinguisticService
+from mangasensei.linguistics.service import (
+    DictionaryEntry,
+    DictionaryLookupResult,
+    LexicalFormIdentity,
+    LinguisticService,
+)
 from mangasensei.ocr.contracts import OcrImage, OcrRegionResult, OcrResult
 from mangasensei.ocr.fake import DEFAULT_FAKE_PROVENANCE
 from mangasensei.storage.local import LocalFilesystemStorage
@@ -80,16 +85,25 @@ class EnglishDictionary:
     version = "JMdict test"
     digest = hashlib.sha256(b"JMdict test").digest()
 
-    def lookup(self, lemma: str, reading: str) -> DictionaryEntry | None:
-        if lemma == "猫":
-            return DictionaryEntry(
-                id="jmdict-1467640",
+    def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult:
+        del reading
+        entry = (
+            DictionaryEntry(
+                identity=LexicalFormIdentity(
+                    dictionary_namespace="JMdict",
+                    entry_id="jmdict-1467640",
+                    lemma="猫",
+                    reading="ねこ",
+                ),
                 meanings=("cat",),
                 source="JMdict test",
                 jlpt_level="N5",
                 jlpt_official=False,
             )
-        return None
+            if lemma == "猫"
+            else None
+        )
+        return DictionaryLookupResult.from_candidates((entry,) if entry is not None else ())
 
 
 class LanguageAwareGemini:
@@ -108,6 +122,7 @@ class LanguageAwareGemini:
             if study_language == "pt-BR"
             else "A polite nominal sentence."
         )
+        vocabulary_id = payload["regions"][0]["vocabulary_candidates"][0]["id"]
         return schema(
             regions=(
                 GeminiRegionAnalysis(
@@ -115,7 +130,7 @@ class LanguageAwareGemini:
                     translation=translation,
                     explanation=explanation,
                     grammar_points=("です",),
-                    vocabulary_ids=("jmdict-1467640",),
+                    vocabulary_ids=(vocabulary_id,),
                 ),
             )
         )

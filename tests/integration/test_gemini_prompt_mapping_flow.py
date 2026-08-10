@@ -19,12 +19,19 @@ from mangasensei.gemini.service import PAGE_STUDY_PROMPT_VERSION
 from mangasensei.infrastructure.database.analysis_models import (
     GeminiCallRecord,
     GeminiRegionAnalysisRecord,
-    GeminiVocabularyLinkRecord,
-    LinguisticTokenRecord,
     OcrRegionRecord,
 )
+from mangasensei.infrastructure.database.lexical_models import (
+    GeminiLexicalVocabularyLinkRecord,
+    LexicalMatchRecord,
+)
 from mangasensei.infrastructure.database.session import create_database
-from mangasensei.linguistics.service import DictionaryEntry, LinguisticService
+from mangasensei.linguistics.service import (
+    DictionaryEntry,
+    DictionaryLookupResult,
+    LexicalFormIdentity,
+    LinguisticService,
+)
 from mangasensei.ocr.contracts import OcrImage, OcrRegionResult, OcrResult
 from mangasensei.ocr.fake import DEFAULT_FAKE_PROVENANCE
 from mangasensei.storage.local import LocalFilesystemStorage
@@ -104,24 +111,26 @@ class TwoRegionDictionaryFixture:
     version = "JMdict prompt mapping test"
     digest = hashlib.sha256(b"JMdict prompt mapping test").digest()
 
-    def lookup(self, lemma: str, reading: str) -> DictionaryEntry | None:
+    def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult:
+        del reading
+        entry: DictionaryEntry | None = None
         if lemma == "猫":
-            return DictionaryEntry(
-                id="jmdict-cat",
+            entry = DictionaryEntry(
+                identity=LexicalFormIdentity("JMdict", "jmdict-cat", "猫", "ねこ"),
                 meanings=("cat",),
                 source="JMdict prompt fixture",
                 jlpt_level="N5",
                 jlpt_official=False,
             )
-        if lemma == "犬":
-            return DictionaryEntry(
-                id="jmdict-dog",
+        elif lemma == "犬":
+            entry = DictionaryEntry(
+                identity=LexicalFormIdentity("JMdict", "jmdict-dog", "犬", "いぬ"),
                 meanings=("dog",),
                 source="JMdict prompt fixture",
                 jlpt_level="N5",
                 jlpt_official=False,
             )
-        return None
+        return DictionaryLookupResult.from_candidates((entry,) if entry is not None else ())
 
 
 class PromptDerivedGeminiFixture:
@@ -196,20 +205,26 @@ async def test_worker_gemini_links_are_derived_from_region_scoped_prompt(
             call = (await session.execute(select(GeminiCallRecord))).scalar_one()
             links = (
                 await session.execute(
-                    select(OcrRegionRecord.public_id, LinguisticTokenRecord.dictionary_entry_id)
-                    .select_from(GeminiVocabularyLinkRecord)
+                    select(
+                        OcrRegionRecord.public_id,
+                        LexicalMatchRecord.dictionary_entry_id,
+                        LexicalMatchRecord.form_lemma,
+                        LexicalMatchRecord.form_reading,
+                    )
+                    .select_from(GeminiLexicalVocabularyLinkRecord)
                     .join(
                         GeminiRegionAnalysisRecord,
                         GeminiRegionAnalysisRecord.id
-                        == GeminiVocabularyLinkRecord.region_analysis_id,
+                        == GeminiLexicalVocabularyLinkRecord.region_analysis_id,
                     )
                     .join(
                         OcrRegionRecord,
                         OcrRegionRecord.id == GeminiRegionAnalysisRecord.region_id,
                     )
                     .join(
-                        LinguisticTokenRecord,
-                        LinguisticTokenRecord.id == GeminiVocabularyLinkRecord.token_id,
+                        LexicalMatchRecord,
+                        LexicalMatchRecord.id
+                        == GeminiLexicalVocabularyLinkRecord.lexical_match_id,
                     )
                     .order_by(OcrRegionRecord.region_ordinal)
                 )
@@ -218,7 +233,7 @@ async def test_worker_gemini_links_are_derived_from_region_scoped_prompt(
         assert call.prompt_version == PAGE_STUDY_PROMPT_VERSION
         assert call.request_digest == hashlib.sha256(gemini.prompt.encode()).digest()
         assert links == [
-            (UUID(_REGION_CAT), "jmdict-cat"),
-            (UUID(_REGION_DOG), "jmdict-dog"),
+            (UUID(_REGION_CAT), "jmdict-cat", "猫", "ねこ"),
+            (UUID(_REGION_DOG), "jmdict-dog", "犬", "いぬ"),
         ]
         await engine.dispose()

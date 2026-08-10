@@ -15,7 +15,7 @@ from mangasensei.api.app import create_app
 from mangasensei.config import Settings
 from mangasensei.infrastructure.database.job_models import JobRecord
 from mangasensei.infrastructure.database.session import create_database
-from mangasensei.linguistics.service import DictionaryEntry, LinguisticService
+from mangasensei.linguistics.service import DictionaryLookupResult, LinguisticService
 from mangasensei.ocr.contracts import OcrImage, OcrResult
 from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.runner import Worker
@@ -49,9 +49,9 @@ class _Dictionary:
     version = "observability-test"
     digest = hashlib.sha256(version.encode()).digest()
 
-    def lookup(self, lemma: str, reading: str) -> DictionaryEntry | None:
+    def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult:
         del lemma, reading
-        return None
+        return DictionaryLookupResult.from_candidates(())
 
 
 class _RecordHandler(logging.Handler):

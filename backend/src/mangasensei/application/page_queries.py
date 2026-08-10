@@ -13,7 +13,6 @@ from mangasensei.infrastructure.database.analysis_models import (
     GeminiAnalysisRecord,
     GeminiGrammarPointRecord,
     GeminiRegionAnalysisRecord,
-    LinguisticMeaningRecord,
     LinguisticRunRecord,
     LinguisticTokenRecord,
     OcrRegionRecord,
@@ -21,6 +20,10 @@ from mangasensei.infrastructure.database.analysis_models import (
     OcrRunRecord,
 )
 from mangasensei.infrastructure.database.job_models import JobRecord
+from mangasensei.infrastructure.database.lexical_models import (
+    LexicalMatchRecord,
+    LexicalMeaningRecord,
+)
 from mangasensei.infrastructure.database.study_models import StudyResultRecord
 
 
@@ -136,21 +139,42 @@ class PageQueryService:
                 if region_ids
                 else ()
             )
-            token_ids = tuple(token.id for token in tokens)
-            meanings = (
+            lexical_matches = (
                 tuple(
                     (
                         await session.execute(
-                            select(LinguisticMeaningRecord)
-                            .where(LinguisticMeaningRecord.token_id.in_(token_ids))
+                            select(LexicalMatchRecord)
+                            .where(
+                                LexicalMatchRecord.linguistic_run_id == linguistic_run.id,
+                                LexicalMatchRecord.region_id.in_(region_ids),
+                            )
                             .order_by(
-                                LinguisticMeaningRecord.token_id,
-                                LinguisticMeaningRecord.meaning_ordinal,
+                                LexicalMatchRecord.region_id,
+                                LexicalMatchRecord.start_token_ordinal,
+                                LexicalMatchRecord.end_token_ordinal.desc(),
+                                LexicalMatchRecord.id,
                             )
                         )
                     ).scalars()
                 )
-                if token_ids
+                if region_ids
+                else ()
+            )
+            lexical_match_ids = tuple(match.id for match in lexical_matches)
+            meanings = (
+                tuple(
+                    (
+                        await session.execute(
+                            select(LexicalMeaningRecord)
+                            .where(LexicalMeaningRecord.lexical_match_id.in_(lexical_match_ids))
+                            .order_by(
+                                LexicalMeaningRecord.lexical_match_id,
+                                LexicalMeaningRecord.meaning_ordinal,
+                            )
+                        )
+                    ).scalars()
+                )
+                if lexical_match_ids
                 else ()
             )
             vertices = (
@@ -199,12 +223,15 @@ class PageQueryService:
                 else ()
             )
 
-        meanings_by_token: dict[int, list[str]] = defaultdict(list)
+        meanings_by_match: dict[int, list[str]] = defaultdict(list)
         for meaning in meanings:
-            meanings_by_token[meaning.token_id].append(meaning.meaning)
+            meanings_by_match[meaning.lexical_match_id].append(meaning.meaning)
         tokens_by_region: dict[int, list[LinguisticTokenRecord]] = defaultdict(list)
         for token in tokens:
             tokens_by_region[token.region_id].append(token)
+        matches_by_region: dict[int, list[LexicalMatchRecord]] = defaultdict(list)
+        for match in lexical_matches:
+            matches_by_region[match.region_id].append(match)
         vertices_by_region: dict[int, list[list[int]]] = defaultdict(list)
         for vertex in vertices:
             vertices_by_region[vertex.region_id].append([vertex.x, vertex.y])
@@ -217,16 +244,21 @@ class PageQueryService:
         for region in regions:
             analysis = analysis_by_region.get(region.id)
             region_tokens = tokens_by_region[region.id]
+            region_matches = matches_by_region[region.id]
+            dictionary_id_by_token = _single_token_dictionary_ids(region_matches)
             vocabulary = []
-            seen_entries: set[str] = set()
-            for token in region_tokens:
-                if (
-                    token.dictionary_entry_id is None
-                    or token.dictionary_entry_id in seen_entries
-                ):
+            seen_identities: set[tuple[str, str, str, str]] = set()
+            for match in region_matches:
+                identity = (
+                    match.dictionary_namespace,
+                    match.dictionary_entry_id,
+                    match.form_lemma,
+                    match.form_reading,
+                )
+                if identity in seen_identities:
                     continue
-                seen_entries.add(token.dictionary_entry_id)
-                vocabulary.append(_vocabulary(token, meanings_by_token[token.id]))
+                seen_identities.add(identity)
+                vocabulary.append(_vocabulary(match, meanings_by_match[match.id]))
             response_regions.append(
                 {
                     "id": str(region.public_id),
@@ -249,7 +281,10 @@ class PageQueryService:
                     "angle": float(region.angle),
                     "confidence": float(region.confidence),
                     "readingOrder": region.reading_order,
-                    "tokens": [_token(token) for token in region_tokens],
+                    "tokens": [
+                        _token(token, dictionary_id_by_token.get(token.token_ordinal))
+                        for token in region_tokens
+                    ],
                     "translation": analysis.translation if analysis else None,
                     "explanation": analysis.explanation if analysis else None,
                     "grammar": grammar_by_analysis[analysis.id] if analysis else [],
@@ -273,26 +308,43 @@ class PageQueryService:
         }
 
 
-def _token(token: LinguisticTokenRecord) -> dict[str, Any]:
+def _single_token_dictionary_ids(matches: list[LexicalMatchRecord]) -> dict[int, str]:
+    result: dict[int, str] = {}
+    conflicts: set[int] = set()
+    for match in matches:
+        if match.end_token_ordinal != match.start_token_ordinal + 1:
+            continue
+        ordinal = match.start_token_ordinal
+        existing = result.get(ordinal)
+        if existing is not None and existing != match.dictionary_entry_id:
+            conflicts.add(ordinal)
+            continue
+        result[ordinal] = match.dictionary_entry_id
+    for ordinal in conflicts:
+        result.pop(ordinal, None)
+    return result
+
+
+def _token(token: LinguisticTokenRecord, dictionary_id: str | None) -> dict[str, Any]:
     return {
         "surface": token.surface,
         "lemma": token.lemma,
         "reading": token.reading,
         "partOfSpeech": token.part_of_speech,
-        "dictionaryId": token.dictionary_entry_id,
+        "dictionaryId": dictionary_id,
     }
 
 
-def _vocabulary(token: LinguisticTokenRecord, meanings: list[str]) -> dict[str, Any]:
+def _vocabulary(match: LexicalMatchRecord, meanings: list[str]) -> dict[str, Any]:
     return {
-        "id": token.dictionary_entry_id,
-        "surface": token.surface,
-        "lemma": token.lemma,
-        "reading": token.reading,
+        "id": match.dictionary_entry_id,
+        "surface": match.surface,
+        "lemma": match.display_lemma,
+        "reading": match.display_reading,
         "meanings": meanings,
-        "source": token.dictionary_source,
+        "source": match.dictionary_source,
         "jlpt": (
-            {"level": token.jlpt_level, "official": False} if token.jlpt_level is not None else None
+            {"level": match.jlpt_level, "official": False} if match.jlpt_level is not None else None
         ),
     }
 

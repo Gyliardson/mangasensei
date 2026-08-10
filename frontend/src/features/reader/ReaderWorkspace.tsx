@@ -384,7 +384,7 @@ function StudyPanel({
         {region.vocabulary.length > 0 ? (
           <ul className="vocabulary-list">
             {region.vocabulary.map((item) => (
-              <li key={item.id}>
+              <li key={`${item.id}|${item.lemma}|${item.reading}`}>
                 <div>
                   <strong lang="ja">{item.lemma}</strong>
                   <span lang="ja">{item.reading}</span>

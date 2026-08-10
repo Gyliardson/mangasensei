@@ -15,6 +15,11 @@ from mangasensei.infrastructure.database.document_models import (
     DocumentRecord,
 )
 from mangasensei.infrastructure.database.job_models import JobAttemptRecord, JobRecord
+from mangasensei.infrastructure.database.lexical_models import (
+    GeminiLexicalVocabularyLinkRecord,
+    LexicalMatchRecord,
+    LexicalMeaningRecord,
+)
 from mangasensei.infrastructure.database.operational_models import RateLimitBucketRecord
 from mangasensei.infrastructure.database.storage_models import (
     ImageBlobRecord,
@@ -30,9 +35,12 @@ __all__ = [
     "GeminiAnalysisRecord",
     "GeminiCallRecord",
     "GeminiCostLedgerRecord",
+    "GeminiLexicalVocabularyLinkRecord",
     "ImageBlobRecord",
     "JobAttemptRecord",
     "JobRecord",
+    "LexicalMatchRecord",
+    "LexicalMeaningRecord",
     "LinguisticRunRecord",
     "LinguisticTokenRecord",
     "OcrRegionRecord",

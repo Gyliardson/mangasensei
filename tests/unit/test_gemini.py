@@ -12,7 +12,11 @@ from mangasensei.gemini.service import (
     UnknownVocabularyError,
     build_vocabulary_candidates_by_region,
 )
-from mangasensei.linguistics.service import LinguisticToken
+from mangasensei.linguistics.service import (
+    LexicalFormIdentity,
+    LexicalMatch,
+    LinguisticAnalysis,
+)
 
 
 class PromptMappedAdapter:
@@ -42,20 +46,26 @@ def candidate(id_: str, surface: str, lemma: str, reading: str) -> GeminiVocabul
     return GeminiVocabularyCandidate(id=id_, surface=surface, lemma=lemma, reading=reading)
 
 
-def token(
-    *, region_id: str, index: int, id_: str | None, surface: str, lemma: str, reading: str
-) -> LinguisticToken:
-    return LinguisticToken(
-        id=f"{region_id}:token:{index}",
+def lexical_match(
+    *, region_id: str, index: int, entry_id: str, surface: str, lemma: str, reading: str
+) -> LexicalMatch:
+    return LexicalMatch(
+        id=f"{region_id}:lexical:{index}",
+        start_token_ordinal=index,
+        end_token_ordinal=index + 1,
         surface=surface,
-        lemma=lemma,
-        reading=reading,
-        part_of_speech="名詞",
-        dictionary_id=id_,
-        meanings=("not sent to Gemini",) if id_ is not None else (),
-        source="fixture" if id_ is not None else None,
-        jlpt_level="N5" if id_ is not None else None,
-        jlpt_official=False if id_ is not None else None,
+        display_lemma=lemma,
+        display_reading=reading,
+        identity=LexicalFormIdentity(
+            dictionary_namespace="JMdict",
+            entry_id=entry_id,
+            lemma=lemma,
+            reading=reading,
+        ),
+        meanings=("not sent to Gemini",),
+        source="fixture",
+        jlpt_level="N5",
+        jlpt_official=False,
     )
 
 
@@ -76,8 +86,8 @@ async def test_prompt_preserves_region_scoped_vocabulary_mapping() -> None:
     adapter = PromptMappedAdapter()
     service = GeminiAnalysisService(adapter, prompt_version="v2")
     vocabulary = {
-        "region-a": (candidate("jmdict-cat", "猫", "猫", "ネコ"),),
-        "region-b": (candidate("jmdict-dog", "犬", "犬", "イヌ"),),
+        "region-a": (candidate("lexical-cat", "猫", "猫", "ネコ"),),
+        "region-b": (candidate("lexical-dog", "犬", "犬", "イヌ"),),
     }
 
     result = await service.analyze_page(
@@ -86,8 +96,8 @@ async def test_prompt_preserves_region_scoped_vocabulary_mapping() -> None:
     )
 
     assert [region.vocabulary_ids for region in result.regions] == [
-        ("jmdict-cat",),
-        ("jmdict-dog",),
+        ("lexical-cat",),
+        ("lexical-dog",),
     ]
     assert adapter.payload is not None
     prompt_regions = adapter.payload["regions"]
@@ -96,14 +106,14 @@ async def test_prompt_preserves_region_scoped_vocabulary_mapping() -> None:
             "region_id": "region-a",
             "japanese_text": "猫です",
             "vocabulary_candidates": [
-                {"id": "jmdict-cat", "surface": "猫", "lemma": "猫", "reading": "ネコ"}
+                {"id": "lexical-cat", "surface": "猫", "lemma": "猫", "reading": "ネコ"}
             ],
         },
         {
             "region_id": "region-b",
             "japanese_text": "犬です",
             "vocabulary_candidates": [
-                {"id": "jmdict-dog", "surface": "犬", "lemma": "犬", "reading": "イヌ"}
+                {"id": "lexical-dog", "surface": "犬", "lemma": "犬", "reading": "イヌ"}
             ],
         },
     ]
@@ -118,18 +128,18 @@ async def test_known_page_vocabulary_is_rejected_for_the_wrong_region() -> None:
             del prompt
             return schema(
                 regions=(
-                    region_analysis("region-a", vocabulary_ids=("jmdict-cat",)),
-                    region_analysis("region-b", vocabulary_ids=("jmdict-cat",)),
+                    region_analysis("region-a", vocabulary_ids=("lexical-cat",)),
+                    region_analysis("region-b", vocabulary_ids=("lexical-cat",)),
                 )
             )
 
     service = GeminiAnalysisService(WrongRegionVocabularyAdapter(), prompt_version="v2")
-    with pytest.raises(UnknownVocabularyError, match="jmdict-cat"):
+    with pytest.raises(UnknownVocabularyError, match="lexical-cat"):
         await service.analyze_page(
             regions={"region-a": "猫", "region-b": "犬"},
             vocabulary_by_region={
-                "region-a": (candidate("jmdict-cat", "猫", "猫", "ネコ"),),
-                "region-b": (candidate("jmdict-dog", "犬", "犬", "イヌ"),),
+                "region-a": (candidate("lexical-cat", "猫", "猫", "ネコ"),),
+                "region-b": (candidate("lexical-dog", "犬", "犬", "イヌ"),),
             },
         )
 
@@ -191,52 +201,69 @@ async def test_complete_gemini_regions_can_be_returned_in_any_order() -> None:
     assert [analysis.region_id for analysis in result.regions] == ["region-b", "region-a"]
 
 
-def test_vocabulary_candidates_dedupe_within_region_but_remain_region_scoped() -> None:
+def test_vocabulary_candidates_dedupe_by_canonical_identity_within_region() -> None:
+    first = lexical_match(
+        region_id="region-a",
+        index=0,
+        entry_id="jmdict-cat",
+        surface="猫",
+        lemma="猫",
+        reading="ねこ",
+    )
+    repeated = lexical_match(
+        region_id="region-a",
+        index=1,
+        entry_id="jmdict-cat",
+        surface="猫",
+        lemma="猫",
+        reading="ねこ",
+    )
+    other_region = lexical_match(
+        region_id="region-b",
+        index=0,
+        entry_id="jmdict-cat",
+        surface="猫",
+        lemma="猫",
+        reading="ねこ",
+    )
     candidates = build_vocabulary_candidates_by_region(
         {
-            "region-a": (
-                token(
-                    region_id="region-a",
-                    index=0,
-                    id_="jmdict-cat",
-                    surface="猫",
-                    lemma="猫",
-                    reading="ネコ",
-                ),
-                token(
-                    region_id="region-a",
-                    index=1,
-                    id_="jmdict-cat",
-                    surface="猫",
-                    lemma="猫",
-                    reading="ネコ",
-                ),
-            ),
-            "region-b": (
-                token(
-                    region_id="region-b",
-                    index=0,
-                    id_="jmdict-cat",
-                    surface="猫",
-                    lemma="猫",
-                    reading="ネコ",
-                ),
-                token(
-                    region_id="region-b",
-                    index=1,
-                    id_=None,
-                    surface="です",
-                    lemma="です",
-                    reading="デス",
-                ),
-            ),
+            "region-a": LinguisticAnalysis(tokens=(), lexical_matches=(first, repeated)),
+            "region-b": LinguisticAnalysis(tokens=(), lexical_matches=(other_region,)),
         }
     )
 
+    expected_id = first.identity.transport_id
     assert candidates == {
-        "region-a": (candidate("jmdict-cat", "猫", "猫", "ネコ"),),
-        "region-b": (candidate("jmdict-cat", "猫", "猫", "ネコ"),),
+        "region-a": (candidate(expected_id, "猫", "猫", "ねこ"),),
+        "region-b": (candidate(expected_id, "猫", "猫", "ねこ"),),
     }
+
+
+def test_distinct_forms_of_same_entry_remain_distinct_gemini_candidates() -> None:
+    first = lexical_match(
+        region_id="region-a",
+        index=0,
+        entry_id="jmdict-shared",
+        surface="表記一",
+        lemma="表記一",
+        reading="よみ",
+    )
+    second = lexical_match(
+        region_id="region-a",
+        index=1,
+        entry_id="jmdict-shared",
+        surface="表記二",
+        lemma="表記二",
+        reading="よみ",
+    )
+
+    candidates = build_vocabulary_candidates_by_region(
+        {"region-a": LinguisticAnalysis(tokens=(), lexical_matches=(first, second))}
+    )["region-a"]
+
+    assert len(candidates) == 2
+    assert candidates[0].id != candidates[1].id
 
 
 def test_gemini_contract_is_strict() -> None:

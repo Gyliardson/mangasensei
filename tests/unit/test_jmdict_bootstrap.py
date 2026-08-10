@@ -20,6 +20,7 @@ from mangasensei.linguistics.jmdict_bootstrap import (
     download_jmdict,
     verify_jmdict,
 )
+from mangasensei.linguistics.service import DictionaryLookupStatus
 
 
 def test_convert_simplified_jmdict_outputs_deterministic_normalized_json() -> None:
@@ -75,8 +76,10 @@ def test_converter_canonicalizes_script_equivalent_runtime_forms(tmp_path: Path)
     dictionary_path = tmp_path / "jmdict.json"
     dictionary_path.write_bytes(normalized)
     dictionary = JsonJmdictDictionary(dictionary_path)
-    entry = dictionary.lookup("のま", "ノマ")
+    result = dictionary.lookup_candidates("のま", "ノマ")
+    entry = result.unique_entry
 
+    assert result.status is DictionaryLookupStatus.UNIQUE
     assert entry is not None
     assert entry.id == "jmdict-1000060"
     assert entry.meanings == ("kanji repetition mark",)
@@ -95,7 +98,9 @@ def test_converter_unions_meanings_when_runtime_keys_collide(tmp_path: Path) -> 
 
     dictionary_path = tmp_path / "jmdict.json"
     dictionary_path.write_bytes(normalized)
-    entry = JsonJmdictDictionary(dictionary_path).lookup("のま", "のま")
+    result = JsonJmdictDictionary(dictionary_path).lookup_candidates("のま", "のま")
+    entry = result.unique_entry
+    assert result.status is DictionaryLookupStatus.UNIQUE
     assert entry is not None
     assert entry.meanings == ("hiragana-specific meaning", "katakana-specific meaning")
 
@@ -134,9 +139,12 @@ def test_actual_pinned_restricted_entry_preserves_reading_and_sense_rules(
     dictionary_path.write_bytes(converted_fixture(actual_restricted_payload()))
     dictionary = JsonJmdictDictionary(dictionary_path)
 
-    hanpen = dictionary.lookup("半片", "ハンペン")
-    hanpei = dictionary.lookup("半平", "ハンペイ")
+    hanpen_result = dictionary.lookup_candidates("半片", "ハンペン")
+    hanpei_result = dictionary.lookup_candidates("半平", "ハンペイ")
+    hanpen = hanpen_result.unique_entry
+    hanpei = hanpei_result.unique_entry
 
+    assert hanpen_result.status is DictionaryLookupStatus.UNIQUE
     assert hanpen is not None
     assert hanpen.meanings == (
         "pounded fish cake",
@@ -144,10 +152,14 @@ def test_actual_pinned_restricted_entry_preserves_reading_and_sense_rules(
         "half a ticket",
         "ticket stub",
     )
+    assert hanpei_result.status is DictionaryLookupStatus.UNIQUE
     assert hanpei is not None
     assert hanpei.meanings == ("pounded fish cake",)
-    assert dictionary.lookup("半片", "ハンペイ") is None
-    assert dictionary.lookup("半平", "ハンペン") is not None
+    assert (
+        dictionary.lookup_candidates("半片", "ハンペイ").status
+        is DictionaryLookupStatus.NOT_FOUND
+    )
+    assert dictionary.lookup_candidates("半平", "ハンペン").status is DictionaryLookupStatus.UNIQUE
 
 
 def test_kana_only_and_unrestricted_forms_remain_supported(tmp_path: Path) -> None:
@@ -155,11 +167,15 @@ def test_kana_only_and_unrestricted_forms_remain_supported(tmp_path: Path) -> No
     dictionary_path.write_bytes(converted_fixture(simplified_payload()))
     dictionary = JsonJmdictDictionary(dictionary_path)
 
-    kana_only = dictionary.lookup("ありがとう", "アリガトウ")
-    cat = dictionary.lookup("猫", "ネコ")
+    kana_only_result = dictionary.lookup_candidates("ありがとう", "アリガトウ")
+    cat_result = dictionary.lookup_candidates("猫", "ネコ")
+    kana_only = kana_only_result.unique_entry
+    cat = cat_result.unique_entry
 
+    assert kana_only_result.status is DictionaryLookupStatus.UNIQUE
     assert kana_only is not None
     assert kana_only.meanings == ("thanks",)
+    assert cat_result.status is DictionaryLookupStatus.UNIQUE
     assert cat is not None
     assert cat.meanings == ("cat",)
 
