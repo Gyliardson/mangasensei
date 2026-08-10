@@ -34,8 +34,12 @@ def test_cli_parser_supports_all_operational_commands() -> None:
     assert parser.parse_args(["retention", "--once"]).once
     assert parser.parse_args(["models", "download"]).models_command == "download"
     assert parser.parse_args(["models", "verify"]).models_command == "verify"
-    assert parser.parse_args(["jmdict", "download"]).jmdict_command == "download"
+    jmdict_download = parser.parse_args(["jmdict", "download"])
+    assert jmdict_download.jmdict_command == "download"
+    assert jmdict_download.language == "en"
+    assert parser.parse_args(["jmdict", "download", "--language", "de"]).language == "de"
     assert parser.parse_args(["jmdict", "verify"]).jmdict_command == "verify"
+    assert parser.parse_args(["jmdict", "verify", "--language", "de"]).language == "de"
     assert parser.parse_args(["migrate"]).command == "migrate"
 
 
@@ -57,6 +61,20 @@ def test_cli_artifact_commands_do_not_require_database_credentials(
     captured = capsys.readouterr()
     assert code == 2
     assert "ValidationError" not in captured.err
+
+
+def test_cli_jmdict_rejects_unreviewed_language_without_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: object, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from pathlib import Path
+
+    monkeypatch.setenv("MANGASENSEI_JMDICT_PATH", str(Path(tmp_path) / "jmdict.json"))  # type: ignore[arg-type]
+
+    code = main(["jmdict", "verify", "--language", "pt-BR"])
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "unsupported dictionary language: pt-BR" in captured.err
 
 
 @pytest.mark.asyncio
