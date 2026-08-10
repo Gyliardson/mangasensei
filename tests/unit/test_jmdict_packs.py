@@ -59,6 +59,10 @@ def test_reviewed_pack_metadata_matches_pinned_sources() -> None:
         "4da33c567bb03490ffc9819fd1b3e8efc6522a4a790c99b0d2677094f184b7b3"
     )
     assert german.source.size_bytes == 7_014_092
+    assert german.normalized.sha256 == (
+        "d9ee60df9ab892c91b3e20f2d3a55e4bc87d74884b7776fde957eea2c2f05e0f"
+    )
+    assert german.normalized.size_bytes == 42_382_199
     assert german.normalized.entry_count == 128_931
 
 
