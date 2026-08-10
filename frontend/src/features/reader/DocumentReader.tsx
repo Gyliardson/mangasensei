@@ -383,6 +383,7 @@ export function DocumentReader({
     const hasError = currentFailed || loadError !== null;
     return (
       <main id="conteudo" className="document-reader-loading">
+        <h1 className="sr-only">{documentMessages.documentNavigation}</h1>
         {navigation}
         <p role={hasError ? "alert" : "status"}>
           {currentFailed ? documentMessages.failedPage : loadError ?? documentMessages.processingPage}

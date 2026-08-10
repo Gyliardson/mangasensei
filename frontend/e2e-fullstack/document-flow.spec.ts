@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const redPage = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAAoklEQVR4nO3PAQ3AIADAMEAS/gUgCxcn2VsF2zx7jz9ZrwO+ZrjOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5wneG6C9DtAhwwyYwSAAAAAElFTkSuQmCC",
+  "iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAAoklEQVR4nO3PAQ3AIADAMEAS/gUgCxcn2VsF2zx7jz9ZrwO+ZrjOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5wneG6C9DtAhwwyYwSAAAAAElFTkSuQmCC",
   "base64",
 );
 const bluePage = Buffer.from(
@@ -122,7 +122,7 @@ test("creates, partially reads, navigates and reprojects a real multipage docume
   const selectedPages = page.locator(".selected-page-name");
   await expect(selectedPages).toHaveText(["1 z-red.png", "2 a-blue.png"]);
 
-  await page.getByRole("button", { name: "Move a-blue.png up" }).focus();
+  await page.getByRole("button", { name: "Move a-blue.png earlier" }).focus();
   await page.keyboard.press("Enter");
   await expect(selectedPages).toHaveText(["1 a-blue.png", "2 z-red.png"]);
 
