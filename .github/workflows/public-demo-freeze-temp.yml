@@ -41,13 +41,21 @@ jobs:
           notices = Path("THIRD_PARTY_NOTICES.md")
           text = notices.read_text(encoding="utf-8")
           marker = "## Give My Regards to Black Jack Test Fixtures"
-          section = """## MangaSensei Public Demo Corpus
-
-The project-owned [`assets/public-demo/`](assets/public-demo/) corpus is licensed separately under CC BY 4.0. Its SVG artwork, rendered PNG pages and annotations are original MangaSensei corpus assets; this does not change the GPL-3.0-only license of MangaSensei source code or the separate terms of the Black Jack fixtures below.
-
-The deterministic renderer uses Noto Sans CJK JP `Sans2.004` and Noto Serif CJK JP `Serif2.003` from the official [`notofonts/noto-cjk`](https://github.com/notofonts/noto-cjk) repository under SIL OFL 1.1. Font binaries are not committed; exact upstream paths, Git blob IDs, byte sizes and SHA-256 values are recorded in [`assets/public-demo/provenance/fonts.json`](assets/public-demo/provenance/fonts.json) and verified before rendering.
-
-"""
+          section = (
+              "## MangaSensei Public Demo Corpus\n\n"
+              "The project-owned [`assets/public-demo/`](assets/public-demo/) corpus is "
+              "licensed separately under CC BY 4.0. Its SVG artwork, rendered PNG pages "
+              "and annotations are original MangaSensei corpus assets; this does not "
+              "change the GPL-3.0-only license of MangaSensei source code or the separate "
+              "terms of the Black Jack fixtures below.\n\n"
+              "The deterministic renderer uses Noto Sans CJK JP `Sans2.004` and Noto "
+              "Serif CJK JP `Serif2.003` from the official [`notofonts/noto-cjk`]"
+              "(https://github.com/notofonts/noto-cjk) repository under SIL OFL 1.1. "
+              "Font binaries are not committed; exact upstream paths, Git blob IDs, byte "
+              "sizes and SHA-256 values are recorded in "
+              "[`assets/public-demo/provenance/fonts.json`]"
+              "(assets/public-demo/provenance/fonts.json) and verified before rendering.\n\n"
+          )
           if section not in text:
               if marker not in text:
                   raise SystemExit("Black Jack notice marker not found")
@@ -55,7 +63,11 @@ The deterministic renderer uses Noto Sans CJK JP `Sans2.004` and Noto Serif CJK 
 
           changelog = Path("CHANGELOG.md")
           text = changelog.read_text(encoding="utf-8")
-          bullet = "- MangaSensei-owned CC BY 4.0 public demo corpus with four original SVG/PNG pages, pinned OFL Japanese fonts, versioned source-intent ground truth, provenance/integrity manifests and deterministic render/contract tooling.\n"
+          bullet = (
+              "- MangaSensei-owned CC BY 4.0 public demo corpus with four original SVG/PNG "
+              "pages, pinned OFL Japanese fonts, versioned source-intent ground truth, "
+              "provenance/integrity manifests and deterministic render/contract tooling.\n"
+          )
           if bullet not in text:
               marker = "### Added\n\n"
               if marker not in text:
