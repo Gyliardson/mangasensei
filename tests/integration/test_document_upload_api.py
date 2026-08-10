@@ -63,7 +63,10 @@ async def test_document_create_preserves_order_jobs_language_retention_and_capab
             "/api/v1/documents",
             headers={"Idempotency-Key": "document-create-order-0001"},
             data={"studyLanguage": "en"},
-            files=document_files(("z-last-lexically.png", first), ("a-first-lexically.png", second)),
+            files=document_files(
+                ("z-last-lexically.png", first),
+                ("a-first-lexically.png", second),
+            ),
         )
 
     assert response.status_code == 202
@@ -94,7 +97,11 @@ async def test_document_create_preserves_order_jobs_language_retention_and_capab
                 await session.execute(select(PageRecord).order_by(PageRecord.ordinal))
             ).scalars()
         )
-        jobs = tuple((await session.execute(select(JobRecord).order_by(JobRecord.page_id))).scalars())
+        jobs = tuple(
+            (
+                await session.execute(select(JobRecord).order_by(JobRecord.page_id))
+            ).scalars()
+        )
         capability_scopes = set(
             (await session.execute(select(DocumentCapabilityRecord.scope))).scalars()
         )
