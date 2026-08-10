@@ -18,7 +18,7 @@ from tests.integration.test_upload_api import make_settings, page_image
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_api_created_document_children_share_parent_lifetime_and_cleanup_preserves_live_blob(
+async def test_created_document_retention_preserves_shared_live_blob(
     clean_postgres_url: str,
     tmp_path: Path,
 ) -> None:
@@ -81,7 +81,8 @@ async def test_api_created_document_children_share_parent_lifetime_and_cleanup_p
     assert deleted >= 1
     async with sessions() as session:
         assert (await session.execute(select(DocumentRecord))).scalars().all() == []
-        assert all(await session.get(PageRecord, child_id) is None for child_id in child_ids)
+        for child_id in child_ids:
+            assert await session.get(PageRecord, child_id) is None
         assert await session.get(PageRecord, standalone_id) is not None
         assert await session.get(ImageBlobRecord, blob_id) is not None
     await engine.dispose()
