@@ -19,7 +19,7 @@ Un entorno de estudio centrado en la privacidad para convertir páginas de manga
 
 MangaSensei extrae texto japonés de páginas de manga, enriquece el resultado con datos lingüísticos locales y lo presenta en un lector responsivo sin alterar la imagen original. Los pesos de OCR y los datos derivados de JMdict permanecen en local y no se incluyen en Git ni en la imagen distribuible. Gemini es opcional.
 
-El contenido japonés puede estudiarse con **explicaciones contextuales en Portugués de Brasil (`pt-BR`) o Inglés (`en`)**. El idioma de estudio se elige de forma explícita y es independiente del locale actual de la interfaz, que permanece en portugués. Los significados deterministas del JMdict local siguen en inglés en ambos modos, y cambiar solo el idioma de estudio reutiliza el OCR y el análisis lingüístico japonés ya completados. Consulta el [contrato de idiomas de estudio](docs/study-languages.md) para los límites exactos.
+El contenido japonés puede estudiarse con **explicaciones contextuales en Portugués de Brasil (`pt-BR`) o Inglés (`en`)**. El idioma de estudio se elige de forma explícita y es independiente del locale de la interfaz almacenado en el navegador. La interfaz admite Inglés (`en`) y Portugués de Brasil (`pt-BR`), usa inglés por defecto en un estado nuevo o inválido del navegador y persiste localmente una selección explícita. Los significados deterministas del JMdict local siguen en inglés en ambos modos de estudio, y cambiar solo el idioma de estudio reutiliza el OCR y el análisis lingüístico japonés ya completados. Consulta el [contrato de idiomas de estudio](docs/study-languages.md) para los límites exactos.
 
 La versión actual de desarrollo está registrada en [`VERSION`](VERSION).
 
@@ -46,7 +46,7 @@ La versión actual de desarrollo está registrada en [`VERSION`](VERSION).
 | OCR | Subconjunto local de Manga Image Translator con modelos verificados por checksum |
 | Lingüística | Tokenización Sudachi e índice JMdict normalizado en inglés generado desde una fuente verificada |
 | Gemini | Explicaciones contextuales estructuradas opcionales en `pt-BR`/`en`, con control de presupuesto y `store=False` |
-| Lector | SPA React con Blob autenticado, overlays SVG responsivos, furigana, preferencia de idioma de estudio y tarjetas de vocabulario |
+| Lector | SPA React con Blob autenticado, overlays SVG responsivos, furigana, preferencias independientes de locale de interfaz `en`/`pt-BR` e idioma de estudio, y tarjetas de vocabulario |
 | Operación | Cola PostgreSQL, recuperación de leases, retención, readiness y métricas |
 
 ## Arquitectura
