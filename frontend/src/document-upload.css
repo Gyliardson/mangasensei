@@ -1,0 +1,79 @@
+.selected-pages {
+  grid-column: 1 / -1;
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--line, #d8d5cc);
+  border-radius: 0.75rem;
+}
+
+.selected-pages > p {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+}
+
+.selected-pages ol {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+  padding-left: 1.5rem;
+}
+
+.selected-pages li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.selected-page-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.selected-page-name strong {
+  display: inline-block;
+  min-width: 2ch;
+}
+
+.selected-page-actions {
+  display: flex;
+  gap: 0.25rem;
+  flex: 0 0 auto;
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--line, #d8d5cc);
+  border-radius: 0.5rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.icon-button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.icon-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .selected-pages li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .selected-page-actions {
+    align-self: stretch;
+  }
+
+  .icon-button {
+    flex: 1 1 0;
+  }
+}

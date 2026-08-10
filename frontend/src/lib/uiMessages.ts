@@ -1,9 +1,13 @@
 import type { JobStatus } from "./api";
 import type { DictionaryLanguage } from "./dictionaryLanguage";
+import {
+  documentMessagesFor,
+  type DocumentUiMessages,
+} from "./documentUiMessages";
 import type { StudyLanguage } from "./studyLanguage";
 import type { UiLocale } from "./uiLocale";
 
-export interface UiMessages {
+export interface UiMessages extends DocumentUiMessages {
   readonly documentDescription: string;
   readonly skipLink: string;
   readonly uiLocaleLabel: string;
@@ -63,7 +67,12 @@ export interface UiMessages {
   readonly originalPageAlt: string;
   readonly recognizedRegions: string;
   readonly regionAria: (index: number, text: string) => string;
-  readonly readerMeta: (regionCount: number, studyLanguage: string, detector: string, recognizer: string) => string;
+  readonly readerMeta: (
+    regionCount: number,
+    studyLanguage: string,
+    detector: string,
+    recognizer: string,
+  ) => string;
   readonly studyPanel: string;
   readonly noRecognizedRegions: string;
   readonly confidence: (percent: number) => string;
@@ -103,6 +112,7 @@ const portugueseApiErrors: Readonly<Record<string, string>> = {
 };
 
 const en: UiMessages = {
+  ...documentMessagesFor("en"),
   documentDescription: "Study Japanese directly in the context of the manga pages you are reading.",
   skipLink: "Skip to content",
   uiLocaleLabel: "Interface language",
@@ -194,6 +204,7 @@ const en: UiMessages = {
 };
 
 const ptBR: UiMessages = {
+  ...documentMessagesFor("pt-BR"),
   documentDescription: "Estude japonês diretamente no contexto das páginas que você está lendo.",
   skipLink: "Ir para o conteúdo",
   uiLocaleLabel: "Idioma da interface",

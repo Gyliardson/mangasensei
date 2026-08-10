@@ -26,9 +26,25 @@ from mangasensei.infrastructure.database.base import Base
 class DocumentRecord(Base):
     __tablename__ = "documents"
     __table_args__ = (
+        UniqueConstraint("upload_key_id", "upload_idempotency_digest"),
         CheckConstraint("source_kind IN ('images')", name="source_kind"),
         CheckConstraint("order_revision > 0", name="order_revision_positive"),
         CheckConstraint("expires_at = created_at + interval '24 hours'", name="retention_exact"),
+        CheckConstraint(
+            "(upload_key_id IS NULL AND upload_idempotency_digest IS NULL "
+            "AND request_digest IS NULL) OR "
+            "(upload_key_id IS NOT NULL AND upload_idempotency_digest IS NOT NULL "
+            "AND request_digest IS NOT NULL)",
+            name="creation_identity_triplet",
+        ),
+        CheckConstraint(
+            "upload_idempotency_digest IS NULL OR octet_length(upload_idempotency_digest) = 32",
+            name="idempotency_digest_length",
+        ),
+        CheckConstraint(
+            "request_digest IS NULL OR octet_length(request_digest) = 32",
+            name="request_digest_length",
+        ),
         Index("ix_documents_expires_at_id", "expires_at", "id"),
     )
 
@@ -38,6 +54,9 @@ class DocumentRecord(Base):
     )
     source_kind: Mapped[str] = mapped_column(String(16), nullable=False, server_default="images")
     order_revision: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="1")
+    upload_key_id: Mapped[str | None] = mapped_column(String(32))
+    upload_idempotency_digest: Mapped[bytes | None] = mapped_column(LargeBinary(32))
+    request_digest: Mapped[bytes | None] = mapped_column(LargeBinary(32))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -53,7 +72,7 @@ class DocumentCapabilityRecord(Base):
     __table_args__ = (
         UniqueConstraint("key_id", "digest"),
         CheckConstraint(
-            "scope IN ('read:document','read:document-image')",
+            "scope IN ('read:document','read:document-image','reprocess:document')",
             name="scope",
         ),
         CheckConstraint("octet_length(digest) = 32", name="digest_length"),

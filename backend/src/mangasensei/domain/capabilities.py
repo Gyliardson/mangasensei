@@ -12,6 +12,7 @@ class CapabilityScope(StrEnum):
 class DocumentCapabilityScope(StrEnum):
     READ_DOCUMENT = "read:document"
     READ_DOCUMENT_IMAGE = "read:document-image"
+    REPROCESS_DOCUMENT = "reprocess:document"
 
 
 CapabilityScopeValue = CapabilityScope | DocumentCapabilityScope

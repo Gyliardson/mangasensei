@@ -21,6 +21,8 @@ O MangaSensei extrai texto japonês de páginas de mangá, enriquece o resultado
 
 Conteúdo japonês pode ser estudado com **explicações contextuais em Português (Brasil) (`pt-BR`) ou Inglês (`en`)**. Quatro eixos de idioma permanecem independentes: conteúdo japonês (`ja`), idioma de estudo/explicação (`pt-BR` ou `en`), idioma solicitado para o dicionário determinístico (`en`, `de` ou `pt-BR`) e locale da interface salvo no navegador (`en` ou `pt-BR`). Interface e dicionário usam inglês como padrão para estado novo ou inválido do navegador. Alemão usa o pack JMdict local revisado quando a forma canônica exata está disponível e faz fallback por item para inglês quando necessário; uma solicitação de dicionário `pt-BR` continua explicitamente solicitada como Português (Brasil), mas os significados determinísticos usam fallback em inglês porque não existe pack JMdict revisado de glosas em português no nível de palavra. Trocar o idioma do dicionário reaproveita a análise linguística canônica persistida e não executa novamente OCR, aquisição lexical do Sudachi ou Gemini. Consulte o [contrato dos eixos de idioma](docs/study-languages.md) e o [contrato dos packs JMdict](docs/jmdict-packs.md).
 
+A SPA também pode criar um Document temporário e ordenado a partir de várias imagens JPEG, PNG ou WebP. A ordem mostrada antes do envio é a ordem canônica; cada Page continua sendo uma unidade independente de OCR/estudo; páginas concluídas podem ser lidas enquanto as demais processam; e o progresso agregado informa contagens concluídas/processando/com falha. Document e Pages filhas compartilham a mesma expiração exata de 24 horas. Importação de PDF e retry/cancel em lote continuam adiados. Consulte o [contrato de importação multi-imagem](docs/document-imports.md).
+
 A versão atual de desenvolvimento está registrada em [`VERSION`](VERSION).
 
 ## Por que MangaSensei?
@@ -42,11 +44,11 @@ A versão atual de desenvolvimento está registrada em [`VERSION`](VERSION).
 
 | Área | Capacidade |
 | --- | --- |
-| Upload | Envio seguro de imagem com idempotência, idioma de estudo explícito `pt-BR`/`en` e capabilities HMAC por página |
+| Upload | Envio seguro de imagem standalone e Documents multi-imagem ordenados/limitados, idioma de estudo explícito `pt-BR`/`en`, idempotência e capabilities HMAC por Page/Document |
 | OCR | Subconjunto local do Manga Image Translator com modelos verificados por checksum |
 | Linguística | Tokenização Sudachi e dados JMdict locais revisados em inglês/alemão projetados sobre identidades lexicais canônicas independentes de idioma |
 | Gemini | Explicações contextuais estruturadas opcionais em `pt-BR`/`en`, com controle de orçamento e `store=False` |
-| Leitor | SPA React com Blob autenticado, overlays SVG responsivos, furigana, locale da interface `en`/`pt-BR`, idioma de estudo `pt-BR`/`en` e preferência solicitada de dicionário `en`/`de`/`pt-BR`, todos independentes, com apresentação explícita de fallback |
+| Leitor | SPA React com Blob autenticado, overlays SVG responsivos, navegação/progresso de Document, furigana, locale da interface `en`/`pt-BR`, idioma de estudo `pt-BR`/`en` e preferência solicitada de dicionário `en`/`de`/`pt-BR`, todos independentes, com apresentação explícita de fallback |
 | Operação | Fila PostgreSQL, recuperação por leases, retenção, readiness e métricas |
 
 ## Arquitetura
@@ -58,7 +60,7 @@ flowchart TD
     end
     subgraph API["Camada API"]
         FastAPI["Aplicação FastAPI"]
-        Capabilities["Capabilities por Página"]
+        Capabilities["Capabilities por Page / Document"]
         Static["Assets Estáticos do Frontend"]
     end
     subgraph Worker["Camada Worker"]
@@ -101,12 +103,20 @@ flowchart TD
 | Método | Rota | Função |
 | --- | --- | --- |
 | `POST` | `/api/v1/pages` | Envia uma página de mangá japonês e cria análise com `studyLanguage` opcional (`pt-BR` padrão ou `en`) |
-| `GET` | `/api/v1/pages/{page_id}` | Consulta status, metadados persistidos dos idiomas/projeção e dados de estudo concluídos usando o token da página |
-| `GET` | `/api/v1/pages/{page_id}/image` | Retorna a imagem original por uma resposta Blob autenticada |
-| `POST` | `/api/v1/pages/{page_id}/reprocess` | Coloca análise geral ou regeneração de exatamente um eixo, idioma de estudo ou dicionário, na fila usando uma capability de reprocessamento |
+| `GET` | `/api/v1/pages/{page_id}` | Consulta status, metadados persistidos dos idiomas/projeção e dados de estudo standalone concluídos usando o token da página |
+| `GET` | `/api/v1/pages/{page_id}/image` | Retorna a imagem standalone original por uma resposta Blob autenticada |
+| `POST` | `/api/v1/pages/{page_id}/reprocess` | Coloca reprocessamento de idioma de estudo/dicionário standalone na fila usando capability da Page |
+| `POST` | `/api/v1/documents` | Cria um Document multi-imagem ordenado/idempotente e um job normal de análise por Page filha |
+| `GET` | `/api/v1/documents/{document_id}` | Consulta filhos ordenados e progresso agregado com `read:document` |
+| `GET` | `/api/v1/documents/{document_id}/progress` | Consulta contadores mutuamente exclusivos de concluídas/processando/com falha |
+| `GET` | `/api/v1/documents/{document_id}/pages/{page_id}` | Consulta StudyPage membro usando a capability de leitura do Document |
+| `GET` | `/api/v1/documents/{document_id}/pages/{page_id}/image` | Retorna a imagem original de um membro usando `read:document-image` |
+| `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | Reprocessa exatamente um eixo de idioma em uma Page membro usando `reprocess:document` |
 | `GET` | `/health` | Health check do processo |
 | `GET` | `/ready` | Verificação de banco, storage e schema |
 | `GET` | `/metrics` | Métricas Prometheus |
+
+Capability tokens de Document são usados apenas em headers e expiram exatamente com o Document de 24 horas. A SPA atual os mantém apenas na memória da sessão ativa da página; não os coloca em URLs, histórico do navegador ou `localStorage`. Portanto, recarregar a página perde o acesso ao Document em vez de persistir um segredo de forma insegura. Importação de PDF, retry em lote e cancelamento real de Document ainda não estão implementados.
 
 ## Execução Local
 
@@ -165,7 +175,7 @@ npm run e2e
 ```text
 backend/      API Python, worker, migrations, OCR e linguística
 frontend/     SPA React, componentes do leitor e testes Playwright
-docs/         Notas de versão e artefatos visuais
+docs/         Contratos técnicos, notas de versão e artefatos visuais
 tests/        Testes unitários e de integração do backend
 var/          Dados locais de runtime ignorados pelo Git
 ```

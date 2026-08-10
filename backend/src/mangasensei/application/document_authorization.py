@@ -64,22 +64,23 @@ class DocumentAuthorizer:
                 token=token,
                 scope=DocumentCapabilityScope.READ_DOCUMENT,
             )
-            page = (
-                await session.execute(
-                    select(PageRecord).where(
-                        PageRecord.public_id == page_id,
-                        PageRecord.document_id == document.internal_id,
-                        PageRecord.expires_at > datetime.now(UTC),
-                    )
-                )
-            ).scalar_one_or_none()
-            if page is None:
-                raise ResourceNotFoundError
-            return AuthorizedPage(
-                internal_id=page.id,
-                public_id=page.public_id,
-                expires_at=page.expires_at,
+            return await self._authorize_member_page(session, document.internal_id, page_id)
+
+    async def authorize_reprocess(
+        self,
+        *,
+        document_id: UUID,
+        page_id: UUID,
+        token: str,
+    ) -> AuthorizedPage:
+        async with self._sessions() as session:
+            document = await self._authorize_document_scope(
+                session,
+                document_id=document_id,
+                token=token,
+                scope=DocumentCapabilityScope.REPROCESS_DOCUMENT,
             )
+            return await self._authorize_member_page(session, document.internal_id, page_id)
 
     async def authorize_image(
         self,
@@ -115,6 +116,29 @@ class DocumentAuthorizer:
                 media_type=blob.media_type,
                 filename=page.original_filename,
             )
+
+    async def _authorize_member_page(
+        self,
+        session: AsyncSession,
+        document_id: int,
+        page_id: UUID,
+    ) -> AuthorizedPage:
+        page = (
+            await session.execute(
+                select(PageRecord).where(
+                    PageRecord.public_id == page_id,
+                    PageRecord.document_id == document_id,
+                    PageRecord.expires_at > datetime.now(UTC),
+                )
+            )
+        ).scalar_one_or_none()
+        if page is None:
+            raise ResourceNotFoundError
+        return AuthorizedPage(
+            internal_id=page.id,
+            public_id=page.public_id,
+            expires_at=page.expires_at,
+        )
 
     async def _authorize_document_scope(
         self,

@@ -55,7 +55,8 @@ class PageRecord(Base):
         UniqueConstraint("upload_key_id", "upload_idempotency_digest"),
         UniqueConstraint("document_id", "ordinal"),
         CheckConstraint(
-            "octet_length(upload_idempotency_digest) = 32", name="idempotency_digest_length"
+            "upload_idempotency_digest IS NULL OR octet_length(upload_idempotency_digest) = 32",
+            name="idempotency_digest_length",
         ),
         CheckConstraint("octet_length(request_digest) = 32", name="request_digest_length"),
         CheckConstraint("expires_at = created_at + interval '24 hours'", name="retention_exact"),
@@ -63,6 +64,13 @@ class PageRecord(Base):
             "(document_id IS NULL AND ordinal IS NULL) OR "
             "(document_id IS NOT NULL AND ordinal IS NOT NULL)",
             name="document_membership_pair",
+        ),
+        CheckConstraint(
+            "(document_id IS NULL AND upload_key_id IS NOT NULL "
+            "AND upload_idempotency_digest IS NOT NULL) OR "
+            "(document_id IS NOT NULL AND upload_key_id IS NULL "
+            "AND upload_idempotency_digest IS NULL)",
+            name="standalone_idempotency_pair",
         ),
         CheckConstraint("ordinal IS NULL OR ordinal >= 0", name="ordinal_nonnegative"),
         Index("ix_pages_expires_at_id", "expires_at", "id"),
@@ -81,8 +89,8 @@ class PageRecord(Base):
     )
     ordinal: Mapped[int | None] = mapped_column()
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    upload_key_id: Mapped[str] = mapped_column(String(32), nullable=False)
-    upload_idempotency_digest: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    upload_key_id: Mapped[str | None] = mapped_column(String(32))
+    upload_idempotency_digest: Mapped[bytes | None] = mapped_column(LargeBinary(32))
     request_digest: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

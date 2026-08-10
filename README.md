@@ -21,6 +21,8 @@ MangaSensei extracts Japanese text from manga pages, enriches it with local ling
 
 Japanese content can be studied with **Brazilian Portuguese (`pt-BR`) or English (`en`) contextual explanations**. Four language axes remain independent: Japanese content (`ja`), study/explanation language (`pt-BR` or `en`), deterministic dictionary language (requested `en`, `de`, or `pt-BR`), and browser-local UI locale (`en` or `pt-BR`). The UI and dictionary preferences default to English for fresh or invalid browser state. German uses the reviewed local JMdict pack where the exact canonical form is available and falls back per item to English otherwise; a requested `pt-BR` dictionary remains explicitly Portuguese-requested while deterministic meanings use English fallback because no reviewed word-level Portuguese JMdict pack exists. Changing dictionary language reuses persisted canonical linguistic analysis and does not rerun OCR, Sudachi lexical acquisition, or Gemini. See the [language-axis contract](docs/study-languages.md) and [JMdict pack contract](docs/jmdict-packs.md).
 
+The SPA can also create a temporary ordered Document from multiple JPEG, PNG, or WebP images. The displayed pre-upload order is canonical, each Page remains an independent OCR/study unit, completed children can be read while siblings process, and aggregate progress reports completed/processing/failed page counts. Document and child Pages share the same exact 24-hour expiry. PDF import and bulk retry/cancel remain deferred. See the [multi-image document import contract](docs/document-imports.md).
+
 The current development version is recorded in [`VERSION`](VERSION).
 
 ## Why MangaSensei?
@@ -42,11 +44,11 @@ The current development version is recorded in [`VERSION`](VERSION).
 
 | Area | Capability |
 | --- | --- |
-| Upload | Safe image upload with idempotency, explicit `pt-BR`/`en` study language and page-scoped HMAC capabilities |
+| Upload | Safe standalone image upload plus bounded ordered multi-image Documents, explicit `pt-BR`/`en` study language, idempotency and page/document-scoped HMAC capabilities |
 | OCR | Local Manga Image Translator subset with checksum-verified model artifacts |
 | Linguistics | Sudachi tokenization plus reviewed local English/German JMdict data projected over language-neutral canonical lexical identities |
 | Gemini | Optional structured `pt-BR`/`en` contextual explanations with budget tracking and `store=False` |
-| Reader | React SPA with authenticated Blob rendering, responsive SVG overlays, furigana, independent `en`/`pt-BR` UI locale, `pt-BR`/`en` study language, and `en`/`de`/`pt-BR` requested dictionary preferences with explicit fallback presentation |
+| Reader | React SPA with authenticated Blob rendering, responsive SVG overlays, document page navigation/aggregate progress, furigana, independent `en`/`pt-BR` UI locale, `pt-BR`/`en` study language, and `en`/`de`/`pt-BR` requested dictionary preferences with explicit fallback presentation |
 | Operations | PostgreSQL-backed queue, lease recovery, retention jobs, readiness checks and metrics |
 
 ## Architecture
@@ -58,7 +60,7 @@ flowchart TD
     end
     subgraph API["API Layer"]
         FastAPI["FastAPI Application"]
-        Capabilities["Page-Scoped Capabilities"]
+        Capabilities["Page / Document Capabilities"]
         Static["Static Frontend Assets"]
     end
     subgraph Worker["Worker Layer"]
@@ -100,13 +102,21 @@ flowchart TD
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/v1/pages` | Upload a Japanese manga page and queue analysis with optional `studyLanguage` (`pt-BR` default or `en`) |
-| `GET` | `/api/v1/pages/{page_id}` | Read page status, persisted language/projection metadata and completed study data with a page token |
-| `GET` | `/api/v1/pages/{page_id}/image` | Stream the original image through an authenticated Blob response |
-| `POST` | `/api/v1/pages/{page_id}/reprocess` | Queue general analysis or exactly one study/dictionary language-only regeneration with a reprocess capability |
+| `POST` | `/api/v1/pages` | Upload one Japanese manga page and queue analysis with optional `studyLanguage` (`pt-BR` default or `en`) |
+| `GET` | `/api/v1/pages/{page_id}` | Read standalone page status, persisted language/projection metadata and completed study data with a page token |
+| `GET` | `/api/v1/pages/{page_id}/image` | Stream the standalone original image through an authenticated Blob response |
+| `POST` | `/api/v1/pages/{page_id}/reprocess` | Queue standalone study/dictionary language reprocessing with a page reprocess capability |
+| `POST` | `/api/v1/documents` | Create an idempotent ordered multi-image Document and one normal page-analysis job per child |
+| `GET` | `/api/v1/documents/{document_id}` | Read ordered child summaries and aggregate page-count progress with `read:document` |
+| `GET` | `/api/v1/documents/{document_id}/progress` | Read the mutually exclusive completed/processing/failed page counters |
+| `GET` | `/api/v1/documents/{document_id}/pages/{page_id}` | Read a member StudyPage with the Document read capability |
+| `GET` | `/api/v1/documents/{document_id}/pages/{page_id}/image` | Stream one member original image with `read:document-image` |
+| `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | Reprocess exactly one study/dictionary language axis on one member Page with `reprocess:document` |
 | `GET` | `/health` | Process health check |
 | `GET` | `/ready` | Database, storage and schema readiness check |
 | `GET` | `/metrics` | Prometheus metrics |
+
+Document capability tokens are header-only and expire exactly with the 24-hour Document. The current SPA keeps them only in the active in-memory page session; it does not place them in URLs, browser history or `localStorage`. A reload therefore loses active Document access rather than persisting a secret insecurely. PDF import, bulk retry and real document cancellation are not implemented yet.
 
 ## Local Setup
 
@@ -165,7 +175,7 @@ npm run e2e
 ```text
 backend/      Python API, worker, migrations, OCR and linguistics modules
 frontend/     React SPA, reader components and Playwright tests
-docs/         Version notes and visual artifacts
+docs/         Architecture/contracts, version notes and visual artifacts
 tests/        Backend unit and integration tests
 var/          Local runtime data ignored by Git
 ```

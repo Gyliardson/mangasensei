@@ -21,12 +21,14 @@ import mangasensei
 from mangasensei.application.authorization import PageAuthorizer, ResourceNotFoundError
 from mangasensei.application.document_authorization import DocumentAuthorizer
 from mangasensei.application.document_queries import DocumentQueryService
+from mangasensei.application.document_uploads import DocumentCreateResult, DocumentUploadService
 from mangasensei.application.idempotency import InvalidIdempotencyKeyError
 from mangasensei.application.page_queries import PageQueryService
 from mangasensei.application.reprocessing import (
     AnalysisInProgressError,
     DictionaryProjectionUnavailableError,
     ReprocessIdempotencyConflictError,
+    ReprocessResult,
     ReprocessService,
 )
 from mangasensei.application.uploads import IdempotencyConflictError, UploadResult, UploadService
@@ -39,10 +41,10 @@ from mangasensei.domain.languages import (
 from mangasensei.infrastructure.capabilities import CapabilityService
 from mangasensei.infrastructure.database.session import create_database
 from mangasensei.infrastructure.rate_limits import PostgreSQLRateLimiter
-from mangasensei.storage.images import ImageValidationError, ImageValidator
+from mangasensei.storage.images import ImageValidationError, ImageValidator, ValidatedImage
 from mangasensei.storage.local import LocalFilesystemStorage
 
-_EXPECTED_DATABASE_REVISION = "9c2e7d4a1160"
+_EXPECTED_DATABASE_REVISION = "e2f6a0c84b11"
 _HTTP_REQUESTS = Counter(
     "http_requests",
     "HTTP requests completed by method and status code.",
@@ -68,6 +70,12 @@ class ReprocessRequest(BaseModel):
         if (self.study_language is None) == (self.dictionary_language is None):
             raise ValueError("exactly one reprocessing language axis is required")
         return self
+
+
+class DocumentLimitError(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def _success(data: Any) -> dict[str, Any]:
@@ -96,12 +104,46 @@ def _upload_data(result: UploadResult) -> dict[str, Any]:
     }
 
 
+def _document_data(result: DocumentCreateResult, projection: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "documentId": str(result.document_id),
+        "sourceKind": result.source_kind,
+        "expiresAt": result.expires_at.isoformat(),
+        "orderRevision": result.order_revision,
+        "pages": projection["pages"],
+        "progress": projection["progress"],
+        "capabilities": {
+            "readDocument": result.capabilities.read_document,
+            "readDocumentImage": result.capabilities.read_document_image,
+            "reprocessDocument": result.capabilities.reprocess_document,
+        },
+    }
+
+
+def _reprocess_data(result: ReprocessResult) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "jobId": str(result.job_id),
+        "status": result.status,
+        "studyLanguage": result.study_language,
+        "created": result.created,
+    }
+    if result.requested_dictionary_language is not None:
+        data["requestedDictionaryLanguage"] = result.requested_dictionary_language
+    return data
+
+
 def create_app(settings: Settings) -> FastAPI:
     database_url, capability_peppers = settings.require_runtime_config()
     engine, sessions = create_database(database_url)
     storage = LocalFilesystemStorage(settings.storage_root)
     capability_service = CapabilityService(capability_peppers)
     upload_service = UploadService(
+        sessions=sessions,
+        storage=storage,
+        capability_service=capability_service,
+        idempotency_pepper=capability_peppers[0],
+    )
+    document_upload_service = DocumentUploadService(
         sessions=sessions,
         storage=storage,
         capability_service=capability_service,
@@ -183,6 +225,10 @@ def create_app(settings: Settings) -> FastAPI:
     async def image_error(_: Request, exc: ImageValidationError) -> JSONResponse:
         return JSONResponse(status_code=422, content=_error("invalid_image", str(exc)))
 
+    @app.exception_handler(DocumentLimitError)
+    async def document_limit_error(_: Request, exc: DocumentLimitError) -> JSONResponse:
+        return JSONResponse(status_code=422, content=_error(exc.code, str(exc)))
+
     @app.exception_handler(IdempotencyConflictError)
     async def idempotency_error(_: Request, __: IdempotencyConflictError) -> JSONResponse:
         return JSONResponse(
@@ -260,6 +306,64 @@ def create_app(settings: Settings) -> FastAPI:
         response.status_code = status.HTTP_202_ACCEPTED if result.created else status.HTTP_200_OK
         return _success(_upload_data(result))
 
+    @app.post("/api/v1/documents")
+    async def upload_document(
+        response: Response,
+        images: Annotated[
+            list[UploadFile],
+            File(alias="images[]", description="Ordered static JPEG, PNG or WebP pages"),
+        ],
+        idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+        study_language: Annotated[StudyLanguage, Form(alias="studyLanguage")] = (
+            DEFAULT_STUDY_LANGUAGE
+        ),
+    ) -> dict[str, Any]:
+        if not images:
+            raise DocumentLimitError(
+                "document_empty",
+                "O documento precisa conter ao menos uma imagem.",
+            )
+        if len(images) > settings.max_document_images:
+            raise DocumentLimitError(
+                "document_page_limit_exceeded",
+                f"O documento aceita no máximo {settings.max_document_images} imagens.",
+            )
+        validated_images: list[ValidatedImage] = []
+        filenames: list[str] = []
+        aggregate_bytes = 0
+        aggregate_pixels = 0
+        for upload in images:
+            content = await _read_limited(upload, settings.max_upload_bytes)
+            aggregate_bytes += len(content)
+            if aggregate_bytes > settings.max_document_bytes:
+                raise DocumentLimitError(
+                    "document_byte_limit_exceeded",
+                    "O conjunto de imagens excede o limite agregado de bytes.",
+                )
+            validated = await asyncio.to_thread(
+                validator.validate,
+                content,
+                declared_media_type=upload.content_type or "",
+            )
+            aggregate_pixels += validated.width * validated.height
+            if aggregate_pixels > settings.max_document_pixels:
+                raise DocumentLimitError(
+                    "document_pixel_limit_exceeded",
+                    "O conjunto de imagens excede o limite agregado de pixels.",
+                )
+            validated_images.append(validated)
+            filenames.append(upload.filename or "page")
+
+        result = await document_upload_service.create(
+            images=tuple(validated_images),
+            original_filenames=tuple(filenames),
+            idempotency_key=idempotency_key,
+            study_language=study_language,
+        )
+        projection = await document_queries.get(result.internal_id)
+        response.status_code = status.HTTP_202_ACCEPTED if result.created else status.HTTP_200_OK
+        return _success(_document_data(result, projection))
+
     @app.get("/api/v1/pages/{page_id}/image")
     async def download_image(
         page_id: UUID,
@@ -292,33 +396,14 @@ def create_app(settings: Settings) -> FastAPI:
                 idempotency_key=idempotency_key,
                 dictionary_language=payload.dictionary_language,
             )
-            response.status_code = (
-                status.HTTP_202_ACCEPTED if result.created else status.HTTP_200_OK
+        else:
+            result = await reprocess_service.create(
+                page_id=authorized.internal_id,
+                idempotency_key=idempotency_key,
+                study_language=payload.study_language if payload is not None else None,
             )
-            return _success(
-                {
-                    "jobId": str(result.job_id),
-                    "status": result.status,
-                    "studyLanguage": result.study_language,
-                    "requestedDictionaryLanguage": result.requested_dictionary_language,
-                    "created": result.created,
-                }
-            )
-
-        result = await reprocess_service.create(
-            page_id=authorized.internal_id,
-            idempotency_key=idempotency_key,
-            study_language=payload.study_language if payload is not None else None,
-        )
         response.status_code = status.HTTP_202_ACCEPTED if result.created else status.HTTP_200_OK
-        return _success(
-            {
-                "jobId": str(result.job_id),
-                "status": result.status,
-                "studyLanguage": result.study_language,
-                "created": result.created,
-            }
-        )
+        return _success(_reprocess_data(result))
 
     @app.get("/api/v1/pages/{page_id}")
     async def get_page(
@@ -413,6 +498,35 @@ def create_app(settings: Settings) -> FastAPI:
             },
         )
 
+    @app.post("/api/v1/documents/{document_id}/pages/{page_id}/reprocess")
+    async def reprocess_document_page(
+        response: Response,
+        document_id: UUID,
+        page_id: UUID,
+        document_token: Annotated[str, Header(alias="X-Document-Token")],
+        idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+        payload: Annotated[ReprocessRequest, Body()],
+    ) -> dict[str, Any]:
+        authorized = await document_authorizer.authorize_reprocess(
+            document_id=document_id,
+            page_id=page_id,
+            token=document_token,
+        )
+        if payload.dictionary_language is not None:
+            result = await reprocess_service.create_dictionary_projection(
+                page_id=authorized.internal_id,
+                idempotency_key=idempotency_key,
+                dictionary_language=payload.dictionary_language,
+            )
+        else:
+            result = await reprocess_service.create(
+                page_id=authorized.internal_id,
+                idempotency_key=idempotency_key,
+                study_language=payload.study_language,
+            )
+        response.status_code = status.HTTP_202_ACCEPTED if result.created else status.HTTP_200_OK
+        return _success(_reprocess_data(result))
+
     @app.get("/health")
     async def health() -> dict[str, Any]:
         return _success({"status": "ok", "version": mangasensei.__version__})
@@ -462,7 +576,7 @@ async def _read_limited(upload: UploadFile, maximum: int) -> bytes:
 def _rate_limit_policy(request: Request, settings: Settings) -> tuple[str, int] | None:
     if not request.url.path.startswith("/api/v1/"):
         return None
-    if request.method == "POST" and request.url.path == "/api/v1/pages":
+    if request.method == "POST" and request.url.path in {"/api/v1/pages", "/api/v1/documents"}:
         return "upload", settings.upload_rate_limit_per_minute
     if request.method == "POST" and request.url.path.endswith("/reprocess"):
         return "reprocess", settings.reprocess_rate_limit_per_minute
