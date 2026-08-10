@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import runpy
 from pathlib import Path
 
@@ -50,6 +51,37 @@ def test_spatial_match_reports_candidates_without_plausible_overlap() -> None:
     assert result.matches == ()
     assert result.unmatched_baseline == (0,)
     assert result.unmatched_candidate == (0,)
+
+
+def test_spatial_match_rejects_touching_or_extreme_area_pairs() -> None:
+    baseline = ({"bbox": (0.0, 0.0, 10.0, 10.0)},)
+
+    touching = spatially_match(baseline, ({"bbox": (10.0, 0.0, 20.0, 10.0)},))
+    extreme_area = spatially_match(
+        ({"bbox": (0.0, 0.0, 100.0, 100.0)},),
+        ({"bbox": (99.0, 99.0, 101.0, 101.0)},),
+    )
+
+    assert touching.matches == ()
+    assert extreme_area.matches == ()
+
+
+def test_spatial_match_maximizes_valid_pair_count_before_overlap() -> None:
+    baseline = (
+        {"bbox": (0.0, 0.0, 10.0, 10.0)},
+        {"bbox": (8.0, 0.0, 18.0, 10.0)},
+    )
+    candidate = (
+        {"bbox": (3.0, 0.0, 13.0, 10.0)},
+        {"bbox": (-5.0, 0.0, 5.0, 10.0)},
+    )
+
+    result = spatially_match(baseline, candidate)
+
+    assert tuple((match.baseline_index, match.candidate_index) for match in result.matches) == (
+        (0, 1),
+        (1, 0),
+    )
 
 
 def test_array_delta_characterizes_numeric_change_without_pixel_exact_policy() -> None:
@@ -119,6 +151,19 @@ def test_artifact_root_must_stay_under_ignored_diagnostic_directory(tmp_path: Pa
 
     with pytest.raises(ValueError, match="var/ocr-opencv-ab"):
         validate_artifact_root(repository / "diagnostics", repository_root=repository)
+
+
+def test_fixture_artifact_rejects_windows_or_posix_traversal(tmp_path: Path) -> None:
+    root = tmp_path / "var" / "ocr-opencv-ab" / "probe"
+
+    for fixture_file in ("../outside.jpg", "..\\outside.jpg", "C:\\outside.jpg"):
+        with pytest.raises(ValueError, match="safe relative"):
+            write_fixture_artifact(
+                root,
+                fixture_file=fixture_file,
+                record=_fixture_record(),
+                arrays={},
+            )
 
 
 def test_console_summary_never_contains_ocr_text() -> None:
@@ -228,13 +273,13 @@ def test_probe_comparison_rejects_different_source_or_model_inputs(tmp_path: Pat
         baseline_root,
         fixture_file="v01/synthetic.jpg",
         record=_fixture_record(),
-        arrays={},
+        arrays=_fixture_arrays(),
     )
     candidate_entry = write_fixture_artifact(
         candidate_root,
         fixture_file="v01/synthetic.jpg",
         record=_fixture_record(),
-        arrays={},
+        arrays=_fixture_arrays(),
     )
     write_probe_manifest(
         baseline_root,
@@ -246,6 +291,90 @@ def test_probe_comparison_rejects_different_source_or_model_inputs(tmp_path: Pat
 
     with pytest.raises(ValueError, match="model_manifest_sha256"):
         compare_probe_roots(baseline_root, candidate_root)
+
+
+def test_probe_comparison_rejects_runtime_drift_and_tampered_artifacts(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    baseline_root = repository / "var" / "ocr-opencv-ab" / "opencv-4"
+    candidate_root = repository / "var" / "ocr-opencv-ab" / "opencv-5"
+    baseline_entry = write_fixture_artifact(
+        baseline_root,
+        fixture_file="v01/synthetic.jpg",
+        record=_fixture_record(),
+        arrays=_fixture_arrays(),
+    )
+    candidate_entry = write_fixture_artifact(
+        candidate_root,
+        fixture_file="v01/synthetic.jpg",
+        record=_fixture_record(),
+        arrays=_fixture_arrays(),
+    )
+    write_probe_manifest(
+        baseline_root,
+        metadata=_probe_metadata("4.14.0.94"),
+        fixtures=(baseline_entry,),
+    )
+    changed_runtime = {
+        **_probe_metadata("5.0.0.93"),
+        "runtime": {"python": "3.11.9", "numpy": "different"},
+    }
+    write_probe_manifest(candidate_root, metadata=changed_runtime, fixtures=(candidate_entry,))
+
+    with pytest.raises(ValueError, match="runtime"):
+        compare_probe_roots(baseline_root, candidate_root)
+
+    write_probe_manifest(
+        candidate_root,
+        metadata=_probe_metadata("5.0.0.93"),
+        fixtures=(candidate_entry,),
+    )
+    candidate_record = candidate_root / candidate_entry["record"]
+    candidate_record.write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="artifact checksum"):
+        compare_probe_roots(baseline_root, candidate_root)
+
+
+def test_probe_comparison_reports_final_angle_and_polygon_presence_changes(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    baseline_root = repository / "var" / "ocr-opencv-ab" / "opencv-4"
+    candidate_root = repository / "var" / "ocr-opencv-ab" / "opencv-5"
+    baseline_record = _fixture_record()
+    candidate_record = copy.deepcopy(baseline_record)
+    candidate_final = candidate_record["final_regions"][0]
+    candidate_final["angle"] = 1.0
+    candidate_final["polygon"] = None
+    baseline_entry = write_fixture_artifact(
+        baseline_root,
+        fixture_file="v01/synthetic.jpg",
+        record=baseline_record,
+        arrays=_fixture_arrays(),
+    )
+    candidate_entry = write_fixture_artifact(
+        candidate_root,
+        fixture_file="v01/synthetic.jpg",
+        record=candidate_record,
+        arrays=_fixture_arrays(),
+    )
+    write_probe_manifest(
+        baseline_root,
+        metadata=_probe_metadata("4.14.0.94"),
+        fixtures=(baseline_entry,),
+    )
+    write_probe_manifest(
+        candidate_root,
+        metadata=_probe_metadata("5.0.0.93"),
+        fixtures=(candidate_entry,),
+    )
+
+    comparison = compare_probe_roots(baseline_root, candidate_root)
+    final_comparison = comparison["fixtures"][0]["final_regions"]
+
+    assert final_comparison["angle_change_count"] == 1
+    assert final_comparison["polygon_presence_change_count"] == 1
 
 
 def test_generated_fixture_notice_preserves_terms_and_artifact_warning(tmp_path: Path) -> None:
@@ -309,6 +438,8 @@ def _fixture_record(
         "final_regions": [
             {
                 "bbox": crop_bbox,
+                "polygon": [[crop_bbox[0], crop_bbox[1]], [crop_bbox[2], crop_bbox[3]]],
+                "angle": 0.0,
                 "text": final_text,
                 "confidence": 0.9,
                 "reading_order": 0,
@@ -325,8 +456,19 @@ def _probe_metadata(opencv_distribution: str) -> dict[str, object]:
         "opencv": {
             "distribution_version": opencv_distribution,
             "runtime_version": opencv_distribution.rsplit(".", 1)[0],
+            "build_information_sha256": f"build-{opencv_distribution}",
+            "thread_count": 4,
+            "optimized": True,
         },
+        "runtime": {"python": "3.11.9", "numpy": "2.4.6"},
         "fixture_manifest_sha256": "fixture-manifest-sha",
         "model_manifest_sha256": "model-manifest-sha",
         "ocr_config_digest": "ocr-config-digest",
+    }
+
+
+def _fixture_arrays() -> dict[str, np.ndarray]:
+    return {
+        "detector_db": np.asarray([[0.1, 0.2]], dtype=np.float32),
+        "recognizer_crop_000": np.asarray([[10, 20]], dtype=np.uint8),
     }
