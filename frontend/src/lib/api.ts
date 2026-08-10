@@ -68,10 +68,10 @@ export interface VocabularyItem {
   readonly reading: string;
   readonly meanings: readonly string[];
   readonly source: string;
-  readonly effectiveLanguage: EffectiveDictionaryLanguage;
-  readonly fallbackUsed: boolean;
-  readonly fallbackReason: DictionaryFallbackReason | null;
-  readonly sourceRef: string | null;
+  readonly effectiveLanguage?: EffectiveDictionaryLanguage;
+  readonly fallbackUsed?: boolean;
+  readonly fallbackReason?: DictionaryFallbackReason | null;
+  readonly sourceRef?: string | null;
   readonly jlpt: { readonly level: string; readonly official: false } | null;
 }
 
@@ -106,9 +106,9 @@ export interface StudyPage {
   readonly studyLanguage: StudyLanguage;
   /** Legacy English-only StudyResult field. */
   readonly dictionaryLanguage: "en";
-  readonly requestedDictionaryLanguage: DictionaryLanguage;
-  readonly fallbackDictionaryLanguage: "en";
-  readonly dictionarySources: readonly DictionarySourceReference[];
+  readonly requestedDictionaryLanguage?: DictionaryLanguage;
+  readonly fallbackDictionaryLanguage?: "en";
+  readonly dictionarySources?: readonly DictionarySourceReference[];
   readonly expiresAt: string;
   readonly imageUrl: string;
   readonly dimensions: { readonly width: number; readonly height: number };
