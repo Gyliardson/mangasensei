@@ -6,31 +6,65 @@ const png = Buffer.from(
   "base64",
 );
 
+type StudyLanguage = "pt-BR" | "en";
+
+async function uploadFixture(page: import("@playwright/test").Page) {
+  await page.getByLabel("Imagem da página").setInputFiles({
+    name: "pagina.png",
+    mimeType: "image/png",
+    buffer: png,
+  });
+  await page.getByRole("button", { name: "Analisar página" }).click();
+  await expect(page.getByRole("button", { name: "Região 1: 猫です" })).toBeVisible();
+}
+
 test.beforeEach(async ({ page }) => {
+  let effectiveStudyLanguage: StudyLanguage = "pt-BR";
+
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     if (request.method() === "POST" && url.pathname === "/api/v1/pages") {
-      const englishStudy = (request.postData() ?? "").includes("\r\n\r\nen\r\n");
+      const body = request.postData() ?? "";
+      effectiveStudyLanguage = body.includes("\r\n\r\nen\r\n") ? "en" : "pt-BR";
       await route.fulfill({
         status: 202,
         contentType: "application/json",
         body: JSON.stringify({
           success: true,
           data: {
-            pageId: "page-localization",
-            jobId: "job-localization",
+            pageId: "page-001",
+            jobId: "job-001",
             contentSha256: "a".repeat(64),
             width: 80,
             height: 120,
             mediaType: "image/png",
-            expiresAt: "2026-08-10T18:00:00Z",
-            studyLanguage: englishStudy ? "en" : "pt-BR",
+            expiresAt: "2026-08-09T00:00:00Z",
+            studyLanguage: effectiveStudyLanguage,
             capabilities: {
               readPage: "read-page-token",
               readImage: "read-image-token",
               reprocessPage: "reprocess-token",
             },
+          },
+          error: null,
+        }),
+      });
+      return;
+    }
+    if (request.method() === "POST" && url.pathname.endsWith("/reprocess")) {
+      const payload = request.postDataJSON() as { studyLanguage: StudyLanguage };
+      effectiveStudyLanguage = payload.studyLanguage;
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          data: {
+            jobId: "job-002",
+            status: "pending",
+            studyLanguage: effectiveStudyLanguage,
+            created: true,
           },
           error: null,
         }),
@@ -52,31 +86,32 @@ test.beforeEach(async ({ page }) => {
       });
       return;
     }
+    const english = effectiveStudyLanguage === "en";
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         success: true,
         data: {
-          pageId: "page-localization",
+          pageId: "page-001",
           status: "completed",
           resultAvailable: true,
           contentLanguage: "ja",
-          studyLanguage: "en",
+          studyLanguage: effectiveStudyLanguage,
           dictionaryLanguage: "en",
-          expiresAt: "2026-08-10T18:00:00Z",
-          imageUrl: "/api/v1/pages/page-localization/image",
+          expiresAt: "2026-08-09T00:00:00Z",
+          imageUrl: "/api/v1/pages/page-001/image",
           dimensions: { width: 80, height: 120 },
-          ocr: { detector: "fixture", recognizer: "fixture", upstreamCommit: "fixture" },
+          ocr: { detector: "default", recognizer: "48px", upstreamCommit: "95227a2" },
           error: null,
           regions: [
             {
-              id: "region-localization",
+              id: "region-001",
               text: "猫です",
               rawText: "猫です",
               correctedText: null,
               bbox: { x: 10, y: 20, width: 40, height: 60 },
               normalizedBbox: { x: 0.125, y: 0.1667, width: 0.5, height: 0.5 },
-              polygon: null,
+              polygon: [[10, 20], [50, 20], [50, 80], [10, 80]],
               angle: 0,
               confidence: 0.97,
               readingOrder: 0,
@@ -89,9 +124,9 @@ test.beforeEach(async ({ page }) => {
                   dictionaryId: "jmdict-1467640",
                 },
               ],
-              translation: "It is a cat.",
-              explanation: "A polite nominal sentence.",
-              grammar: ["polite copula"],
+              translation: english ? "It is a cat." : "É um gato.",
+              explanation: english ? "A polite nominal sentence." : "Frase nominal polida.",
+              grammar: [english ? "polite copula" : "cópula polida"],
               vocabulary: [
                 {
                   id: "jmdict-1467640",
@@ -148,7 +183,8 @@ test("persists UI locale independently through a representative reader flow", as
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.getByRole("heading", { name: "Select a region" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Study language" })).toHaveValue("en");
-  await expect(page.getByText("local meanings in English")).toBeVisible();
+  await expect(page.getByText("Requested dictionary: English")).toBeVisible();
+  await expect(page.getByText("cat", { exact: true })).toHaveAttribute("lang", "en");
   await expect(page.locator("#study-title")).toHaveAttribute("lang", "ja");
 
   const accessibility = await new AxeBuilder({ page }).analyze();

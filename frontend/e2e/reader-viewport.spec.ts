@@ -307,10 +307,9 @@ test("keeps page controls sticky only while traversing the manga stage", async (
   await expect(page.getByLabel("Nível de zoom")).toHaveText("200%");
 
   const toolbar = page.getByRole("group", { name: "Apresentação da página" });
-  const stage = page.locator(".page-stage");
   const study = page.locator(".study-panel");
-  const stageTop = await stage.evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
-  await page.evaluate((top) => window.scrollTo(0, top + 220), stageTop);
+  const toolbarTop = await toolbar.evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
+  await page.evaluate((top) => window.scrollTo(0, top + 80), toolbarTop);
   await expect.poll(() => toolbar.evaluate((element) => element.getBoundingClientRect().top)).toBeLessThanOrEqual(14);
   await expect.poll(() => toolbar.evaluate((element) => element.getBoundingClientRect().top)).toBeGreaterThanOrEqual(7);
 

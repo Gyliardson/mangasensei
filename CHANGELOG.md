@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reviewed multilingual JMdict pack registry/bootstrap foundation with independently pinned English and German artifacts, explicit product-to-upstream language mapping, shared-snapshot compatibility checks, and English-preserving CLI defaults.
 - Localized JMdict gloss resolver over canonical lexical identities with complete German hits, explicit exact-form English fallback, unsupported-language provenance, and no cross-language sense splicing.
 - Durable result-scoped JMdict language projections for `en`, `de`, and explicit `pt-BR` → English fallback, with per-vocabulary provenance and dictionary-only local reprojection that reuses canonical linguistic analysis.
+- Independent browser-local `en`/`de`/`pt-BR` dictionary-language preference and reader control, with retained completed results during reprojection, explicit requested/effective language and English-fallback presentation, and real full-stack browser coverage of persisted German reprojection.
 - Deterministic bounded lexical-span acquisition over canonical Sudachi SplitMode.A tokens, with ambiguity-safe JMdict resolution and aligned B/C morphology hypotheses.
 - Root GPL-3.0-only license file and third-party notices.
 - Expanded multilingual portfolio documentation with architecture, setup and API references.

@@ -1,7 +1,17 @@
 import { BookOpenText, Minus, Plus, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import type { StudyPage, StudyRegion, StudyToken } from "../../lib/api";
+import type {
+  DictionarySourceReference,
+  StudyPage,
+  StudyRegion,
+  StudyToken,
+  VocabularyItem,
+} from "../../lib/api";
+import {
+  type DictionaryLanguage,
+  isDictionaryLanguage,
+} from "../../lib/dictionaryLanguage";
 import {
   type StudyLanguage,
   isStudyLanguage,
@@ -29,14 +39,19 @@ import {
 } from "./readerViewportPreference";
 import "./reader-preferences.css";
 
+const EMPTY_DICTIONARY_SOURCES: readonly DictionarySourceReference[] = [];
+
 interface ReaderWorkspaceProps {
   readonly page: StudyPage;
   readonly imageUrl: string;
   readonly uiLocale: UiLocale;
   readonly preferredStudyLanguage: StudyLanguage;
-  readonly studyLanguageUpdating: boolean;
+  readonly preferredDictionaryLanguage: DictionaryLanguage;
+  readonly languageMutation: "study" | "dictionary" | null;
   readonly studyLanguageError: string | null;
+  readonly dictionaryLanguageError: string | null;
   readonly onStudyLanguageChange: (language: StudyLanguage) => void;
+  readonly onDictionaryLanguageChange: (language: DictionaryLanguage) => void;
   readonly onReset: () => void;
 }
 
@@ -45,9 +60,12 @@ export function ReaderWorkspace({
   imageUrl,
   uiLocale,
   preferredStudyLanguage,
-  studyLanguageUpdating,
+  preferredDictionaryLanguage,
+  languageMutation,
   studyLanguageError,
+  dictionaryLanguageError,
   onStudyLanguageChange,
+  onDictionaryLanguageChange,
   onReset,
 }: ReaderWorkspaceProps) {
   const [selectedId, setSelectedId] = useState(page.regions[0]?.id ?? null);
@@ -64,6 +82,9 @@ export function ReaderWorkspace({
   const mobileViewport = isMobileReaderViewport(readerWidth);
   const presentedFitMode = effectiveReaderFitMode(viewportPreference.fitMode, readerWidth);
   const messages = messagesFor(uiLocale);
+  const persistedDictionaryLanguage = page.requestedDictionaryLanguage ?? "en";
+  const dictionarySources = page.dictionarySources ?? EMPTY_DICTIONARY_SOURCES;
+  const languageUpdating = languageMutation !== null;
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -112,9 +133,7 @@ export function ReaderWorkspace({
     canvas.style.width = `${Math.round(canvasWidth)}px`;
     const canPanHorizontally = canvasWidth > viewportMetrics.width + 1;
     setHasHorizontalPan(canPanHorizontally);
-    if (!canPanHorizontally) {
-      viewport.scrollLeft = 0;
-    }
+    if (!canPanHorizontally) viewport.scrollLeft = 0;
   }, [page.dimensions, viewportMetrics, viewportPreference.fitMode, viewportPreference.zoom]);
 
   const changeFuriganaMode = (value: string) => {
@@ -126,6 +145,11 @@ export function ReaderWorkspace({
   const changeStudyLanguage = (value: string) => {
     if (!isStudyLanguage(value)) return;
     onStudyLanguageChange(value);
+  };
+
+  const changeDictionaryLanguage = (value: string) => {
+    if (!isDictionaryLanguage(value)) return;
+    onDictionaryLanguageChange(value);
   };
 
   const changeFitMode = (value: string) => {
@@ -158,18 +182,31 @@ export function ReaderWorkspace({
               className="reader-study-actions"
               role="group"
               aria-label={messages.studyPreferences}
-              aria-busy={studyLanguageUpdating}
+              aria-busy={languageUpdating}
             >
               <label className="reader-preference">
                 <span>{messages.studyLanguageLabel}</span>
                 <select
                   aria-label={messages.studyLanguageLabel}
                   value={preferredStudyLanguage}
-                  disabled={studyLanguageUpdating}
+                  disabled={languageUpdating}
                   onChange={(event) => changeStudyLanguage(event.currentTarget.value)}
                 >
                   <option value="pt-BR">{messages.studyLanguageName("pt-BR")}</option>
                   <option value="en">{messages.studyLanguageName("en")}</option>
+                </select>
+              </label>
+              <label className="reader-preference">
+                <span>{messages.dictionaryLanguageLabel}</span>
+                <select
+                  aria-label={messages.dictionaryLanguageLabel}
+                  value={preferredDictionaryLanguage}
+                  disabled={languageUpdating}
+                  onChange={(event) => changeDictionaryLanguage(event.currentTarget.value)}
+                >
+                  <option value="en">{messages.dictionaryLanguageName("en")}</option>
+                  <option value="de">{messages.dictionaryLanguageName("de")}</option>
+                  <option value="pt-BR">{messages.dictionaryLanguageName("pt-BR")}</option>
                 </select>
               </label>
               <label className="reader-preference">
@@ -193,7 +230,7 @@ export function ReaderWorkspace({
           </div>
         </div>
 
-        {studyLanguageUpdating && preferredStudyLanguage !== page.studyLanguage ? (
+        {languageMutation === "study" && preferredStudyLanguage !== page.studyLanguage ? (
           <p className="study-language-feedback" role="status">
             {messages.updatingStudyLanguage(
               messages.studyLanguageName(preferredStudyLanguage),
@@ -201,9 +238,23 @@ export function ReaderWorkspace({
             )}
           </p>
         ) : null}
+        {languageMutation === "dictionary" && preferredDictionaryLanguage !== persistedDictionaryLanguage ? (
+          <p className="study-language-feedback" role="status">
+            {messages.updatingDictionaryLanguage(
+              messages.dictionaryLanguageName(preferredDictionaryLanguage),
+              messages.dictionaryLanguageName(persistedDictionaryLanguage),
+            )}
+          </p>
+        ) : null}
         {studyLanguageError ? (
           <p className="study-language-feedback study-language-error" role="alert">
             {studyLanguageError} {messages.retainedStudyLanguage(messages.studyLanguageName(page.studyLanguage))}
+          </p>
+        ) : null}
+        {dictionaryLanguageError ? (
+          <p className="study-language-feedback study-language-error" role="alert">
+            {dictionaryLanguageError}{" "}
+            {messages.retainedDictionaryLanguage(messages.dictionaryLanguageName(persistedDictionaryLanguage))}
           </p>
         ) : null}
 
@@ -301,7 +352,8 @@ export function ReaderWorkspace({
         region={selected}
         furiganaMode={furiganaMode}
         studyLanguage={page.studyLanguage}
-        dictionaryLanguage={page.dictionaryLanguage}
+        requestedDictionaryLanguage={persistedDictionaryLanguage}
+        dictionarySources={dictionarySources}
         messages={messages}
       />
     </main>
@@ -349,13 +401,15 @@ function StudyPanel({
   region,
   furiganaMode,
   studyLanguage,
-  dictionaryLanguage,
+  requestedDictionaryLanguage,
+  dictionarySources,
   messages,
 }: {
   readonly region: StudyRegion | undefined;
   readonly furiganaMode: FuriganaMode;
   readonly studyLanguage: StudyLanguage;
-  readonly dictionaryLanguage: "en";
+  readonly requestedDictionaryLanguage: DictionaryLanguage;
+  readonly dictionarySources: readonly DictionarySourceReference[];
   readonly messages: UiMessages;
 }) {
   if (!region) {
@@ -394,20 +448,24 @@ function StudyPanel({
       </section>
 
       <section aria-labelledby="vocabulary-title">
-        <p className="panel-label" id="vocabulary-title">
-          {messages.vocabulary} <span className="panel-language-note">{messages.dictionaryEnglishNote}</span>
+        <p className="panel-label" id="vocabulary-title">{messages.vocabulary}</p>
+        <p className="dictionary-requested-note">
+          {messages.dictionaryRequestedNote(messages.dictionaryLanguageName(requestedDictionaryLanguage))}
         </p>
+        {requestedDictionaryLanguage === "pt-BR" ? (
+          <p className="dictionary-fallback-notice" role="note">
+            {messages.unsupportedPortugueseDictionary}
+          </p>
+        ) : null}
         {region.vocabulary.length > 0 ? (
           <ul className="vocabulary-list">
             {region.vocabulary.map((item) => (
-              <li key={`${item.id}|${item.lemma}|${item.reading}`}>
-                <div>
-                  <strong lang="ja">{item.lemma}</strong>
-                  <span lang="ja">{item.reading}</span>
-                </div>
-                <p lang={dictionaryLanguage}>{item.meanings.join("; ")}</p>
-                <small>{item.source}{item.jlpt ? ` · ${messages.unofficialJlpt(item.jlpt.level)}` : ""}</small>
-              </li>
+              <VocabularyCard
+                key={`${item.id}|${item.lemma}|${item.reading}`}
+                item={item}
+                dictionarySources={dictionarySources}
+                messages={messages}
+              />
             ))}
           </ul>
         ) : <p className="muted-panel">{messages.noDictionaryMatch}</p>}
@@ -425,6 +483,42 @@ function StudyPanel({
   );
 }
 
+function VocabularyCard({
+  item,
+  dictionarySources,
+  messages,
+}: {
+  readonly item: VocabularyItem;
+  readonly dictionarySources: readonly DictionarySourceReference[];
+  readonly messages: UiMessages;
+}) {
+  const effectiveLanguage = item.effectiveLanguage ?? "en";
+  const fallbackUsed = item.fallbackUsed ?? false;
+  const source = item.sourceRef
+    ? dictionarySources.find((candidate) => candidate.ref === item.sourceRef)
+    : undefined;
+
+  return (
+    <li>
+      <div>
+        <strong lang="ja">{item.lemma}</strong>
+        <span lang="ja">{item.reading}</span>
+      </div>
+      <p lang={effectiveLanguage}>{item.meanings.join("; ")}</p>
+      {fallbackUsed ? <span className="dictionary-fallback-badge">{messages.englishFallbackBadge}</span> : null}
+      <small>
+        {source
+          ? messages.dictionaryProvenance(
+            source.dataset,
+            messages.dictionaryLanguageName(source.productLanguage),
+          )
+          : item.source}
+        {item.jlpt ? ` · ${messages.unofficialJlpt(item.jlpt.level)}` : ""}
+      </small>
+    </li>
+  );
+}
+
 function RubyToken({
   token,
   furiganaMode,
@@ -433,8 +527,6 @@ function RubyToken({
   readonly furiganaMode: FuriganaMode;
 }) {
   const reading = furiganaReading(token.surface, token.reading, furiganaMode);
-  if (!reading) {
-    return <span>{token.surface}</span>;
-  }
+  if (!reading) return <span>{token.surface}</span>;
   return <ruby>{token.surface}<rp>（</rp><rt>{reading}</rt><rp>）</rp></ruby>;
 }

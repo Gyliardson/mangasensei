@@ -68,12 +68,30 @@
   background: rgb(154 43 50 / 7%);
 }
 
-.panel-language-note {
-  margin-left: 0.35rem;
+.dictionary-requested-note,
+.dictionary-fallback-notice {
+  margin: 0.35rem 0 0.75rem;
   color: var(--muted);
-  font-size: 0.9em;
-  letter-spacing: normal;
-  text-transform: none;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.dictionary-fallback-notice {
+  padding: 0.65rem 0.75rem;
+  border-left: 3px solid var(--blue);
+  background: rgb(36 74 87 / 6%);
+}
+
+.dictionary-fallback-badge {
+  display: inline-flex;
+  width: fit-content;
+  margin: 0.15rem 0 0.35rem;
+  padding: 0.18rem 0.42rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
 }
 
 .page-presentation-toolbar {
@@ -172,7 +190,7 @@
   }
 
   .reader-header-actions {
-    max-width: 36rem;
+    max-width: 44rem;
   }
 }
 
@@ -197,6 +215,10 @@
     display: grid;
     align-items: stretch;
     gap: 0.25rem;
+  }
+
+  .reader-study-actions .reader-preference:nth-child(3) {
+    grid-column: 1 / -1;
   }
 
   .reader-study-actions .reader-preference select {

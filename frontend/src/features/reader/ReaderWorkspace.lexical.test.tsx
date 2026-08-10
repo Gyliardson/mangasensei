@@ -75,9 +75,12 @@ describe("ReaderWorkspace lexical identity", () => {
         imageUrl="fixture-image"
         uiLocale="pt-BR"
         preferredStudyLanguage="pt-BR"
-        studyLanguageUpdating={false}
+        preferredDictionaryLanguage="en"
+        languageMutation={null}
         studyLanguageError={null}
+        dictionaryLanguageError={null}
         onStudyLanguageChange={noop}
+        onDictionaryLanguageChange={noop}
         onReset={noop}
       />,
     );
@@ -86,9 +89,7 @@ describe("ReaderWorkspace lexical identity", () => {
     expect(screen.getByText("表記二")).toBeVisible();
     expect(screen.getByText("first form")).toBeVisible();
     expect(screen.getByText("second form")).toBeVisible();
-    for (const element of screen.getAllByText("なんとか")) {
-      expect(element).toBeVisible();
-    }
+    for (const element of screen.getAllByText("なんとか")) expect(element).toBeVisible();
     expect(screen.getByText("somehow")).toBeVisible();
   });
 });

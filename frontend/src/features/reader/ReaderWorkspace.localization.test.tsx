@@ -62,9 +62,12 @@ function workspace(uiLocale: "en" | "pt-BR") {
       imageUrl="fixture-image"
       uiLocale={uiLocale}
       preferredStudyLanguage="pt-BR"
-      studyLanguageUpdating={false}
+      preferredDictionaryLanguage="en"
+      languageMutation={null}
       studyLanguageError={null}
+      dictionaryLanguageError={null}
       onStudyLanguageChange={vi.fn()}
+      onDictionaryLanguageChange={vi.fn()}
       onReset={vi.fn()}
     />
   );
@@ -77,12 +80,14 @@ describe("ReaderWorkspace UI localization", () => {
     expect(screen.getByRole("heading", { name: "Select a region" })).toBeVisible();
     expect(screen.getByRole("group", { name: "Study preferences" })).toBeVisible();
     expect(screen.getByRole("combobox", { name: "Study language" })).toHaveValue("pt-BR");
+    expect(screen.getByRole("combobox", { name: "Dictionary language" })).toHaveValue("en");
     expect(screen.getByRole("button", { name: "Region 1: 猫です" })).toBeVisible();
     expect(screen.getByRole("button", { name: "New page" })).toBeVisible();
     expect(screen.getByRole("heading", { name: /猫/ })).toHaveAttribute("lang", "ja");
+    expect(screen.getByText("ネコ")).toHaveAttribute("lang", "ja");
     expect(screen.getByText("É um gato.")).toHaveAttribute("lang", "pt-BR");
     expect(screen.getByText("cat")).toHaveAttribute("lang", "en");
-    expect(screen.getByText("local meanings in English")).toBeVisible();
+    expect(screen.getByText("Requested dictionary: English")).toBeVisible();
   });
 
   it("renders Brazilian Portuguese reader chrome without changing semantic language annotations", () => {
@@ -91,11 +96,12 @@ describe("ReaderWorkspace UI localization", () => {
     expect(screen.getByRole("heading", { name: "Selecione uma região" })).toBeVisible();
     expect(screen.getByRole("group", { name: "Preferências de estudo" })).toBeVisible();
     expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("pt-BR");
+    expect(screen.getByRole("combobox", { name: "Idioma do dicionário" })).toHaveValue("en");
     expect(screen.getByRole("button", { name: "Região 1: 猫です" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Nova página" })).toBeVisible();
     expect(screen.getByRole("heading", { name: /猫/ })).toHaveAttribute("lang", "ja");
     expect(screen.getByText("É um gato.")).toHaveAttribute("lang", "pt-BR");
     expect(screen.getByText("cat")).toHaveAttribute("lang", "en");
-    expect(screen.getByText("significados locais em inglês")).toBeVisible();
+    expect(screen.getByText("Dicionário solicitado: Inglês")).toBeVisible();
   });
 });
