@@ -1,1 +1,712 @@
-{"schemaVersion":"1.0.0","page":{"id":"msdemo-003-laboratory","imageSha256":"__IMAGE_SHA256__","width":1440,"height":2048,"split":"public-validation","license":"CC-BY-4.0","provenanceRef":"../manifest.json"},"regions":[{"id":"p3-r001","geometry":{"bbox":{"x":88,"y":88,"width":490,"height":94},"polygon":[[88,88],[578,88],[578,182],[88,182]]},"transcription":{"raw":"週末の研究室は静かだった。","normalization":"strict-nfc-v1"},"orientation":"horizontal-ltr","textRole":"narration","textForm":"base","readingOrder":{"position":0,"scored":true},"difficultCaseTags":["similar-glyph","dense-layout"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p3-r002","geometry":{"bbox":{"x":910,"y":110,"width":340,"height":100},"polygon":[[910,110],[1250,110],[1250,210],[910,210]]},"transcription":{"raw":"森博士","normalization":"strict-nfc-v1"},"orientation":"horizontal-ltr","textRole":"environmental","textForm":"base","readingOrder":{"position":1,"scored":true},"difficultCaseTags":["environmental","similar-glyph"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p3-r003","geometry":{"bbox":{"x":1040,"y":245,"width":268,"height":84},"polygon":[[1040,245],[1308,245],[1308,329],[1040,329]]},"transcription":{"raw":"研究室","normalization":"strict-nfc-v1"},"orientation":"horizontal-ltr","textRole":"environmental","textForm":"base","readingOrder":{"position":2,"scored":true},"difficultCaseTags":["environmental"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p3-r010","geometry":{"bbox":{"x":990,"y":1285,"width":265,"height":80},"polygon":[[990,1285],[1255,1285],[1255,1365],[990,1365]]},"transcription":{"raw":"試作機B-07","normalization":"strict-nfc-v1"},"orientation":"horizontal-ltr","textRole":"environmental","textForm":"base","readingOrder":{"position":3,"scored":true},"difficultCaseTags":["mixed-script","digits-punctuation","environmental"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p3-r011","geometry":{"bbox":{"x":780,"y":1250,"width":120,"height":90},"polygon":[[780,1250],[900,1250],[900,1340],[780,1340]]},"transcription":{"raw":"ピッ","normalization":"strict-nfc-v1"},"orientation":"angled","textRole":"sfx","textForm":"base","readingOrder":{"position":4,"scored":true},"difficultCaseTags":["sfx-stylized","small-text"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p3-r004","geometry":{"bbox":{"x":570,"y":705,"width":70,"height":390},"polygon":[[570,705],[640,705],[640,1095],[570,1095]]},"transcription":{"raw":"博士は土曜日も来るの？","normalization":"strict-nfc-v1"},"orientation":"vertical-rl","textRole":"dialogue","textForm":"base","readingOrder":{"position":5,"scored":true},"difficultCaseTags":["similar-glyph","digits-punctuation"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p3-r005","geometry":{"bbox":{"x":125,"y":790,"width":70,"height":475},"polygon":[[125,790],[195,790],[195,1265],[125,1265]]},"transcription":{"raw":"ロボット室の入口はこっち。","normalization":"strict-nfc-v1"},"orientation":"vertical-rl","textRole":"dialogue","textForm":"base","readingOrder":{"position":6,"scored":true},"difficultCaseTags":["similar-glyph","mixed-script"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p3-r009","geometry":{"bbox":{"x":1280,"y":1590,"width":72,"height":105},"polygon":[[1280,1590],[1352,1590],[1352,1695],[1280,1695]]},"transcription":{"raw":"ん？","normalization":"strict-nfc-v1"},"orientation":"vertical-rl","textRole":"dialogue","textForm":"base","readingOrder":{"position":7,"scored":true},"difficultCaseTags":["small-text","digits-punctuation"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p3-r006","geometry":{"bbox":{"x":760,"y":1480,"width":75,"height":420},"polygon":[[760,1480],[835,1480],[835,1900],[760,1900]]},"transcription":{"raw":"古い装置がまだ動いている。","normalization":"strict-nfc-v1"},"orientation":"vertical-rl","textRole":"dialogue","textForm":"base","readingOrder":{"position":8,"scored":true},"difficultCaseTags":["furigana"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p3-r007","geometry":{"bbox":{"x":815,"y":1545,"width":32,"height":120},"polygon":[[815,1545],[847,1545],[847,1665],[815,1665]]},"transcription":{"raw":"そうち","normalization":"strict-nfc-v1"},"orientation":"vertical-rl","textRole":"dialogue","textForm":"ruby","readingOrder":{"position":null,"scored":false},"difficultCaseTags":["furigana","small-text"],"scoring":{"detection":true,"recognition":true,"readingOrder":false}},{"id":"p3-r008","geometry":{"bbox":{"x":345,"y":1490,"width":80,"height":430},"polygon":[[345,1490],[425,1490],[425,1920],[345,1920]]},"transcription":{"raw":"これは絶対に押さないで。","normalization":"strict-nfc-v1"},"orientation":"vertical-rl","textRole":"dialogue","textForm":"base","readingOrder":{"position":9,"scored":true},"difficultCaseTags":["detached-emphasis","similar-glyph"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}}],"furiganaRelations":[{"id":"p3-f001","rubyRegionId":"p3-r007","baseRegionId":"p3-r006","baseTextSpan":{"start":2,"end":4},"reading":"そうち"}],"presentationMarks":[{"id":"p3-pm001","kind":"boten","associatedRegionId":"p3-r008","baseTextSpan":{"start":3,"end":5},"geometry":{"bbox":{"x":410,"y":1600,"width":24,"height":70},"polygon":[[410,1600],[434,1600],[434,1670],[410,1670]]},"transcriptionEffect":"none","challengeTags":["detached-emphasis"]}],"negativeZones":[{"id":"p3-n001-control-grid","kind":"graphic-text-confusable","geometry":{"bbox":{"x":825,"y":1045,"width":350,"height":220},"polygon":[[825,1045],[1175,1045],[1175,1265],[825,1265]]},"expected":"no-text-region","challengeTags":["graphic-text-confusable"]},{"id":"p3-n002-vent","kind":"graphic-text-confusable","geometry":{"bbox":{"x":1200,"y":1045,"width":110,"height":220},"polygon":[[1200,1045],[1310,1045],[1310,1265],[1200,1265]]},"expected":"no-text-region","challengeTags":["graphic-text-confusable"]}],"readingOrderContract":{"kind":"total","sequence":["p3-r001","p3-r002","p3-r003","p3-r010","p3-r011","p3-r004","p3-r005","p3-r009","p3-r006","p3-r008"]},"review":{"status":"source-intent-reviewed","revision":1,"groundTruthSource":"project-authored-svg-source-intent","reviewers":[{"id":"assistant-source-review","kind":"automated"}],"adjudication":{"status":"not-required","adjudicator":null,"notes":"No annotation disagreement recorded in v1 authoring."},"languageReview":{"status":"reviewed-no-uncertain-lines","reviewer":"assistant-source-review","humanNativeReviewClaimed":false},"ocrConsultedDuringAuthoring":false}}
+{
+  "schemaVersion": "1.0.0",
+  "page": {
+    "id": "msdemo-003-laboratory",
+    "imageSha256": "8585c8dbf102ae6bb2677c6d79426c696987e22c49331e6cad74805bbb5e8358",
+    "width": 1440,
+    "height": 2048,
+    "split": "public-validation",
+    "license": "CC-BY-4.0",
+    "provenanceRef": "../manifest.json"
+  },
+  "regions": [
+    {
+      "id": "p3-r001",
+      "geometry": {
+        "bbox": {
+          "x": 88,
+          "y": 88,
+          "width": 490,
+          "height": 94
+        },
+        "polygon": [
+          [
+            88,
+            88
+          ],
+          [
+            578,
+            88
+          ],
+          [
+            578,
+            182
+          ],
+          [
+            88,
+            182
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "週末の研究室は静かだった。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "horizontal-ltr",
+      "textRole": "narration",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 0,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "similar-glyph",
+        "dense-layout"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p3-r002",
+      "geometry": {
+        "bbox": {
+          "x": 910,
+          "y": 110,
+          "width": 340,
+          "height": 100
+        },
+        "polygon": [
+          [
+            910,
+            110
+          ],
+          [
+            1250,
+            110
+          ],
+          [
+            1250,
+            210
+          ],
+          [
+            910,
+            210
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "森博士",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "horizontal-ltr",
+      "textRole": "environmental",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 1,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "environmental",
+        "similar-glyph"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p3-r003",
+      "geometry": {
+        "bbox": {
+          "x": 1040,
+          "y": 245,
+          "width": 268,
+          "height": 84
+        },
+        "polygon": [
+          [
+            1040,
+            245
+          ],
+          [
+            1308,
+            245
+          ],
+          [
+            1308,
+            329
+          ],
+          [
+            1040,
+            329
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "研究室",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "horizontal-ltr",
+      "textRole": "environmental",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 2,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "environmental"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p3-r010",
+      "geometry": {
+        "bbox": {
+          "x": 990,
+          "y": 1285,
+          "width": 265,
+          "height": 80
+        },
+        "polygon": [
+          [
+            990,
+            1285
+          ],
+          [
+            1255,
+            1285
+          ],
+          [
+            1255,
+            1365
+          ],
+          [
+            990,
+            1365
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "試作機B-07",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "horizontal-ltr",
+      "textRole": "environmental",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 3,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "mixed-script",
+        "digits-punctuation",
+        "environmental"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p3-r011",
+      "geometry": {
+        "bbox": {
+          "x": 780,
+          "y": 1250,
+          "width": 120,
+          "height": 90
+        },
+        "polygon": [
+          [
+            780,
+            1250
+          ],
+          [
+            900,
+            1250
+          ],
+          [
+            900,
+            1340
+          ],
+          [
+            780,
+            1340
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "ピッ",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "angled",
+      "textRole": "sfx",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 4,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "sfx-stylized",
+        "small-text"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p3-r004",
+      "geometry": {
+        "bbox": {
+          "x": 570,
+          "y": 705,
+          "width": 70,
+          "height": 390
+        },
+        "polygon": [
+          [
+            570,
+            705
+          ],
+          [
+            640,
+            705
+          ],
+          [
+            640,
+            1095
+          ],
+          [
+            570,
+            1095
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "博士は土曜日も来るの？",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 5,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "similar-glyph",
+        "digits-punctuation"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p3-r005",
+      "geometry": {
+        "bbox": {
+          "x": 125,
+          "y": 790,
+          "width": 70,
+          "height": 475
+        },
+        "polygon": [
+          [
+            125,
+            790
+          ],
+          [
+            195,
+            790
+          ],
+          [
+            195,
+            1265
+          ],
+          [
+            125,
+            1265
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "ロボット室の入口はこっち。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 6,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "similar-glyph",
+        "mixed-script"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p3-r009",
+      "geometry": {
+        "bbox": {
+          "x": 1280,
+          "y": 1590,
+          "width": 72,
+          "height": 105
+        },
+        "polygon": [
+          [
+            1280,
+            1590
+          ],
+          [
+            1352,
+            1590
+          ],
+          [
+            1352,
+            1695
+          ],
+          [
+            1280,
+            1695
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "ん？",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 7,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "small-text",
+        "digits-punctuation"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p3-r006",
+      "geometry": {
+        "bbox": {
+          "x": 760,
+          "y": 1480,
+          "width": 75,
+          "height": 420
+        },
+        "polygon": [
+          [
+            760,
+            1480
+          ],
+          [
+            835,
+            1480
+          ],
+          [
+            835,
+            1900
+          ],
+          [
+            760,
+            1900
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "古い装置がまだ動いている。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 8,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "furigana"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p3-r007",
+      "geometry": {
+        "bbox": {
+          "x": 815,
+          "y": 1545,
+          "width": 32,
+          "height": 120
+        },
+        "polygon": [
+          [
+            815,
+            1545
+          ],
+          [
+            847,
+            1545
+          ],
+          [
+            847,
+            1665
+          ],
+          [
+            815,
+            1665
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "そうち",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "ruby",
+      "readingOrder": {
+        "position": null,
+        "scored": false
+      },
+      "difficultCaseTags": [
+        "furigana",
+        "small-text"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": false
+      }
+    },
+    {
+      "id": "p3-r008",
+      "geometry": {
+        "bbox": {
+          "x": 345,
+          "y": 1490,
+          "width": 80,
+          "height": 430
+        },
+        "polygon": [
+          [
+            345,
+            1490
+          ],
+          [
+            425,
+            1490
+          ],
+          [
+            425,
+            1920
+          ],
+          [
+            345,
+            1920
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "これは絶対に押さないで。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 9,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "detached-emphasis",
+        "similar-glyph"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    }
+  ],
+  "furiganaRelations": [
+    {
+      "id": "p3-f001",
+      "rubyRegionId": "p3-r007",
+      "baseRegionId": "p3-r006",
+      "baseTextSpan": {
+        "start": 2,
+        "end": 4
+      },
+      "reading": "そうち"
+    }
+  ],
+  "presentationMarks": [
+    {
+      "id": "p3-pm001",
+      "kind": "boten",
+      "associatedRegionId": "p3-r008",
+      "baseTextSpan": {
+        "start": 3,
+        "end": 5
+      },
+      "geometry": {
+        "bbox": {
+          "x": 410,
+          "y": 1600,
+          "width": 24,
+          "height": 70
+        },
+        "polygon": [
+          [
+            410,
+            1600
+          ],
+          [
+            434,
+            1600
+          ],
+          [
+            434,
+            1670
+          ],
+          [
+            410,
+            1670
+          ]
+        ]
+      },
+      "transcriptionEffect": "none",
+      "challengeTags": [
+        "detached-emphasis"
+      ]
+    }
+  ],
+  "negativeZones": [
+    {
+      "id": "p3-n001-control-grid",
+      "kind": "graphic-text-confusable",
+      "geometry": {
+        "bbox": {
+          "x": 825,
+          "y": 1045,
+          "width": 350,
+          "height": 220
+        },
+        "polygon": [
+          [
+            825,
+            1045
+          ],
+          [
+            1175,
+            1045
+          ],
+          [
+            1175,
+            1265
+          ],
+          [
+            825,
+            1265
+          ]
+        ]
+      },
+      "expected": "no-text-region",
+      "challengeTags": [
+        "graphic-text-confusable"
+      ]
+    },
+    {
+      "id": "p3-n002-vent",
+      "kind": "graphic-text-confusable",
+      "geometry": {
+        "bbox": {
+          "x": 1200,
+          "y": 1045,
+          "width": 110,
+          "height": 220
+        },
+        "polygon": [
+          [
+            1200,
+            1045
+          ],
+          [
+            1310,
+            1045
+          ],
+          [
+            1310,
+            1265
+          ],
+          [
+            1200,
+            1265
+          ]
+        ]
+      },
+      "expected": "no-text-region",
+      "challengeTags": [
+        "graphic-text-confusable"
+      ]
+    }
+  ],
+  "readingOrderContract": {
+    "kind": "total",
+    "sequence": [
+      "p3-r001",
+      "p3-r002",
+      "p3-r003",
+      "p3-r010",
+      "p3-r011",
+      "p3-r004",
+      "p3-r005",
+      "p3-r009",
+      "p3-r006",
+      "p3-r008"
+    ]
+  },
+  "review": {
+    "status": "source-intent-reviewed",
+    "revision": 1,
+    "groundTruthSource": "project-authored-svg-source-intent",
+    "reviewers": [
+      {
+        "id": "assistant-source-review",
+        "kind": "automated"
+      }
+    ],
+    "adjudication": {
+      "status": "not-required",
+      "adjudicator": null,
+      "notes": "No annotation disagreement recorded in v1 authoring."
+    },
+    "languageReview": {
+      "status": "reviewed-no-uncertain-lines",
+      "reviewer": "assistant-source-review",
+      "humanNativeReviewClaimed": false
+    },
+    "ocrConsultedDuringAuthoring": false
+  }
+}

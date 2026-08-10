@@ -19,5 +19,5 @@
     "compressLevel": 9
   },
   "sourceFormat": "SVG 1.1-compatible XML with deterministic Japanese text/vector layers",
-  "renderedChromiumVersion": "__CHROMIUM_VERSION__"
+  "renderedChromiumVersion": "151.0.7922.34"
 }

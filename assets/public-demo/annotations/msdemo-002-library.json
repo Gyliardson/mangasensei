@@ -1,1 +1,690 @@
-{"schemaVersion":"1.0.0","page":{"id":"msdemo-002-library","imageSha256":"__IMAGE_SHA256__","width":1440,"height":2048,"split":"public-validation","license":"CC-BY-4.0","provenanceRef":"../manifest.json"},"regions":[{"id":"p2-r001","geometry":{"bbox":{"x":784,"y":84,"width":350,"height":92},"polygon":[[784,84],[1134,84],[1134,176],[784,176]]},"transcription":{"raw":"放課後、図書室。","normalization":"strict-nfc-v1"},"orientation":"horizontal-ltr","textRole":"narration","textForm":"base","readingOrder":{"position":0,"scored":true},"difficultCaseTags":["dense-layout"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p2-r002","geometry":{"bbox":{"x":1260,"y":165,"width":70,"height":420},"polygon":[[1260,165],[1330,165],[1330,585],[1260,585]]},"transcription":{"raw":"このメモ、見覚えある？","normalization":"strict-nfc-v1"},"orientation":"vertical-rl","textRole":"dialogue","textForm":"base","readingOrder":{"position":1,"scored":true},"difficultCaseTags":["dense-layout"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p2-r006","geometry":{"bbox":{"x":900,"y":735,"width":190,"height":70},"polygon":[[900,735],[1090,735],[1090,805],[900,805]]},"transcription":{"raw":"青い鍵","normalization":"strict-nfc-v1"},"orientation":"horizontal-ltr","textRole":"environmental","textForm":"base","readingOrder":{"position":2,"scored":true},"difficultCaseTags":["environmental"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p2-r003","geometry":{"bbox":{"x":560,"y":155,"width":80,"height":110},"polygon":[[560,155],[640,155],[640,265],[560,265]]},"transcription":{"raw":"え？","normalization":"strict-nfc-v1"},"orientation":"vertical-rl","textRole":"dialogue","textForm":"base","readingOrder":{"position":3,"scored":true},"difficultCaseTags":["small-text"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p2-r004","geometry":{"bbox":{"x":390,"y":712,"width":214,"height":74},"polygon":[[390,712],[604,712],[604,786],[390,786]]},"transcription":{"raw":"返却口","normalization":"strict-nfc-v1"},"orientation":"horizontal-ltr","textRole":"environmental","textForm":"base","readingOrder":{"position":4,"scored":true},"difficultCaseTags":["environmental"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p2-r005","geometry":{"bbox":{"x":520,"y":525,"width":70,"height":390},"polygon":[[520,525],[590,525],[590,915],[520,915]]},"transcription":{"raw":"昨日、机の下で拾ったんだ。","normalization":"strict-nfc-v1"},"orientation":"vertical-rl","textRole":"dialogue","textForm":"base","readingOrder":{"position":5,"scored":true},"difficultCaseTags":["dense-layout"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p2-r007","geometry":{"bbox":{"x":1270,"y":1025,"width":65,"height":500},"polygon":[[1270,1025],[1335,1025],[1335,1525],[1270,1525]]},"transcription":{"raw":"「青い鍵」って書いてある。","normalization":"strict-nfc-v1"},"orientation":"vertical-rl","textRole":"dialogue","textForm":"base","readingOrder":{"position":6,"scored":true},"difficultCaseTags":["digits-punctuation","dense-layout"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p2-r008","geometry":{"bbox":{"x":835,"y":1195,"width":70,"height":475},"polygon":[[835,1195],[905,1195],[905,1670],[835,1670]]},"transcription":{"raw":"鍵なら資料室の前で見たよ。","normalization":"strict-nfc-v1"},"orientation":"vertical-rl","textRole":"dialogue","textForm":"base","readingOrder":{"position":7,"scored":true},"difficultCaseTags":["dense-layout"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p2-r010","geometry":{"bbox":{"x":1120,"y":1720,"width":150,"height":90},"polygon":[[1120,1720],[1270,1720],[1270,1810],[1120,1810]]},"transcription":{"raw":"カチッ","normalization":"strict-nfc-v1"},"orientation":"angled","textRole":"sfx","textForm":"base","readingOrder":{"position":8,"scored":true},"difficultCaseTags":["sfx-stylized"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p2-r009","geometry":{"bbox":{"x":120,"y":1070,"width":234,"height":90},"polygon":[[120,1070],[354,1070],[354,1160],[120,1160]]},"transcription":{"raw":"資料室","normalization":"strict-nfc-v1"},"orientation":"horizontal-ltr","textRole":"environmental","textForm":"base","readingOrder":{"position":9,"scored":true},"difficultCaseTags":["environmental"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p2-r011","geometry":{"bbox":{"x":555,"y":1095,"width":70,"height":330},"polygon":[[555,1095],[625,1095],[625,1425],[555,1425]]},"transcription":{"raw":"じゃあ、行ってみよう。","normalization":"strict-nfc-v1"},"orientation":"vertical-rl","textRole":"dialogue","textForm":"base","readingOrder":{"position":10,"scored":true},"difficultCaseTags":["dense-layout"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p2-r012","geometry":{"bbox":{"x":115,"y":1175,"width":75,"height":625},"polygon":[[115,1175],[190,1175],[190,1800],[115,1800]]},"transcription":{"raw":"急ごう。閉館まであと10分しかない。","normalization":"strict-nfc-v1"},"orientation":"vertical-rl","textRole":"dialogue","textForm":"base","readingOrder":{"position":11,"scored":true},"difficultCaseTags":["digits-punctuation","dense-layout"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}},{"id":"p2-r013","geometry":{"bbox":{"x":390,"y":1774,"width":220,"height":105},"polygon":[[390,1774],[610,1774],[610,1879],[390,1879]]},"transcription":{"raw":"18:50","normalization":"strict-nfc-v1"},"orientation":"horizontal-ltr","textRole":"environmental","textForm":"base","readingOrder":{"position":12,"scored":true},"difficultCaseTags":["environmental","digits-punctuation"],"scoring":{"detection":true,"recognition":true,"readingOrder":true}}],"furiganaRelations":[],"presentationMarks":[],"negativeZones":[],"readingOrderContract":{"kind":"total","sequence":["p2-r001","p2-r002","p2-r006","p2-r003","p2-r004","p2-r005","p2-r007","p2-r008","p2-r010","p2-r009","p2-r011","p2-r012","p2-r013"],"panelSequence":["upper-right","upper-left","lower-right","lower-left"]},"review":{"status":"source-intent-reviewed","revision":1,"groundTruthSource":"project-authored-svg-source-intent","reviewers":[{"id":"assistant-source-review","kind":"automated"}],"adjudication":{"status":"not-required","adjudicator":null,"notes":"No annotation disagreement recorded in v1 authoring."},"languageReview":{"status":"reviewed-no-uncertain-lines","reviewer":"assistant-source-review","humanNativeReviewClaimed":false},"ocrConsultedDuringAuthoring":false}}
+{
+  "schemaVersion": "1.0.0",
+  "page": {
+    "id": "msdemo-002-library",
+    "imageSha256": "402f9530fabdcb5848bbca22db931b3702183d63d4286b0836fac0575a080e90",
+    "width": 1440,
+    "height": 2048,
+    "split": "public-validation",
+    "license": "CC-BY-4.0",
+    "provenanceRef": "../manifest.json"
+  },
+  "regions": [
+    {
+      "id": "p2-r001",
+      "geometry": {
+        "bbox": {
+          "x": 784,
+          "y": 84,
+          "width": 350,
+          "height": 92
+        },
+        "polygon": [
+          [
+            784,
+            84
+          ],
+          [
+            1134,
+            84
+          ],
+          [
+            1134,
+            176
+          ],
+          [
+            784,
+            176
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "放課後、図書室。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "horizontal-ltr",
+      "textRole": "narration",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 0,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "dense-layout"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p2-r002",
+      "geometry": {
+        "bbox": {
+          "x": 1260,
+          "y": 165,
+          "width": 70,
+          "height": 420
+        },
+        "polygon": [
+          [
+            1260,
+            165
+          ],
+          [
+            1330,
+            165
+          ],
+          [
+            1330,
+            585
+          ],
+          [
+            1260,
+            585
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "このメモ、見覚えある？",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 1,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "dense-layout"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p2-r006",
+      "geometry": {
+        "bbox": {
+          "x": 900,
+          "y": 735,
+          "width": 190,
+          "height": 70
+        },
+        "polygon": [
+          [
+            900,
+            735
+          ],
+          [
+            1090,
+            735
+          ],
+          [
+            1090,
+            805
+          ],
+          [
+            900,
+            805
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "青い鍵",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "horizontal-ltr",
+      "textRole": "environmental",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 2,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "environmental"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p2-r003",
+      "geometry": {
+        "bbox": {
+          "x": 560,
+          "y": 155,
+          "width": 80,
+          "height": 110
+        },
+        "polygon": [
+          [
+            560,
+            155
+          ],
+          [
+            640,
+            155
+          ],
+          [
+            640,
+            265
+          ],
+          [
+            560,
+            265
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "え？",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 3,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "small-text"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p2-r004",
+      "geometry": {
+        "bbox": {
+          "x": 390,
+          "y": 712,
+          "width": 214,
+          "height": 74
+        },
+        "polygon": [
+          [
+            390,
+            712
+          ],
+          [
+            604,
+            712
+          ],
+          [
+            604,
+            786
+          ],
+          [
+            390,
+            786
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "返却口",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "horizontal-ltr",
+      "textRole": "environmental",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 4,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "environmental"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p2-r005",
+      "geometry": {
+        "bbox": {
+          "x": 520,
+          "y": 525,
+          "width": 70,
+          "height": 390
+        },
+        "polygon": [
+          [
+            520,
+            525
+          ],
+          [
+            590,
+            525
+          ],
+          [
+            590,
+            915
+          ],
+          [
+            520,
+            915
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "昨日、机の下で拾ったんだ。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 5,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "dense-layout"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p2-r007",
+      "geometry": {
+        "bbox": {
+          "x": 1270,
+          "y": 1025,
+          "width": 65,
+          "height": 500
+        },
+        "polygon": [
+          [
+            1270,
+            1025
+          ],
+          [
+            1335,
+            1025
+          ],
+          [
+            1335,
+            1525
+          ],
+          [
+            1270,
+            1525
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "「青い鍵」って書いてある。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 6,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "digits-punctuation",
+        "dense-layout"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p2-r008",
+      "geometry": {
+        "bbox": {
+          "x": 835,
+          "y": 1195,
+          "width": 70,
+          "height": 475
+        },
+        "polygon": [
+          [
+            835,
+            1195
+          ],
+          [
+            905,
+            1195
+          ],
+          [
+            905,
+            1670
+          ],
+          [
+            835,
+            1670
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "鍵なら資料室の前で見たよ。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 7,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "dense-layout"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p2-r010",
+      "geometry": {
+        "bbox": {
+          "x": 1120,
+          "y": 1720,
+          "width": 150,
+          "height": 90
+        },
+        "polygon": [
+          [
+            1120,
+            1720
+          ],
+          [
+            1270,
+            1720
+          ],
+          [
+            1270,
+            1810
+          ],
+          [
+            1120,
+            1810
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "カチッ",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "angled",
+      "textRole": "sfx",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 8,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "sfx-stylized"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p2-r009",
+      "geometry": {
+        "bbox": {
+          "x": 120,
+          "y": 1070,
+          "width": 234,
+          "height": 90
+        },
+        "polygon": [
+          [
+            120,
+            1070
+          ],
+          [
+            354,
+            1070
+          ],
+          [
+            354,
+            1160
+          ],
+          [
+            120,
+            1160
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "資料室",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "horizontal-ltr",
+      "textRole": "environmental",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 9,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "environmental"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p2-r011",
+      "geometry": {
+        "bbox": {
+          "x": 555,
+          "y": 1095,
+          "width": 70,
+          "height": 330
+        },
+        "polygon": [
+          [
+            555,
+            1095
+          ],
+          [
+            625,
+            1095
+          ],
+          [
+            625,
+            1425
+          ],
+          [
+            555,
+            1425
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "じゃあ、行ってみよう。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 10,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "dense-layout"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p2-r012",
+      "geometry": {
+        "bbox": {
+          "x": 115,
+          "y": 1175,
+          "width": 75,
+          "height": 625
+        },
+        "polygon": [
+          [
+            115,
+            1175
+          ],
+          [
+            190,
+            1175
+          ],
+          [
+            190,
+            1800
+          ],
+          [
+            115,
+            1800
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "急ごう。閉館まであと10分しかない。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 11,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "digits-punctuation",
+        "dense-layout"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p2-r013",
+      "geometry": {
+        "bbox": {
+          "x": 390,
+          "y": 1774,
+          "width": 220,
+          "height": 105
+        },
+        "polygon": [
+          [
+            390,
+            1774
+          ],
+          [
+            610,
+            1774
+          ],
+          [
+            610,
+            1879
+          ],
+          [
+            390,
+            1879
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "18:50",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "horizontal-ltr",
+      "textRole": "environmental",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 12,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "environmental",
+        "digits-punctuation"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    }
+  ],
+  "furiganaRelations": [],
+  "presentationMarks": [],
+  "negativeZones": [],
+  "readingOrderContract": {
+    "kind": "total",
+    "sequence": [
+      "p2-r001",
+      "p2-r002",
+      "p2-r006",
+      "p2-r003",
+      "p2-r004",
+      "p2-r005",
+      "p2-r007",
+      "p2-r008",
+      "p2-r010",
+      "p2-r009",
+      "p2-r011",
+      "p2-r012",
+      "p2-r013"
+    ],
+    "panelSequence": [
+      "upper-right",
+      "upper-left",
+      "lower-right",
+      "lower-left"
+    ]
+  },
+  "review": {
+    "status": "source-intent-reviewed",
+    "revision": 1,
+    "groundTruthSource": "project-authored-svg-source-intent",
+    "reviewers": [
+      {
+        "id": "assistant-source-review",
+        "kind": "automated"
+      }
+    ],
+    "adjudication": {
+      "status": "not-required",
+      "adjudicator": null,
+      "notes": "No annotation disagreement recorded in v1 authoring."
+    },
+    "languageReview": {
+      "status": "reviewed-no-uncertain-lines",
+      "reviewer": "assistant-source-review",
+      "humanNativeReviewClaimed": false
+    },
+    "ocrConsultedDuringAuthoring": false
+  }
+}
