@@ -85,7 +85,9 @@ describe("ReaderWorkspace lexical identity", () => {
     expect(screen.getByText("表記二")).toBeVisible();
     expect(screen.getByText("first form")).toBeVisible();
     expect(screen.getByText("second form")).toBeVisible();
-    expect(screen.getByText("なんとか")).toBeVisible();
+    for (const element of screen.getAllByText("なんとか")) {
+      expect(element).toBeVisible();
+    }
     expect(screen.getByText("somehow")).toBeVisible();
   });
 });
