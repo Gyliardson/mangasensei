@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, runtime_checkable
+
+MAX_LEXICAL_SPAN_TOKENS = 4
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -79,6 +81,16 @@ class LinguisticToken:
 
 
 @dataclass(frozen=True, slots=True)
+class LexicalHypothesis:
+    """One bounded dictionary lookup hypothesis aligned to canonical A-token ordinals."""
+
+    start_token_ordinal: int
+    end_token_ordinal: int
+    lemma: str
+    reading: str
+
+
+@dataclass(frozen=True, slots=True)
 class LexicalMatch:
     id: str
     start_token_ordinal: int
@@ -103,6 +115,16 @@ class Tokenizer(Protocol):
     def tokenize(self, text: str) -> tuple[tuple[str, str, str, str], ...]: ...
 
 
+@runtime_checkable
+class LexicalHypothesisProvider(Protocol):
+    def lexical_hypotheses(
+        self,
+        text: str,
+        *,
+        max_span_tokens: int,
+    ) -> tuple[LexicalHypothesis, ...]: ...
+
+
 class Dictionary(Protocol):
     def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult: ...
 
@@ -124,30 +146,49 @@ class LinguisticService:
         return hashlib.sha256(self.dictionary_version.encode()).digest()
 
     def analyze(self, region_id: str, text: str) -> LinguisticAnalysis:
-        tokens: list[LinguisticToken] = []
-        lexical_matches: list[LexicalMatch] = []
-        for index, (surface, lemma, reading, part_of_speech) in enumerate(
-            self._tokenizer.tokenize(text)
-        ):
-            token = LinguisticToken(
+        tokens = tuple(
+            LinguisticToken(
                 id=f"{region_id}:token:{index}",
                 surface=surface,
                 lemma=lemma,
                 reading=reading,
                 part_of_speech=part_of_speech,
             )
-            tokens.append(token)
-            entry = self._dictionary.lookup_candidates(lemma, reading).unique_entry
+            for index, (surface, lemma, reading, part_of_speech) in enumerate(
+                self._tokenizer.tokenize(text)
+            )
+        )
+        hypotheses = self._lexical_hypotheses(text, tokens)
+        lexical_matches: list[LexicalMatch] = []
+        seen_occurrences: set[tuple[int, int, LexicalFormIdentity]] = set()
+        for hypothesis in hypotheses:
+            entry = self._dictionary.lookup_candidates(
+                hypothesis.lemma,
+                hypothesis.reading,
+            ).unique_entry
             if entry is None:
                 continue
+            occurrence_key = (
+                hypothesis.start_token_ordinal,
+                hypothesis.end_token_ordinal,
+                entry.identity,
+            )
+            if occurrence_key in seen_occurrences:
+                continue
+            seen_occurrences.add(occurrence_key)
             lexical_matches.append(
                 LexicalMatch(
-                    id=f"{region_id}:lexical:{index}",
-                    start_token_ordinal=index,
-                    end_token_ordinal=index + 1,
-                    surface=surface,
-                    display_lemma=lemma,
-                    display_reading=reading,
+                    id=_match_id(region_id, hypothesis, entry.identity),
+                    start_token_ordinal=hypothesis.start_token_ordinal,
+                    end_token_ordinal=hypothesis.end_token_ordinal,
+                    surface="".join(
+                        token.surface
+                        for token in tokens[
+                            hypothesis.start_token_ordinal : hypothesis.end_token_ordinal
+                        ]
+                    ),
+                    display_lemma=hypothesis.lemma,
+                    display_reading=hypothesis.reading,
                     identity=entry.identity,
                     meanings=entry.meanings,
                     source=entry.source,
@@ -155,4 +196,82 @@ class LinguisticService:
                     jlpt_official=entry.jlpt_official,
                 )
             )
-        return LinguisticAnalysis(tokens=tuple(tokens), lexical_matches=tuple(lexical_matches))
+        lexical_matches.sort(
+            key=lambda match: (
+                match.start_token_ordinal,
+                -(match.end_token_ordinal - match.start_token_ordinal),
+                match.identity,
+            )
+        )
+        return LinguisticAnalysis(tokens=tokens, lexical_matches=tuple(lexical_matches))
+
+    def _lexical_hypotheses(
+        self,
+        text: str,
+        tokens: tuple[LinguisticToken, ...],
+    ) -> tuple[LexicalHypothesis, ...]:
+        hypotheses = [
+            LexicalHypothesis(index, index + 1, token.lemma, token.reading)
+            for index, token in enumerate(tokens)
+        ]
+        hypotheses.extend(_surface_span_hypotheses(tokens))
+        if isinstance(self._tokenizer, LexicalHypothesisProvider):
+            hypotheses.extend(
+                self._tokenizer.lexical_hypotheses(
+                    text,
+                    max_span_tokens=MAX_LEXICAL_SPAN_TOKENS,
+                )
+            )
+
+        seen: set[LexicalHypothesis] = set()
+        ordered: list[LexicalHypothesis] = []
+        for hypothesis in hypotheses:
+            _validate_hypothesis(hypothesis, len(tokens))
+            if hypothesis in seen:
+                continue
+            seen.add(hypothesis)
+            ordered.append(hypothesis)
+        return tuple(ordered)
+
+
+def _surface_span_hypotheses(
+    tokens: tuple[LinguisticToken, ...],
+) -> tuple[LexicalHypothesis, ...]:
+    hypotheses: list[LexicalHypothesis] = []
+    for start in range(len(tokens)):
+        max_end = min(len(tokens), start + MAX_LEXICAL_SPAN_TOKENS)
+        for end in range(start + 2, max_end + 1):
+            span = tokens[start:end]
+            hypotheses.append(
+                LexicalHypothesis(
+                    start_token_ordinal=start,
+                    end_token_ordinal=end,
+                    lemma="".join(token.surface for token in span),
+                    reading="".join(token.reading for token in span),
+                )
+            )
+    return tuple(hypotheses)
+
+
+def _validate_hypothesis(hypothesis: LexicalHypothesis, token_count: int) -> None:
+    span_length = hypothesis.end_token_ordinal - hypothesis.start_token_ordinal
+    if not (
+        0 <= hypothesis.start_token_ordinal < hypothesis.end_token_ordinal <= token_count
+        and span_length <= MAX_LEXICAL_SPAN_TOKENS
+    ):
+        raise ValueError("lexical hypothesis is outside the bounded canonical token stream")
+    if not hypothesis.lemma or not hypothesis.reading:
+        raise ValueError("lexical hypothesis must have a lemma and reading")
+
+
+def _match_id(
+    region_id: str,
+    hypothesis: LexicalHypothesis,
+    identity: LexicalFormIdentity,
+) -> str:
+    if hypothesis.end_token_ordinal == hypothesis.start_token_ordinal + 1:
+        return f"{region_id}:lexical:{hypothesis.start_token_ordinal}"
+    return (
+        f"{region_id}:lexical:{hypothesis.start_token_ordinal}:"
+        f"{hypothesis.end_token_ordinal}:{identity.transport_id}"
+    )

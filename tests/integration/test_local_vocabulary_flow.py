@@ -78,24 +78,85 @@ class LocalVocabularyDictionaryFixture:
 
     def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult:
         del reading
-        entry: DictionaryEntry | None = None
         if lemma == "猫":
-            entry = DictionaryEntry(
-                identity=LexicalFormIdentity("JMdict", "jmdict-1467640", "猫", "ねこ"),
-                meanings=("cat",),
-                source="JMdict local-first test",
-                jlpt_level="N5",
-                jlpt_official=False,
+            return _result(
+                DictionaryEntry(
+                    identity=LexicalFormIdentity(
+                        "JMdict",
+                        "jmdict-1467640",
+                        "猫",
+                        "ねこ",
+                    ),
+                    meanings=("cat",),
+                    source="JMdict local-first test",
+                    jlpt_level="N5",
+                    jlpt_official=False,
+                )
             )
-        elif lemma == "犬":
-            entry = DictionaryEntry(
-                identity=LexicalFormIdentity("JMdict", "jmdict-1186080", "犬", "いぬ"),
-                meanings=("dog",),
-                source="JMdict local-first test",
-                jlpt_level="N5",
-                jlpt_official=False,
+        if lemma == "犬":
+            return _result(
+                DictionaryEntry(
+                    identity=LexicalFormIdentity(
+                        "JMdict",
+                        "jmdict-1186080",
+                        "犬",
+                        "いぬ",
+                    ),
+                    meanings=("dog",),
+                    source="JMdict local-first test",
+                    jlpt_level="N5",
+                    jlpt_official=False,
+                )
             )
-        return DictionaryLookupResult.from_candidates((entry,) if entry is not None else ())
+        if lemma == "猫猫":
+            return _result(
+                DictionaryEntry(
+                    identity=LexicalFormIdentity(
+                        "JMdict",
+                        "jmdict-multi-token-fixture",
+                        "猫猫",
+                        "ねこねこ",
+                    ),
+                    meanings=("paired cats",),
+                    source="JMdict local-first test",
+                    jlpt_level=None,
+                    jlpt_official=False,
+                )
+            )
+        if lemma == "犬です":
+            return DictionaryLookupResult.from_candidates(
+                (
+                    DictionaryEntry(
+                        identity=LexicalFormIdentity(
+                            "JMdict",
+                            "jmdict-ambiguous-a",
+                            "犬です",
+                            "いぬです",
+                        ),
+                        meanings=("ambiguous A",),
+                        source="JMdict local-first test",
+                        jlpt_level=None,
+                        jlpt_official=False,
+                    ),
+                    DictionaryEntry(
+                        identity=LexicalFormIdentity(
+                            "JMdict",
+                            "jmdict-ambiguous-b",
+                            "犬です",
+                            "いぬです",
+                        ),
+                        meanings=("ambiguous B",),
+                        source="JMdict local-first test",
+                        jlpt_level=None,
+                        jlpt_official=False,
+                    ),
+                )
+            )
+        return DictionaryLookupResult.from_candidates(())
+
+
+def _result(entry: DictionaryEntry) -> DictionaryLookupResult:
+    return DictionaryLookupResult.from_candidates((entry,))
 
 
 class PartialGeminiFixture:
@@ -105,6 +166,8 @@ class PartialGeminiFixture:
         payload = json.loads(prompt)
         candidates = payload["regions"][0]["vocabulary_candidates"]
         assert "猫猫犬です" in prompt
+        assert [candidate["surface"] for candidate in candidates] == ["猫猫", "猫", "犬"]
+        assert all(candidate["surface"] != "犬です" for candidate in candidates)
         return schema(
             regions=(
                 GeminiRegionAnalysis(
@@ -205,6 +268,15 @@ async def _process_page(
 
 def expected_local_vocabulary() -> list[dict[str, object]]:
     return [
+        {
+            "id": "jmdict-multi-token-fixture",
+            "surface": "猫猫",
+            "lemma": "猫猫",
+            "reading": "ネコネコ",
+            "meanings": ["paired cats"],
+            "source": "JMdict local-first test",
+            "jlpt": None,
+        },
         {
             "id": "jmdict-1467640",
             "surface": "猫",
