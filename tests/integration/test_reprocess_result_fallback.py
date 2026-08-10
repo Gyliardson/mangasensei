@@ -16,7 +16,12 @@ from mangasensei.config import Settings
 from mangasensei.domain.models import BoundingBox, PageDimensions
 from mangasensei.infrastructure.database.job_models import JobRecord
 from mangasensei.infrastructure.database.session import create_database
-from mangasensei.linguistics.service import DictionaryEntry, LinguisticService
+from mangasensei.linguistics.service import (
+    DictionaryEntry,
+    DictionaryLookupResult,
+    LexicalFormIdentity,
+    LinguisticService,
+)
 from mangasensei.ocr.contracts import OcrEngine, OcrImage, OcrRegionResult, OcrResult
 from mangasensei.ocr.fake import DEFAULT_FAKE_PROVENANCE
 from mangasensei.storage.local import LocalFilesystemStorage
@@ -79,25 +84,26 @@ class DictionaryFixture:
     version = "JMdict reprocess test"
     digest = hashlib.sha256(version.encode()).digest()
 
-    def lookup(self, lemma: str, reading: str) -> DictionaryEntry | None:
+    def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult:
         del reading
+        entry: DictionaryEntry | None = None
         if lemma == "猫":
-            return DictionaryEntry(
-                id="jmdict-cat",
+            entry = DictionaryEntry(
+                identity=LexicalFormIdentity("JMdict", "jmdict-cat", "猫", "ねこ"),
                 meanings=("cat",),
                 source=self.version,
                 jlpt_level="N5",
                 jlpt_official=False,
             )
-        if lemma == "犬":
-            return DictionaryEntry(
-                id="jmdict-dog",
+        elif lemma == "犬":
+            entry = DictionaryEntry(
+                identity=LexicalFormIdentity("JMdict", "jmdict-dog", "犬", "いぬ"),
                 meanings=("dog",),
                 source=self.version,
                 jlpt_level="N5",
                 jlpt_official=False,
             )
-        return None
+        return DictionaryLookupResult.from_candidates((entry,) if entry is not None else ())
 
 
 def settings(database_url: str, root: Path) -> Settings:

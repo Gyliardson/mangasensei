@@ -12,7 +12,7 @@ from mangasensei.api.app import create_app
 from mangasensei.config import Settings
 from mangasensei.domain.models import BoundingBox, PageDimensions
 from mangasensei.infrastructure.database.session import create_database
-from mangasensei.linguistics.service import DictionaryEntry, LinguisticService
+from mangasensei.linguistics.service import DictionaryLookupResult, LinguisticService
 from mangasensei.ocr.contracts import OcrRegionResult
 from mangasensei.ocr.fake import FakeOcrEngine
 from mangasensei.storage.local import LocalFilesystemStorage
@@ -28,9 +28,9 @@ class DictionaryFixture:
     version = "reading-order-test"
     digest = hashlib.sha256(version.encode()).digest()
 
-    def lookup(self, lemma: str, reading: str) -> DictionaryEntry | None:
+    def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult:
         del lemma, reading
-        return None
+        return DictionaryLookupResult.from_candidates(())
 
 
 def fixture_image() -> bytes:

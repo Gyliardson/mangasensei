@@ -37,7 +37,7 @@ from mangasensei.infrastructure.rate_limits import PostgreSQLRateLimiter
 from mangasensei.storage.images import ImageValidationError, ImageValidator
 from mangasensei.storage.local import LocalFilesystemStorage
 
-_EXPECTED_DATABASE_REVISION = "b7d2f4a91c63"
+_EXPECTED_DATABASE_REVISION = "4b913c2a7e56"
 _HTTP_REQUESTS = Counter(
     "http_requests",
     "HTTP requests completed by method and status code.",

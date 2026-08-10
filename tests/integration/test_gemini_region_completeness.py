@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
@@ -23,7 +24,12 @@ from mangasensei.infrastructure.database.analysis_models import (
 )
 from mangasensei.infrastructure.database.job_models import JobAttemptRecord, JobRecord
 from mangasensei.infrastructure.database.session import create_database
-from mangasensei.linguistics.service import DictionaryEntry, LinguisticService
+from mangasensei.linguistics.service import (
+    DictionaryEntry,
+    DictionaryLookupResult,
+    LexicalFormIdentity,
+    LinguisticService,
+)
 from mangasensei.ocr.contracts import OcrImage, OcrRegionResult, OcrResult
 from mangasensei.ocr.fake import DEFAULT_FAKE_PROVENANCE
 from mangasensei.storage.local import LocalFilesystemStorage
@@ -84,16 +90,19 @@ class DictionaryFixture:
     version = "JMdict completeness fixture"
     digest = hashlib.sha256(version.encode()).digest()
 
-    def lookup(self, lemma: str, reading: str) -> DictionaryEntry | None:
-        if (lemma, reading) == ("猫", "ネコ"):
-            return DictionaryEntry(
-                id="jmdict-cat",
+    def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult:
+        entry = (
+            DictionaryEntry(
+                identity=LexicalFormIdentity("JMdict", "jmdict-cat", "猫", "ねこ"),
                 meanings=("cat",),
                 source="JMdict fixture",
                 jlpt_level="N5",
                 jlpt_official=False,
             )
-        return None
+            if (lemma, reading) == ("猫", "ネコ")
+            else None
+        )
+        return DictionaryLookupResult.from_candidates((entry,) if entry is not None else ())
 
 
 class MalformedGeminiFixture:
@@ -103,13 +112,14 @@ class MalformedGeminiFixture:
 
     async def analyze(self, *, prompt: str, schema: type[GeminiPageAnalysis]) -> GeminiPageAnalysis:
         self.calls += 1
-        assert "猫です" in prompt
+        payload = json.loads(prompt)
+        vocabulary_id = payload["regions"][0]["vocabulary_candidates"][0]["id"]
         region = GeminiRegionAnalysis(
             region_id=_REGION_ID,
             translation="Cat.",
             explanation="Malformed cardinality fixture.",
             grammar_points=(),
-            vocabulary_ids=("jmdict-cat",),
+            vocabulary_ids=(vocabulary_id,),
         )
         if self.mode == "missing":
             return schema(regions=())

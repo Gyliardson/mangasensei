@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import io
+import json
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
@@ -24,7 +25,12 @@ from mangasensei.infrastructure.database.analysis_models import (
 from mangasensei.infrastructure.database.job_models import JobAttemptRecord, JobRecord
 from mangasensei.infrastructure.database.queue_repository import QueueRepository
 from mangasensei.infrastructure.database.session import create_database
-from mangasensei.linguistics.service import DictionaryEntry, LinguisticService
+from mangasensei.linguistics.service import (
+    DictionaryEntry,
+    DictionaryLookupResult,
+    LexicalFormIdentity,
+    LinguisticService,
+)
 from mangasensei.ocr.contracts import OcrImage, OcrRegionResult, OcrResult
 from mangasensei.ocr.fake import DEFAULT_FAKE_PROVENANCE
 from mangasensei.storage.local import LocalFilesystemStorage
@@ -71,6 +77,7 @@ class SlowOcrFixture(OcrFixture):
 
 class TokenizerFixture:
     def tokenize(self, text: str) -> tuple[tuple[str, str, str, str], ...]:
+        del text
         return (("猫", "猫", "ネコ", "名詞"), ("です", "です", "デス", "助動詞"))
 
 
@@ -78,21 +85,31 @@ class DictionaryFixture:
     version = "JMdict test"
     digest = hashlib.sha256(b"JMdict test").digest()
 
-    def lookup(self, lemma: str, reading: str) -> DictionaryEntry | None:
-        if lemma == "猫":
-            return DictionaryEntry(
-                id="jmdict-1467640",
+    def lookup_candidates(self, lemma: str, reading: str) -> DictionaryLookupResult:
+        del reading
+        entry = (
+            DictionaryEntry(
+                identity=LexicalFormIdentity(
+                    dictionary_namespace="JMdict",
+                    entry_id="jmdict-1467640",
+                    lemma="猫",
+                    reading="ねこ",
+                ),
                 meanings=("gato",),
                 source="JMdict test",
                 jlpt_level="N5",
                 jlpt_official=False,
             )
-        return None
+            if lemma == "猫"
+            else None
+        )
+        return DictionaryLookupResult.from_candidates((entry,) if entry is not None else ())
 
 
 class GeminiFixture:
     async def analyze(self, *, prompt: str, schema: type[GeminiPageAnalysis]) -> GeminiPageAnalysis:
-        assert "猫です" in prompt
+        payload = json.loads(prompt)
+        vocabulary_id = payload["regions"][0]["vocabulary_candidates"][0]["id"]
         return schema(
             regions=(
                 GeminiRegionAnalysis(
@@ -100,7 +117,7 @@ class GeminiFixture:
                     translation="É um gato.",
                     explanation="Frase nominal polida.",
                     grammar_points=("です",),
-                    vocabulary_ids=("jmdict-1467640",),
+                    vocabulary_ids=(vocabulary_id,),
                 ),
             )
         )

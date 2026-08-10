@@ -44,8 +44,6 @@ from mangasensei.infrastructure.database.analysis_models import (
     GeminiCostLedgerRecord,
     GeminiGrammarPointRecord,
     GeminiRegionAnalysisRecord,
-    GeminiVocabularyLinkRecord,
-    LinguisticMeaningRecord,
     LinguisticRunRecord,
     LinguisticTokenRecord,
     OcrRegionRecord,
@@ -56,10 +54,19 @@ from mangasensei.infrastructure.database.gemini_accounting import (
     reconcile_abandoned_gemini_calls,
 )
 from mangasensei.infrastructure.database.job_models import JobAttemptRecord, JobRecord
+from mangasensei.infrastructure.database.lexical_models import (
+    GeminiLexicalVocabularyLinkRecord,
+    LexicalMatchRecord,
+    LexicalMeaningRecord,
+)
 from mangasensei.infrastructure.database.queue_repository import ClaimedJob, QueueRepository
 from mangasensei.infrastructure.database.storage_models import ImageBlobRecord, PageRecord
 from mangasensei.infrastructure.database.study_models import StudyResultRecord
-from mangasensei.linguistics.service import LinguisticService, LinguisticToken
+from mangasensei.linguistics.service import (
+    LexicalFormIdentity,
+    LinguisticAnalysis,
+    LinguisticService,
+)
 from mangasensei.ocr.contracts import OcrEngine, OcrImage, OcrResult
 from mangasensei.storage.local import LocalFilesystemStorage
 
@@ -91,7 +98,7 @@ class ReusableAnalysis:
     regions: dict[str, str]
     vocabulary_by_region: dict[str, tuple[GeminiVocabularyCandidate, ...]]
     region_ids: dict[str, int]
-    token_ids: dict[tuple[str, str], int]
+    lexical_match_ids: dict[tuple[str, str], int]
 
 
 def _public_error_code(exc: BaseException) -> str:
@@ -231,7 +238,7 @@ class Worker:
                 for region in ocr_result.regions
             }
             stage = "persist_linguistics"
-            linguistic_run_id, token_ids = await self._persist_linguistics(
+            linguistic_run_id, lexical_match_ids = await self._persist_linguistics(
                 claim, ocr_result, region_ids, linguistic_by_region
             )
             if self._gemini is None or not ocr_result.regions:
@@ -264,7 +271,7 @@ class Worker:
                 analysis,
                 linguistic_run_id,
                 region_ids,
-                token_ids,
+                lexical_match_ids,
             )
         except StaleLeaseError:
             return True
@@ -334,7 +341,7 @@ class Worker:
             analysis,
             reusable.linguistic_run_id,
             reusable.region_ids,
-            reusable.token_ids,
+            reusable.lexical_match_ids,
         )
 
     async def _load_reusable_analysis(self, claim: ClaimedJob) -> ReusableAnalysis:
@@ -379,14 +386,15 @@ class Worker:
                 str(region.public_id): region.corrected_text or region.raw_text
                 for region in regions
             }
-            tokens = (
+            lexical_matches = (
                 await session.execute(
-                    select(LinguisticTokenRecord)
-                    .where(LinguisticTokenRecord.linguistic_run_id == linguistic_run.id)
+                    select(LexicalMatchRecord)
+                    .where(LexicalMatchRecord.linguistic_run_id == linguistic_run.id)
                     .order_by(
-                        LinguisticTokenRecord.region_id,
-                        LinguisticTokenRecord.token_ordinal,
-                        LinguisticTokenRecord.id,
+                        LexicalMatchRecord.region_id,
+                        LexicalMatchRecord.start_token_ordinal,
+                        LexicalMatchRecord.end_token_ordinal.desc(),
+                        LexicalMatchRecord.id,
                     )
                 )
             ).scalars().all()
@@ -395,22 +403,26 @@ class Worker:
             region_id: [] for region_id in region_text
         }
         seen_ids: dict[str, set[str]] = {region_id: set() for region_id in region_text}
-        token_ids: dict[tuple[str, str], int] = {}
-        for token in tokens:
-            region_id = region_public_by_id[token.region_id]
-            dictionary_id = token.dictionary_entry_id
-            if dictionary_id is None:
+        lexical_match_ids: dict[tuple[str, str], int] = {}
+        for match in lexical_matches:
+            region_id = region_public_by_id[match.region_id]
+            identity = LexicalFormIdentity(
+                dictionary_namespace=match.dictionary_namespace,
+                entry_id=match.dictionary_entry_id,
+                lemma=match.form_lemma,
+                reading=match.form_reading,
+            )
+            candidate_id = identity.transport_id
+            lexical_match_ids.setdefault((region_id, candidate_id), match.id)
+            if candidate_id in seen_ids[region_id]:
                 continue
-            token_ids[(region_id, dictionary_id)] = token.id
-            if dictionary_id in seen_ids[region_id]:
-                continue
-            seen_ids[region_id].add(dictionary_id)
+            seen_ids[region_id].add(candidate_id)
             vocabulary_lists[region_id].append(
                 GeminiVocabularyCandidate(
-                    id=dictionary_id,
-                    surface=token.surface,
-                    lemma=token.lemma,
-                    reading=token.reading,
+                    id=candidate_id,
+                    surface=match.surface,
+                    lemma=match.display_lemma,
+                    reading=match.display_reading,
                 )
             )
         vocabulary_by_region = {
@@ -423,7 +435,7 @@ class Worker:
             regions=region_text,
             vocabulary_by_region=vocabulary_by_region,
             region_ids=region_ids,
-            token_ids=token_ids,
+            lexical_match_ids=lexical_match_ids,
         )
 
     async def _complete_reused_without_gemini(
@@ -548,7 +560,7 @@ class Worker:
         claim: ClaimedJob,
         result: OcrResult,
         region_ids: dict[str, int],
-        tokens_by_region: dict[str, tuple[LinguisticToken, ...]],
+        analyses_by_region: dict[str, LinguisticAnalysis],
     ) -> tuple[int, dict[tuple[str, str], int]]:
         input_digest = hashlib.sha256(
             json.dumps(
@@ -581,43 +593,74 @@ class Worker:
             )
             session.add(run)
             await session.flush()
-            token_ids: dict[tuple[str, str], int] = {}
-            for region_id, tokens in tokens_by_region.items():
+            lexical_match_ids: dict[tuple[str, str], int] = {}
+            for region_id, analysis in analyses_by_region.items():
                 cursor = 0
-                for ordinal, token in enumerate(tokens):
+                for ordinal, token in enumerate(analysis.tokens):
                     start = cursor
                     cursor += len(token.surface)
                     stable_key = hashlib.sha256(
                         input_digest + region_id.encode() + ordinal.to_bytes(4, "big")
                     ).digest()
-                    record = LinguisticTokenRecord(
+                    session.add(
+                        LinguisticTokenRecord(
+                            linguistic_run_id=run.id,
+                            region_id=region_ids[region_id],
+                            token_ordinal=ordinal,
+                            stable_key=stable_key,
+                            start_offset=start,
+                            end_offset=cursor,
+                            surface=token.surface,
+                            lemma=token.lemma,
+                            reading=token.reading,
+                            part_of_speech=token.part_of_speech,
+                        )
+                    )
+                for match in analysis.lexical_matches:
+                    if not (
+                        0
+                        <= match.start_token_ordinal
+                        < match.end_token_ordinal
+                        <= len(analysis.tokens)
+                    ):
+                        raise ValueError("lexical match is outside the canonical token stream")
+                    identity = match.identity
+                    stable_key = hashlib.sha256(
+                        input_digest
+                        + region_id.encode()
+                        + match.start_token_ordinal.to_bytes(4, "big")
+                        + match.end_token_ordinal.to_bytes(4, "big")
+                        + identity.transport_id.encode()
+                    ).digest()
+                    record = LexicalMatchRecord(
                         linguistic_run_id=run.id,
                         region_id=region_ids[region_id],
-                        token_ordinal=ordinal,
                         stable_key=stable_key,
-                        start_offset=start,
-                        end_offset=cursor,
-                        surface=token.surface,
-                        lemma=token.lemma,
-                        reading=token.reading,
-                        part_of_speech=token.part_of_speech,
-                        dictionary_entry_id=token.dictionary_id,
-                        dictionary_source=token.source,
-                        jlpt_level=token.jlpt_level,
-                        jlpt_official=token.jlpt_official,
+                        start_token_ordinal=match.start_token_ordinal,
+                        end_token_ordinal=match.end_token_ordinal,
+                        surface=match.surface,
+                        display_lemma=match.display_lemma,
+                        display_reading=match.display_reading,
+                        dictionary_namespace=identity.dictionary_namespace,
+                        dictionary_entry_id=identity.entry_id,
+                        form_lemma=identity.lemma,
+                        form_reading=identity.reading,
+                        dictionary_source=match.source,
+                        jlpt_level=match.jlpt_level,
+                        jlpt_official=match.jlpt_official,
                     )
                     session.add(record)
                     await session.flush()
-                    if token.dictionary_id is not None:
-                        token_ids[(region_id, token.dictionary_id)] = record.id
+                    candidate_id = identity.transport_id
+                    lexical_match_ids.setdefault((region_id, candidate_id), record.id)
                     session.add_all(
                         [
-                            LinguisticMeaningRecord(
-                                token_id=record.id,
+                            LexicalMeaningRecord(
+                                lexical_match_id=record.id,
                                 meaning_ordinal=index,
                                 meaning=meaning,
                             )
-                            for index, meaning in enumerate(token.meanings)
+                            for index, meaning in enumerate(match.meanings)
                         ]
                     )
             use_gemini = self._gemini is not None and bool(result.regions)
@@ -627,7 +670,7 @@ class Worker:
                 _finish_job(job)
                 await _finish_attempt(session, claim, "completed_without_gemini")
             job.updated_at = func.now()
-            return run.id, token_ids
+            return run.id, lexical_match_ids
 
     async def _reserve_gemini_call(
         self,
@@ -710,7 +753,7 @@ class Worker:
         analysis: GeminiPageAnalysis,
         linguistic_run_id: int,
         region_ids: dict[str, int],
-        token_ids: dict[tuple[str, str], int],
+        lexical_match_ids: dict[tuple[str, str], int],
     ) -> None:
         response_payload = analysis.model_dump_json()
         today = datetime.now(UTC).date()
@@ -745,13 +788,13 @@ class Worker:
                     ]
                 )
                 for vocabulary_id in region.vocabulary_ids:
-                    token_id = token_ids.get((region.region_id, vocabulary_id))
-                    if token_id is None:
+                    lexical_match_id = lexical_match_ids.get((region.region_id, vocabulary_id))
+                    if lexical_match_id is None:
                         raise ValueError("Gemini vocabulary is not associated with its region")
                     session.add(
-                        GeminiVocabularyLinkRecord(
+                        GeminiLexicalVocabularyLinkRecord(
                             region_analysis_id=region_record.id,
-                            token_id=token_id,
+                            lexical_match_id=lexical_match_id,
                         )
                     )
             bucket = (
