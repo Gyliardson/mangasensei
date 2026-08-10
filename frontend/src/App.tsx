@@ -1,15 +1,28 @@
-import { BookOpenText, FileImage, LoaderCircle, LockKeyhole, ScanText, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  BookOpenText,
+  FileImage,
+  LoaderCircle,
+  LockKeyhole,
+  ScanText,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { DocumentReader } from "./features/reader/DocumentReader";
 import { ReaderWorkspace } from "./features/reader/ReaderWorkspace";
 import {
   ApiError,
+  type DocumentUploadData,
   type JobStatus,
   type StudyPage,
   type UploadData,
   fetchProtectedImage,
   reprocessDictionaryLanguage,
   reprocessStudyLanguage,
+  uploadDocument,
   uploadPage,
   waitForPage,
 } from "./lib/api";
@@ -18,6 +31,7 @@ import {
   loadDictionaryLanguagePreference,
   saveDictionaryLanguagePreference,
 } from "./lib/dictionaryLanguage";
+import { documentMessagesFor, type DocumentUiMessages } from "./lib/documentUiMessages";
 import {
   type StudyLanguage,
   isStudyLanguage,
@@ -32,25 +46,28 @@ import {
   saveUiLocalePreference,
 } from "./lib/uiLocale";
 import { APPLICATION_VERSION, versionLabel } from "./version";
+import "./document-upload.css";
 
 const acceptedTypes = ".jpg,.jpeg,.png,.webp";
 
-type LocalErrorCode = "one_image_only" | "select_image_first" | "unexpected_processing";
+type LocalErrorCode = "select_image_first" | "unexpected_processing";
 type DisplayError =
   | { readonly kind: "local"; readonly code: LocalErrorCode }
   | { readonly kind: "api"; readonly code: string };
 type LanguageMutation = "study" | "dictionary" | null;
+type AppPhase = "idle" | "uploading" | "processing" | "complete" | "document" | "error";
 
 function requestedDictionaryLanguageOf(page: StudyPage): DictionaryLanguage {
   return page.requestedDictionaryLanguage ?? "en";
 }
 
 export function App() {
-  const [file, setFile] = useState<File | null>(null);
-  const [phase, setPhase] = useState<"idle" | "uploading" | "processing" | "complete" | "error">("idle");
+  const [files, setFiles] = useState<File[]>([]);
+  const [phase, setPhase] = useState<AppPhase>("idle");
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [page, setPage] = useState<StudyPage | null>(null);
   const [pageAccess, setPageAccess] = useState<UploadData | null>(null);
+  const [documentAccess, setDocumentAccess] = useState<DocumentUploadData | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [error, setError] = useState<DisplayError | null>(null);
   const [uiLocale, setUiLocale] = useState<UiLocale>(() => loadUiLocalePreference());
@@ -65,6 +82,7 @@ export function App() {
   const [dictionaryLanguageErrorCode, setDictionaryLanguageErrorCode] = useState<string | null>(null);
   const operation = useRef<AbortController | null>(null);
   const messages = messagesFor(uiLocale);
+  const documentMessages = documentMessagesFor(uiLocale);
 
   useEffect(() => () => operation.current?.abort(), []);
 
@@ -84,11 +102,12 @@ export function App() {
     operation.current?.abort();
     operation.current = null;
     if (imageUrl) URL.revokeObjectURL(imageUrl);
-    setFile(null);
+    setFiles([]);
     setPhase("idle");
     setJobStatus(null);
     setPage(null);
     setPageAccess(null);
+    setDocumentAccess(null);
     setImageUrl(null);
     setError(null);
     setLanguageMutation(null);
@@ -108,22 +127,31 @@ export function App() {
     saveStudyLanguagePreference(value);
   };
 
-  const selectFile = (candidate: File | null) => {
-    setFile(candidate);
+  const selectFiles = (candidates: readonly File[]) => {
+    setFiles(Array.from(candidates));
     setError(null);
     if (phase === "error") setPhase("idle");
   };
 
   const handleDrop = (event: React.DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
-    const dropped = Array.from(event.dataTransfer.files);
-    if (dropped.length !== 1) {
-      setFile(null);
-      setError({ kind: "local", code: "one_image_only" });
-      setPhase("error");
-      return;
-    }
-    selectFile(dropped[0] ?? null);
+    selectFiles(Array.from(event.dataTransfer.files));
+  };
+
+  const moveFile = (index: number, delta: -1 | 1) => {
+    setFiles((current) => {
+      const destination = index + delta;
+      if (destination < 0 || destination >= current.length) return current;
+      const reordered = [...current];
+      const [moved] = reordered.splice(index, 1);
+      if (!moved) return current;
+      reordered.splice(destination, 0, moved);
+      return reordered;
+    });
+  };
+
+  const removeFile = (index: number) => {
+    setFiles((current) => current.filter((_, candidateIndex) => candidateIndex !== index));
   };
 
   const runDictionaryReprojection = async (
@@ -164,7 +192,7 @@ export function App() {
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!file) {
+    if (files.length === 0) {
       setError({ kind: "local", code: "select_image_first" });
       setPhase("error");
       return;
@@ -175,6 +203,16 @@ export function App() {
     setError(null);
     setPhase("uploading");
     try {
+      if (files.length > 1) {
+        const document = await uploadDocument(files, preferredStudyLanguage, controller.signal);
+        setDocumentAccess(document);
+        setPhase("document");
+        operation.current = null;
+        return;
+      }
+
+      const file = files[0];
+      if (!file) throw new ApiError("invalid_image");
       const upload = await uploadPage(file, preferredStudyLanguage, controller.signal);
       setPageAccess(upload);
       setPhase("processing");
@@ -201,6 +239,7 @@ export function App() {
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setPageAccess(null);
+      setDocumentAccess(null);
       setError(
         caught instanceof ApiError
           ? { kind: "api", code: caught.code }
@@ -261,6 +300,24 @@ export function App() {
       ? messages.dictionaryLanguageUpdateFailed
       : messages.apiError(dictionaryLanguageErrorCode)
     : null;
+
+  if (phase === "document" && documentAccess) {
+    return (
+      <div className="app-shell">
+        <Header uiLocale={uiLocale} messages={messages} onUiLocaleChange={changeUiLocale} />
+        <DocumentReader
+          access={documentAccess}
+          uiLocale={uiLocale}
+          preferredStudyLanguage={preferredStudyLanguage}
+          preferredDictionaryLanguage={preferredDictionaryLanguage}
+          onPreferredStudyLanguageChange={setPreferredStudyLanguage}
+          onPreferredDictionaryLanguageChange={setPreferredDictionaryLanguage}
+          onReset={reset}
+        />
+        <Footer />
+      </div>
+    );
+  }
 
   if (phase === "complete" && page && imageUrl) {
     return (
@@ -328,22 +385,79 @@ export function App() {
           >
             <FileImage aria-hidden="true" />
             <span className="file-action">{messages.selectImage}</span>
-            <span className="file-detail">{file?.name ?? messages.fileDropHint}</span>
+            <span className="file-detail">
+              {files.length > 0 ? documentMessages.selectedPages(files.length) : messages.fileDropHint}
+            </span>
           </label>
           <input
             className="sr-only"
             id="page-image"
             name="page-image"
             type="file"
+            multiple
             accept={acceptedTypes}
             aria-label={messages.pageImageAria}
-            aria-describedby="upload-retention"
-            onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
+            aria-describedby="upload-retention page-order-hint"
+            onChange={(event) => selectFiles(Array.from(event.target.files ?? []))}
           />
 
-          <button className="primary-button" type="submit" disabled={!file || phase === "uploading" || phase === "processing"}>
-            {phase === "uploading" || phase === "processing" ? <LoaderCircle className="spinner" aria-hidden="true" /> : <ScanText aria-hidden="true" />}
-            {phase === "uploading" ? messages.uploadingImage : phase === "processing" ? messages.jobStatus(jobStatus) : messages.analyzePage}
+          {files.length > 0 ? (
+            <section className="selected-pages" aria-label={documentMessages.selectedPages(files.length)}>
+              <p id="page-order-hint">{documentMessages.pageOrderHint}</p>
+              <ol>
+                {files.map((file, index) => (
+                  <li key={`${file.name}:${file.size}:${file.lastModified}:${index}`}>
+                    <span className="selected-page-name"><strong>{index + 1}</strong> {file.name}</span>
+                    <div className="selected-page-actions" role="group" aria-label={file.name}>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={documentMessages.movePageUp(file.name)}
+                        disabled={index === 0}
+                        onClick={() => moveFile(index, -1)}
+                      >
+                        <ArrowUp aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={documentMessages.movePageDown(file.name)}
+                        disabled={index === files.length - 1}
+                        onClick={() => moveFile(index, 1)}
+                      >
+                        <ArrowDown aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={documentMessages.removePage(file.name)}
+                        onClick={() => removeFile(index)}
+                      >
+                        <Trash2 aria-hidden="true" />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <button className="text-button" type="button" onClick={() => selectFiles([])}>
+                {documentMessages.clearPages}
+              </button>
+            </section>
+          ) : null}
+
+          <button
+            className="primary-button"
+            type="submit"
+            disabled={files.length === 0 || phase === "uploading" || phase === "processing"}
+          >
+            {phase === "uploading" || phase === "processing"
+              ? <LoaderCircle className="spinner" aria-hidden="true" />
+              : <ScanText aria-hidden="true" />}
+            {phase === "uploading"
+              ? messages.uploadingImage
+              : phase === "processing"
+                ? messages.jobStatus(jobStatus)
+                : documentMessages.analyzePages(files.length)}
           </button>
 
           {phase === "uploading" || phase === "processing" ? (
@@ -352,7 +466,11 @@ export function App() {
             </button>
           ) : null}
 
-          {error ? <p className="form-error" role="alert">{displayError(messages, error)}</p> : null}
+          {error ? (
+            <p className="form-error" role="alert">
+              {displayError(messages, documentMessages, error)}
+            </p>
+          ) : null}
 
           <p id="upload-retention" className="retention">
             <LockKeyhole aria-hidden="true" />
@@ -418,9 +536,18 @@ function Footer() {
   );
 }
 
-function displayError(messages: UiMessages, error: DisplayError): string {
-  if (error.kind === "api") return messages.apiError(error.code);
-  if (error.code === "one_image_only") return messages.oneImageOnly;
+function displayError(
+  messages: UiMessages,
+  documentMessages: DocumentUiMessages,
+  error: DisplayError,
+): string {
+  if (error.kind === "api") {
+    if (error.code === "document_page_limit_exceeded") return documentMessages.documentPageLimit;
+    if (error.code === "document_byte_limit_exceeded") return documentMessages.documentByteLimit;
+    if (error.code === "document_pixel_limit_exceeded") return documentMessages.documentPixelLimit;
+    if (error.code.startsWith("document_")) return documentMessages.documentUploadFailed;
+    return messages.apiError(error.code);
+  }
   if (error.code === "select_image_first") return messages.selectImageFirst;
   return messages.unexpectedProcessingError;
 }
