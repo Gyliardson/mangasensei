@@ -1,15 +1,24 @@
 from __future__ import annotations
 
-import pytest
-from scripts.update_jmdict_manifest import update_manifests
+import subprocess
+import sys
+from pathlib import Path
 
-from mangasensei.linguistics.jmdict_packs import default_pack_registry_path
 
-
-@pytest.mark.asyncio
-async def test_calibrate_reviewed_german_pack_metadata() -> None:
-    await update_manifests(
-        default_pack_registry_path(),
-        languages=("de",),
-        check=True,
+def test_calibrate_reviewed_german_pack_metadata() -> None:
+    root = Path(__file__).parents[2]
+    completed = subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            str(root / "scripts" / "update_jmdict_manifest.py"),
+            "--language",
+            "de",
+            "--check",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
     )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
