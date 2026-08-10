@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "mangasensei-public-demo-v1",
+  "title": "MangaSensei Public Demo Corpus v1",
+  "language": "ja",
+  "license": {
+    "spdx": "CC-BY-4.0",
+    "file": "LICENSE",
+    "notice": "NOTICE.md",
+    "copyright": "Copyright (C) 2026 Gyliardson Keitison"
+  },
+  "provenance": {
+    "creator": "Gyliardson Keitison / MangaSensei project",
+    "sourceKind": "project-authored-vector",
+    "imageGenerationModelUsed": false,
+    "authorshipMethod": "Project-directed original SVG composition with OpenAI ChatGPT code assistance; no image-generation model; Japanese text is explicit deterministic SVG text.",
+    "derivedFromCommercialManga": false,
+    "canonicalRenderContract": "provenance/toolchain.json",
+    "fontContract": "provenance/fonts.json"
+  },
+  "pages": [
+    {
+      "id": "msdemo-001-station",
+      "title": "駅前の約束",
+      "split": "public-demo",
+      "source": {"file": "source/msdemo-001-station.svg", "sha256": "__SOURCE_SHA256__"},
+      "image": {"file": "images/msdemo-001-station.png", "sha256": "__IMAGE_SHA256__", "width": 1440, "height": 2048, "mediaType": "image/png", "mode": "RGB"},
+      "annotation": {"file": "annotations/msdemo-001-station.json", "sha256": "__ANNOTATION_SHA256__", "schema": "annotations/schema-v1.json"},
+      "purposes": ["hero", "desktop-reader", "furigana", "jmdict", "language-switching"],
+      "allowedContexts": ["repository", "documentation", "social", "video", "benchmark"]
+    },
+    {
+      "id": "msdemo-002-library",
+      "title": "図書室の手がかり",
+      "split": "public-validation",
+      "source": {"file": "source/msdemo-002-library.svg", "sha256": "__SOURCE_SHA256__"},
+      "image": {"file": "images/msdemo-002-library.png", "sha256": "__IMAGE_SHA256__", "width": 1440, "height": 2048, "mediaType": "image/png", "mode": "RGB"},
+      "annotation": {"file": "annotations/msdemo-002-library.json", "sha256": "__ANNOTATION_SHA256__", "schema": "annotations/schema-v1.json"},
+      "purposes": ["reading-order", "dense-layout", "desktop-reader", "document-partial-processing"],
+      "allowedContexts": ["repository", "documentation", "social", "video", "benchmark"]
+    },
+    {
+      "id": "msdemo-003-laboratory",
+      "title": "研究室の誤読",
+      "split": "public-validation",
+      "source": {"file": "source/msdemo-003-laboratory.svg", "sha256": "__SOURCE_SHA256__"},
+      "image": {"file": "images/msdemo-003-laboratory.png", "sha256": "__IMAGE_SHA256__", "width": 1440, "height": 2048, "mediaType": "image/png", "mode": "RGB"},
+      "annotation": {"file": "annotations/msdemo-003-laboratory.json", "sha256": "__ANNOTATION_SHA256__", "schema": "annotations/schema-v1.json"},
+      "purposes": ["similar-glyph", "graphic-negative", "boten", "benchmark-card"],
+      "allowedContexts": ["repository", "documentation", "social", "video", "benchmark"]
+    },
+    {
+      "id": "msdemo-004-rain",
+      "title": "雨の商店街",
+      "split": "public-demo",
+      "source": {"file": "source/msdemo-004-rain.svg", "sha256": "__SOURCE_SHA256__"},
+      "image": {"file": "images/msdemo-004-rain.png", "sha256": "__IMAGE_SHA256__", "width": 1440, "height": 2048, "mediaType": "image/png", "mode": "RGB"},
+      "annotation": {"file": "annotations/msdemo-004-rain.json", "sha256": "__ANNOTATION_SHA256__", "schema": "annotations/schema-v1.json"},
+      "purposes": ["mobile-reader", "hero-alternate", "sfx", "social-video"],
+      "allowedContexts": ["repository", "documentation", "social", "video", "benchmark"]
+    }
+  ],
+  "inventory": []
+}

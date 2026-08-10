@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="2048" viewBox="0 0 1440 2048" data-page-id="msdemo-001-station">
+  <defs>
+    <pattern id="dots" width="12" height="12" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="1.5" fill="#777"/>
+    </pattern>
+    <pattern id="hatch" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(18)">
+      <line x1="0" y1="0" x2="0" y2="18" stroke="#a0a0a0" stroke-width="3"/>
+    </pattern>
+    <style>
+      .panel{fill:#fff;stroke:#111;stroke-width:10}
+      .ink{fill:none;stroke:#111;stroke-width:8;stroke-linecap:round;stroke-linejoin:round}
+      .thin{fill:none;stroke:#222;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+      .bubble{fill:#fff;stroke:#111;stroke-width:6}
+      .narration{fill:#fff;stroke:#111;stroke-width:5}
+      .serif{font-family:'MangaSensei Serif v1';fill:#111;font-weight:400}
+      .sans{font-family:'MangaSensei Sans v1';fill:#111;font-weight:400}
+      .v{writing-mode:vertical-rl;text-orientation:upright;letter-spacing:3px}
+      .smallcaps{font-size:32px;letter-spacing:2px}
+    </style>
+  </defs>
+  <rect width="1440" height="2048" fill="#f7f7f5"/>
+
+  <!-- upper station panel -->
+  <rect class="panel" x="54" y="54" width="1332" height="830" rx="4"/>
+  <rect x="70" y="70" width="1300" height="798" fill="url(#dots)" opacity=".18"/>
+  <path d="M75 760 L620 410 L1365 410" class="ink"/>
+  <path d="M75 845 L630 505 L1365 505" class="thin"/>
+  <path d="M120 760 L120 260 M300 660 L300 210 M520 525 L520 185 M850 410 L850 160 M1120 410 L1120 145 M1320 410 L1320 140" class="thin"/>
+  <path d="M90 270 H1360 M90 350 H1360" class="thin"/>
+  <path d="M850 350 L750 810 M1050 350 L940 820" class="thin"/>
+  <rect x="850" y="155" width="320" height="118" fill="#fff" stroke="#111" stroke-width="6"/>
+  <g data-region-id="p1-r002">
+    <text class="sans" x="880" y="235" font-size="58">中央口</text>
+  </g>
+  <rect x="1170" y="300" width="190" height="82" rx="8" fill="#111"/>
+  <g data-region-id="p1-r003">
+    <text class="sans" x="1190" y="358" font-size="44" style="fill:#fff">７番線</text>
+  </g>
+  <circle cx="690" cy="235" r="74" fill="#fff" stroke="#111" stroke-width="7"/>
+  <path d="M690 235 L690 188 M690 235 L728 250" class="thin"/>
+  <rect class="narration" x="102" y="96" width="552" height="104"/>
+  <g data-region-id="p1-r001">
+    <text class="serif" x="126" y="164" font-size="42">午後六時、駅前はまだ明るい。</text>
+  </g>
+  <g opacity=".85">
+    <path d="M300 780 q90-150 180 0" class="ink"/>
+    <circle cx="390" cy="630" r="70" fill="#fff" stroke="#111" stroke-width="7"/>
+    <path d="M330 625 q55-110 125-12 q-35-95-125-40" fill="#111"/>
+    <path d="M360 650 q30 20 62 0" class="thin"/>
+  </g>
+
+  <!-- lower right panel -->
+  <rect class="panel" x="748" y="930" width="638" height="1060"/>
+  <rect x="764" y="946" width="606" height="1028" fill="url(#hatch)" opacity=".12"/>
+  <path d="M780 1870 H1350 M810 1710 H1320" class="thin"/>
+  <circle cx="1030" cy="1352" r="154" fill="#fff" stroke="#111" stroke-width="9"/>
+  <path d="M890 1320 q80-210 246-80 q100 45 52 160 q-35-100-158-108 q-72 8-140 28" fill="#111"/>
+  <path d="M965 1365 q22 15 42 0 M1070 1365 q22 15 42 0 M1016 1432 q38 25 76 0" class="thin"/>
+  <path d="M900 1510 q130 75 250 0 l120 420 h-500 z" fill="#fff" stroke="#111" stroke-width="9"/>
+  <ellipse class="bubble" cx="1242" cy="1180" rx="116" ry="225"/>
+  <path d="M1187 1295 l-26 64 64-45" fill="#fff" stroke="#111" stroke-width="5"/>
+  <g data-region-id="p1-r004">
+    <text class="serif v" x="1272" y="1000" font-size="38">レン、こっちだよ。</text>
+  </g>
+  <ellipse class="bubble" cx="866" cy="1112" rx="82" ry="105"/>
+  <g data-region-id="p1-r005">
+    <text class="serif v" x="885" y="1060" font-size="44">あっ</text>
+  </g>
+  <ellipse class="bubble" cx="1282" cy="1658" rx="84" ry="166"/>
+  <g data-region-id="p1-r006">
+    <text class="serif v" x="1308" y="1556" font-size="46">待った？</text>
+  </g>
+
+  <!-- lower left panel -->
+  <rect class="panel" x="54" y="930" width="650" height="1060"/>
+  <path d="M70 1730 L690 1390 M70 1880 L690 1570" class="thin"/>
+  <rect x="76" y="952" width="606" height="1000" fill="url(#dots)" opacity=".08"/>
+  <circle cx="360" cy="1390" r="145" fill="#fff" stroke="#111" stroke-width="9"/>
+  <path d="M232 1360 q52-190 185-118 q80 12 102 126 q-80-50-180-55 q-58 4-107 47" fill="#111"/>
+  <path d="M305 1410 q20 14 39 0 M395 1410 q20 14 39 0 M330 1470 q35 20 70-2" class="thin"/>
+  <path d="M230 1534 q130 75 258 4 l118 420 H110 z" fill="#fff" stroke="#111" stroke-width="9"/>
+  <ellipse class="bubble" cx="572" cy="1180" rx="104" ry="230"/>
+  <g data-region-id="p1-r007">
+    <text class="serif v" x="603" y="990" font-size="38">ううん、今来たところ。</text>
+  </g>
+  <ellipse class="bubble" cx="142" cy="1230" rx="92" ry="250"/>
+  <g data-region-id="p1-r008">
+    <text class="serif v" x="166" y="1020" font-size="43">約束、忘れてないよ。</text>
+  </g>
+  <g data-region-id="p1-r009">
+    <text class="serif v" x="204" y="1022" font-size="20" letter-spacing="1">やくそく</text>
+  </g>
+  <path d="M535 1840 q-85-120-160-65 q-75 55-150-20" class="thin"/>
+</svg>
