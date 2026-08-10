@@ -19,13 +19,12 @@ def _alembic_config(database_url: str) -> Config:
 
 
 @pytest.mark.integration
-def test_dictionary_projection_migration_backfills_existing_english_result(
-    postgres_url: str,
+def test_dictionary_projection_migration_backfills_existing_english_result_and_blocks_lossy_downgrade(
+    clean_postgres_url: str,
 ) -> None:
-    config = _alembic_config(postgres_url)
-    command.upgrade(config, "head")
+    config = _alembic_config(clean_postgres_url)
     command.downgrade(config, _PREVIOUS_REVISION)
-    engine = create_engine(postgres_url)
+    engine = create_engine(clean_postgres_url)
 
     image_digest = hashlib.sha256(b"dictionary-migration-image").digest()
     request_digest = hashlib.sha256(b"dictionary-migration-request").digest()
@@ -280,33 +279,7 @@ def test_dictionary_projection_migration_backfills_existing_english_result(
     assert item == ("en", False, None, expected_ref)
     assert meanings == ["cat", "domestic cat"]
 
-    # Pure English state can downgrade because the legacy schema represents it losslessly.
-    command.downgrade(config, _PREVIOUS_REVISION)
-    command.upgrade(config, "head")
-    engine.dispose()
-
-
-@pytest.mark.integration
-def test_dictionary_projection_migration_refuses_lossy_multilingual_downgrade(
-    postgres_url: str,
-) -> None:
-    config = _alembic_config(postgres_url)
-    command.upgrade(config, "head")
-    engine = create_engine(postgres_url)
-
     with engine.begin() as connection:
-        projection_job_id = connection.execute(
-            text(
-                """
-                SELECT job_id
-                FROM mangasensei.dictionary_projections
-                ORDER BY job_id
-                LIMIT 1
-                """
-            )
-        ).scalar_one_or_none()
-        if projection_job_id is None:
-            pytest.skip("backfill fixture did not leave an English projection row")
         connection.execute(
             text(
                 """
@@ -315,9 +288,8 @@ def test_dictionary_projection_migration_refuses_lossy_multilingual_downgrade(
                 WHERE job_id = :job_id
                 """
             ),
-            {"job_id": projection_job_id},
+            {"job_id": job_id},
         )
-
     with pytest.raises(DBAPIError, match="cannot downgrade while multilingual"):
         command.downgrade(config, _PREVIOUS_REVISION)
 
@@ -330,8 +302,10 @@ def test_dictionary_projection_migration_refuses_lossy_multilingual_downgrade(
                 WHERE job_id = :job_id
                 """
             ),
-            {"job_id": projection_job_id},
+            {"job_id": job_id},
         )
+
+    # Pure English state can downgrade because the legacy schema represents it losslessly.
     command.downgrade(config, _PREVIOUS_REVISION)
     command.upgrade(config, "head")
     engine.dispose()
