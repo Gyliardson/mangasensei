@@ -27,6 +27,7 @@ describe("App UI localization", () => {
 
   it("switches UI and study languages without rewriting dictionary preference", async () => {
     const user = userEvent.setup();
+    window.localStorage.setItem(UI_LOCALE_PREFERENCE_KEY, "en");
     window.localStorage.setItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY, "de");
     const first = render(<App />);
 
