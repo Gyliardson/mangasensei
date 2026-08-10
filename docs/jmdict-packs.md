@@ -31,6 +31,16 @@ from their reviewed manifest; the current German filename is `jmdict-de.json`.
 Unknown product languages fail closed. There is no reviewed word-level Portuguese JMdict pack,
 and KANJIDIC Portuguese data is not used as a vocabulary substitute.
 
+## Lexical matching boundary
+
+The pack layer owns reviewed data acquisition, normalization and integrity only. It continues to
+produce the established `mangasensei-jmdict-v3` form contract and does not call or define the
+runtime lexical-candidate selection API. #103 owns language-neutral Japanese lexical matching;
+future gloss-language resolution must consume the canonical lexical identity produced by that
+layer rather than using dictionary language to influence candidate selection. This keeps the pack
+foundation independent from #103 persistence/read-model changes and from the lookup API evolution
+currently under review in PR #111.
+
 ## Refreshing reviewed metadata
 
 The converter remains `mangasensei-jmdict-v3`, including spelling/reading/sense applicability
