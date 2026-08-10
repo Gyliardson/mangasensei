@@ -19,7 +19,7 @@
 
 MangaSensei は漫画ページから日本語テキストを抽出し、ローカルの言語データで補強して、元画像を変更せずレスポンシブなリーダーに表示します。OCR モデルの重みと JMdict 由来データはローカルに保持され、Git にコミットされず配布イメージにも含まれません。Gemini は任意です。
 
-日本語コンテンツは、**ブラジルポルトガル語（`pt-BR`）または英語（`en`）の文脈解説**で学習できます。学習言語は明示的に選択され、ブラウザに保存される UI locale とは独立しています。UI は英語（`en`）とブラジルポルトガル語（`pt-BR`）をサポートし、新規または無効なブラウザ状態では英語を既定値として使い、明示的な選択をローカルに保存します。レビュー済みローカル JMdict の決定論的な語義はどちらの学習モードでも英語のままで、学習言語だけを変更すると完了済み OCR と日本語言語解析を再利用します。詳細は[学習言語コントラクト](docs/study-languages.md)を参照してください。
+日本語コンテンツは、**ブラジルポルトガル語（`pt-BR`）または英語（`en`）の文脈解説**で学習できます。言語には独立した 4 つの軸があります。コンテンツは日本語（`ja`）、学習・解説言語は `pt-BR` または `en`、決定論的な辞書の要求言語は `en`・`de`・`pt-BR`、ブラウザに保存される UI locale は `en` または `pt-BR` です。UI locale と辞書言語は、新規または無効なブラウザ状態では英語を既定値とします。ドイツ語は正確な正規形がレビュー済みローカル JMdict pack に存在する場合に使われ、存在しない項目だけ英語へフォールバックします。`pt-BR` 辞書要求は要求言語として維持されますが、レビュー済みの単語レベルのポルトガル語 JMdict pack がないため、決定論的な語義は英語フォールバックです。辞書言語の変更は永続化済みの正規言語解析を再利用し、OCR、Sudachi の語彙取得、Gemini を再実行しません。詳細は[言語軸コントラクト](docs/study-languages.md)と[JMdict pack コントラクト](docs/jmdict-packs.md)を参照してください。
 
 現在の開発バージョンは [`VERSION`](VERSION) に記録されています。
 
@@ -27,7 +27,7 @@ MangaSensei は漫画ページから日本語テキストを抽出し、ロー�
 
 | Local-first | Original-first | Study-first |
 | --- | --- | --- |
-| OCR、モデル、辞書データは既定でローカルです。 | アップロードした漫画画像はそのまま保持し、学習用オーバーレイを別に描画します。 | ふりがな、語彙、学習言語、言語情報、文脈解説を読解の流れに沿って整理します。 |
+| OCR、モデル、辞書データは既定でローカルです。 | アップロードした漫画画像はそのまま保持し、学習用オーバーレイを別に描画します。 | ふりがな、語彙、独立した学習言語と辞書言語、言語情報、文脈解説を読解の流れに沿って整理します。 |
 
 ## リーダープレビュー
 
@@ -44,9 +44,9 @@ MangaSensei は漫画ページから日本語テキストを抽出し、ロー�
 | --- | --- |
 | アップロード | 冪等性、明示的な `pt-BR`/`en` 学習言語、ページ単位 HMAC capability を備えた安全な画像アップロード |
 | OCR | チェックサムで検証された Manga Image Translator のローカル OCR サブセット |
-| 言語解析 | Sudachi トークン化と、検証済みソースから生成する英語ベースの正規化 JMdict インデックス |
+| 言語解析 | Sudachi トークン化と、言語非依存の正規 lexical identity に投影されるレビュー済みローカル英語・ドイツ語 JMdict データ |
 | Gemini | 予算追跡と `store=False` を使う任意の `pt-BR`/`en` 構造化文脈解説 |
-| リーダー | 認証付き Blob、レスポンシブ SVG オーバーレイ、ふりがな、独立した `en`/`pt-BR` UI locale と学習言語設定、語彙カードを備えた React SPA |
+| リーダー | 認証付き Blob、レスポンシブ SVG オーバーレイ、ふりがな、独立した `en`/`pt-BR` UI locale、`pt-BR`/`en` 学習言語、`en`/`de`/`pt-BR` 辞書要求と明示的なフォールバック表示を備えた React SPA |
 | 運用 | PostgreSQL キュー、lease 回復、保持処理、readiness、metrics |
 
 ## アーキテクチャ
@@ -101,9 +101,9 @@ flowchart TD
 | Method | Route | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/v1/pages` | 日本語漫画ページをアップロードし、任意の `studyLanguage`（既定 `pt-BR` または `en`）で解析 job をキューに登録する |
-| `GET` | `/api/v1/pages/{page_id}` | ページトークンで状態、永続化された言語メタデータ、完了済み学習データを取得する |
+| `GET` | `/api/v1/pages/{page_id}` | ページトークンで状態、永続化された言語・辞書 projection メタデータ、完了済み学習データを取得する |
 | `GET` | `/api/v1/pages/{page_id}/image` | 認証付き Blob レスポンスで元画像を返す |
-| `POST` | `/api/v1/pages/{page_id}/reprocess` | reprocess capability で解析、または学習言語だけの再生成をキューに登録する |
+| `POST` | `/api/v1/pages/{page_id}/reprocess` | reprocess capability で一般解析、または学習言語・辞書言語のいずれか 1 軸だけの再生成をキューに登録する |
 | `GET` | `/health` | プロセスの health check |
 | `GET` | `/ready` | データベース、storage、schema の readiness check |
 | `GET` | `/metrics` | Prometheus metrics |
@@ -137,7 +137,7 @@ Copy-Item .env.example .env
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Gemini は任意です。ローカル OCR と言語解析だけで worker を実行する場合は `GOOGLE_API_KEY` を未設定または空のままにし、選択した学習言語で文脈補強を有効にする場合のみ空でないキーを設定してください。有効にした場合、送信されるのは OCR テキストとリージョン単位の最小限の語彙候補（`id`、`surface`、`lemma`、`reading`）だけです。元画像、辞書の意味、ローカル JMdict データセットは送信されません。Gemini を無効にしても日本語 OCR・トークン化と英語 JMdict 語彙は利用でき、文脈翻訳・解説だけが欠ける場合があります。
+Gemini は任意です。ローカル OCR と言語解析だけで worker を実行する場合は `GOOGLE_API_KEY` を未設定または空のままにし、選択した学習言語で文脈補強を有効にする場合のみ空でないキーを設定してください。有効にした場合、送信されるのは OCR テキストとリージョン単位の最小限の語彙候補（`id`、`surface`、`lemma`、`reading`）だけです。元画像、辞書の意味、ローカル JMdict データセットは送信されません。Gemini を無効にしても日本語 OCR・トークン化と決定論的ローカル JMdict 語彙は利用でき、文脈翻訳・解説だけが欠ける場合があります。
 
 Docker Compose で起動:
 
