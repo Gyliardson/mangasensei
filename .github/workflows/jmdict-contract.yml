@@ -158,6 +158,8 @@ jobs:
           require_completed_successfully models
           require_completed_successfully jmdict
           require_completed_successfully migrate
+          docker compose run --rm --no-deps jmdict mangasensei jmdict verify
+          docker compose run --rm --no-deps jmdict mangasensei jmdict verify --language de
 
           for attempt in $(seq 1 120); do
             if curl --fail --silent --show-error "http://127.0.0.1:${MANGASENSEI_PORT}/ready" >/dev/null; then
