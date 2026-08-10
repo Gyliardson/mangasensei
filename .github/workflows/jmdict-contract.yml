@@ -5,24 +5,42 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - "backend/src/mangasensei/cli.py"
       - "backend/src/mangasensei/linguistics/jmdict.py"
       - "backend/src/mangasensei/linguistics/jmdict_bootstrap.py"
-      - "backend/src/mangasensei/linguistics/jmdict_manifest.json"
+      - "backend/src/mangasensei/linguistics/jmdict_packs.py"
+      - "backend/src/mangasensei/linguistics/jmdict_manifest*.json"
+      - "backend/src/mangasensei/linguistics/jmdict_packs.json"
       - "scripts/update_jmdict_manifest.py"
+      - "scripts/measure_jmdict_load.py"
       - "tests/unit/test_jmdict_bootstrap.py"
+      - "tests/unit/test_jmdict_packs.py"
+      - "tests/unit/test_cli.py"
       - "tests/fullstack/fixtures/jmdict.json"
+      - "THIRD_PARTY_NOTICES.md"
+      - "docs/versions.md"
+      - "pyproject.toml"
       - "compose.yaml"
       - "Dockerfile"
       - ".github/workflows/jmdict-contract.yml"
   push:
     branches: [main]
     paths:
+      - "backend/src/mangasensei/cli.py"
       - "backend/src/mangasensei/linguistics/jmdict.py"
       - "backend/src/mangasensei/linguistics/jmdict_bootstrap.py"
-      - "backend/src/mangasensei/linguistics/jmdict_manifest.json"
+      - "backend/src/mangasensei/linguistics/jmdict_packs.py"
+      - "backend/src/mangasensei/linguistics/jmdict_manifest*.json"
+      - "backend/src/mangasensei/linguistics/jmdict_packs.json"
       - "scripts/update_jmdict_manifest.py"
+      - "scripts/measure_jmdict_load.py"
       - "tests/unit/test_jmdict_bootstrap.py"
+      - "tests/unit/test_jmdict_packs.py"
+      - "tests/unit/test_cli.py"
       - "tests/fullstack/fixtures/jmdict.json"
+      - "THIRD_PARTY_NOTICES.md"
+      - "docs/versions.md"
+      - "pyproject.toml"
       - "compose.yaml"
       - "Dockerfile"
       - ".github/workflows/jmdict-contract.yml"
@@ -36,9 +54,11 @@ concurrency:
 
 jobs:
   verify:
-    name: Pinned source through runtime loader
+    name: Pinned packs through runtime loader
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
+    env:
+      MANGASENSEI_JMDICT_PATH: ${{ runner.temp }}/mangasensei-jmdict/jmdict.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -52,11 +72,23 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --frozen
 
-      - name: Verify pinned source, normalized metadata and runtime load
+      - name: Verify all reviewed sources, normalized metadata and runtime loads
         run: uv run python scripts/update_jmdict_manifest.py --check
 
-      - name: Validate focused producer and consumer regressions
-        run: uv run pytest tests/unit/test_jmdict_bootstrap.py -q
+      - name: Validate focused producer, pack and CLI regressions
+        run: uv run pytest tests/unit/test_jmdict_bootstrap.py tests/unit/test_jmdict_packs.py tests/unit/test_cli.py -q
+
+      - name: Exercise backward-compatible English and explicit German bootstrap
+        run: |
+          uv run mangasensei jmdict download
+          uv run mangasensei jmdict verify
+          uv run mangasensei jmdict download --language de
+          uv run mangasensei jmdict verify --language de
+
+      - name: Record one-process pack load measurements
+        run: |
+          uv run python scripts/measure_jmdict_load.py "${MANGASENSEI_JMDICT_PATH}"
+          uv run python scripts/measure_jmdict_load.py "$(dirname "${MANGASENSEI_JMDICT_PATH}")/jmdict-de.json"
 
   docker-bootstrap:
     name: Fresh Compose prerequisites, API and worker readiness
