@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import pytest
+from scripts.update_jmdict_manifest import update_manifests
 
 from mangasensei.linguistics.jmdict_packs import default_pack_registry_path
-from scripts.update_jmdict_manifest import update_manifests
 
 
 @pytest.mark.asyncio
