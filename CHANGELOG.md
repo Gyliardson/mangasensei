@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Public README presentation now follows a visitor-first flow with explicit pre-release status, a Docker-first Quick Start, scoped OCR validation and known limitations, and synchronized English/Portuguese/Japanese/Spanish structure.
+- The clean Compose data-contract gate now creates `.env` from the documented template and completes one safe synthetic local-only analysis through the production stack before teardown.
 - Linguistic runs now persist the loaded dictionary version and digest instead of a placeholder.
 - `models` and `jmdict` CLI commands no longer require database or capability credentials.
 - Docker Compose uses a named `jmdict_data` volume so the bootstrap container can write without depending on host directory ownership.
