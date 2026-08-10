@@ -215,6 +215,7 @@ def _settings(database_url: str, root: Path) -> Settings:
         storage_root=root,
         model_cache=root / "models",
         capability_peppers=("dictionary-projection-test-pepper-000001",),
+        reprocess_rate_limit_per_minute=50,
     )
 
 
@@ -290,7 +291,7 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "dictionary-flow-english" ,
+                "Idempotency-Key": "dictionary-flow-english",
             },
             json={"dictionaryLanguage": "en"},
         )
