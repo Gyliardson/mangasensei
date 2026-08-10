@@ -39,6 +39,8 @@ import {
 } from "./readerViewportPreference";
 import "./reader-preferences.css";
 
+const EMPTY_DICTIONARY_SOURCES: readonly DictionarySourceReference[] = [];
+
 interface ReaderWorkspaceProps {
   readonly page: StudyPage;
   readonly imageUrl: string;
@@ -81,6 +83,7 @@ export function ReaderWorkspace({
   const presentedFitMode = effectiveReaderFitMode(viewportPreference.fitMode, readerWidth);
   const messages = messagesFor(uiLocale);
   const persistedDictionaryLanguage = page.requestedDictionaryLanguage ?? "en";
+  const dictionarySources = page.dictionarySources ?? EMPTY_DICTIONARY_SOURCES;
   const languageUpdating = languageMutation !== null;
 
   useEffect(() => {
@@ -350,7 +353,7 @@ export function ReaderWorkspace({
         furiganaMode={furiganaMode}
         studyLanguage={page.studyLanguage}
         requestedDictionaryLanguage={persistedDictionaryLanguage}
-        dictionarySources={page.dictionarySources ?? []}
+        dictionarySources={dictionarySources}
         messages={messages}
       />
     </main>
