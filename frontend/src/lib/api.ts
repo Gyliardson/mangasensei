@@ -109,8 +109,9 @@ interface Envelope<T> {
 }
 
 export class ApiError extends Error {
-  constructor(readonly code: string, message: string) {
-    super(message);
+  constructor(readonly code: string) {
+    super(code);
+    this.name = "ApiError";
   }
 }
 
@@ -160,7 +161,7 @@ export async function fetchProtectedImage(
     signal,
   });
   if (!response.ok) {
-    throw new ApiError("image_unavailable", "A imagem protegida não pôde ser carregada.");
+    throw new ApiError("image_unavailable");
   }
   return URL.createObjectURL(await response.blob());
 }
@@ -186,12 +187,12 @@ export async function waitForPage(
       );
     }
     if (status.status === "failed" || status.status === "expired") {
-      throw new ApiError(status.error?.code ?? status.status, status.error?.message ?? "Processamento encerrado.");
+      throw new ApiError(status.error?.code ?? status.status);
     }
     await abortableDelay(delay, signal);
     delay = Math.min(Math.round(delay * 1.6), 5_000);
   }
-  throw new DOMException("Operação cancelada", "AbortError");
+  throw new DOMException("Operation aborted", "AbortError");
 }
 
 async function requestJson<T>(url: string, token: string, signal: AbortSignal): Promise<T> {
@@ -205,20 +206,17 @@ async function requestJson<T>(url: string, token: string, signal: AbortSignal): 
 async function parseEnvelope<T>(response: Response): Promise<T> {
   const payload = (await response.json()) as Envelope<T>;
   if (!response.ok || !payload.success || payload.data === null) {
-    throw new ApiError(
-      payload.error?.code ?? "request_failed",
-      payload.error?.message ?? "A requisição não pôde ser concluída.",
-    );
+    throw new ApiError(payload.error?.code ?? "request_failed");
   }
   return payload.data;
 }
 
 function validateClientFile(file: File): void {
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
-    throw new ApiError("invalid_image", "Use uma imagem JPEG, PNG ou WebP.");
+    throw new ApiError("invalid_image");
   }
   if (file.size > 12 * 1024 * 1024) {
-    throw new ApiError("image_too_large", "A imagem deve ter no máximo 12 MiB.");
+    throw new ApiError("image_too_large");
   }
 }
 
@@ -237,7 +235,7 @@ function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void
       "abort",
       () => {
         window.clearTimeout(timeout);
-        reject(new DOMException("Operação cancelada", "AbortError"));
+        reject(new DOMException("Operation aborted", "AbortError"));
       },
       { once: true },
     );
