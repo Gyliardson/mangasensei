@@ -50,7 +50,7 @@ async def update_manifests(
     check: bool,
 ) -> dict[str, dict[str, object]]:
     packs = load_jmdict_packs(registry_path)
-    selected = tuple(languages) if languages else tuple(sorted(packs))
+    selected = tuple(dict.fromkeys(languages)) if languages else tuple(sorted(packs))
     unknown = sorted(set(selected) - set(packs))
     if unknown:
         raise ValueError(f"unsupported dictionary language(s): {', '.join(unknown)}")
