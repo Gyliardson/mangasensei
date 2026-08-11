@@ -107,7 +107,11 @@ def test_supervisor_kills_child_at_wall_clock_deadline(
     spool.write_model_atomic(request_path, request)
     process = _FakeProcess(alive=True, exitcode=None)
     monotonic = iter((0.0, 181.0))
-    monkeypatch.setattr(renderer_module.multiprocessing, "get_context", lambda _: _FakeContext(process))
+    monkeypatch.setattr(
+        renderer_module.multiprocessing,
+        "get_context",
+        lambda _: _FakeContext(process),
+    )
     monkeypatch.setattr(renderer_module.time, "monotonic", lambda: next(monotonic))
 
     PdfRenderer(settings)._process(request_path, request)
@@ -130,7 +134,11 @@ def test_supervisor_maps_abnormal_child_exit_to_crash(
     request_path = spool.request_path(request.import_id, request.fencing_token)
     spool.write_model_atomic(request_path, request)
     process = _FakeProcess(alive=False, exitcode=-9)
-    monkeypatch.setattr(renderer_module.multiprocessing, "get_context", lambda _: _FakeContext(process))
+    monkeypatch.setattr(
+        renderer_module.multiprocessing,
+        "get_context",
+        lambda _: _FakeContext(process),
+    )
 
     PdfRenderer(settings)._process(request_path, request)
 
