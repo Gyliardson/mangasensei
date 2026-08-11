@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const redPage = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAAnUlEQVR4nO3PgQ0AEADAMPz/M1+Q1HrBNvf4y3odcFvDuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6w707AHv8mafmgAAAABJRU5ErkJggg==",
+  "iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAAnUlEQVR4nO3PgQ0AEADAMPz/M1+Q1HrBNvf4y3odcFvDuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYd0B8+0B7+/9iFoAAAAASUVORK5CYII=",
   "base64",
 );
 const bluePage = Buffer.from(
@@ -101,7 +101,8 @@ async function waitForDocument(
   while (Date.now() < deadline) {
     const snapshot = await readDocument(request, documentId, readDocumentToken);
     if (predicate(snapshot)) return snapshot;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // The real API enforces request-rate limits and the queue intentionally backs off retries.
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
   throw new Error("document state did not satisfy the expected predicate");
 }
