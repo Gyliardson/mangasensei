@@ -291,21 +291,26 @@ jobs:
 
       - name: Install backend dependencies for cross-UID full-stack harness
         run: |
-          sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 /opt/mangasensei-ci-python
-          UV_PYTHON_INSTALL_DIR=/opt/mangasensei-ci-python uv python install 3.11
-          python_bin="$(UV_PYTHON_INSTALL_DIR=/opt/mangasensei-ci-python uv python find 3.11)"
-          UV_PYTHON_INSTALL_DIR=/opt/mangasensei-ci-python uv sync --frozen --python "${python_bin}"
-          sudo chmod -R a+rX /opt/mangasensei-ci-python
-          grep -q "/opt/mangasensei-ci-python" .venv/pyvenv.cfg
+          sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 /opt/mangasensei-ci
+          UV_PYTHON_INSTALL_DIR=/opt/mangasensei-ci/python uv python install 3.11
+          python_bin="$(UV_PYTHON_INSTALL_DIR=/opt/mangasensei-ci/python uv python find 3.11)"
+          UV_PROJECT_ENVIRONMENT=/opt/mangasensei-ci/venv \
+            UV_PYTHON_INSTALL_DIR=/opt/mangasensei-ci/python \
+            uv sync --frozen --python "${python_bin}" --no-editable
+          sudo chmod -R a+rX /opt/mangasensei-ci
+          grep -q "/opt/mangasensei-ci/python" /opt/mangasensei-ci/venv/pyvenv.cfg
           sudo setpriv --reuid=10001 --regid=10001 --clear-groups \
-            .venv/bin/python -c 'import encodings; print("cross-uid Python ready")'
+            /opt/mangasensei-ci/venv/bin/python -c \
+            'from pathlib import Path; import encodings, mangasensei; assert Path("tests/fullstack/worker.py").is_file(); assert Path("tests/fullstack/fixtures/jmdict.json").is_file(); assert Path("frontend/dist/index.html").is_file(); print("cross-uid MangaSensei runtime ready")'
 
       - name: Start real API, isolated PDF renderer, importer and deterministic worker
         run: |
           rm -rf "${MANGASENSEI_STORAGE_ROOT}" "${MANGASENSEI_PDF_SPOOL_ROOT}"
           sudo install -d -o 10001 -g 10001 -m 0700 \
             "${MANGASENSEI_STORAGE_ROOT}" "${MANGASENSEI_PDF_SPOOL_ROOT}"
-          uv run mangasensei migrate
+          harness_python=/opt/mangasensei-ci/venv/bin/python
+          "${harness_python}" -c \
+            'from mangasensei.cli import main; raise SystemExit(main(["migrate"]))'
           docker build --build-arg MANGASENSEI_VERSION="$(cat VERSION)" -t mangasensei:pdf-fullstack .
           docker rm -f mangasensei-pdf-renderer-e2e >/dev/null 2>&1 || true
           docker run --detach --name mangasensei-pdf-renderer-e2e \
@@ -323,18 +328,18 @@ jobs:
             mangasensei:pdf-fullstack mangasensei pdf-renderer >/dev/null
           sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
             setpriv --reuid=10001 --regid=10001 --clear-groups \
-            "${PWD}/.venv/bin/python" -c \
+            "${harness_python}" -c \
             'from mangasensei.cli import main; raise SystemExit(main(["api", "--host", "127.0.0.1", "--port", "8000"]))' \
             > "${RUNNER_TEMP}/mangasensei-api.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/mangasensei-api.pid"
           sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
             setpriv --reuid=10001 --regid=10001 --clear-groups \
-            "${PWD}/.venv/bin/python" tests/fullstack/worker.py \
+            "${harness_python}" tests/fullstack/worker.py \
             > "${RUNNER_TEMP}/mangasensei-worker.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/mangasensei-worker.pid"
           sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
             setpriv --reuid=10001 --regid=10001 --clear-groups \
-            "${PWD}/.venv/bin/python" -c \
+            "${harness_python}" -c \
             'from mangasensei.cli import main; raise SystemExit(main(["pdf-importer"]))' \
             > "${RUNNER_TEMP}/mangasensei-pdf-importer.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/mangasensei-pdf-importer.pid"
@@ -426,7 +431,7 @@ jobs:
           tar -xzf "${archive}" -C "${install_dir}" gitleaks
           "${install_dir}/gitleaks" version
           probe_dir="$(mktemp -d)"
-          printf 'token = "%s%s"\n' 'ghp_1234567890abcdef' 'ghijklmnopqrstuvwxyz' \
+          printf 'aws_access_key_id=%s%s\n' 'AKIA7Z2Q' '5M4N6P3T2V7W' \
             > "${probe_dir}/synthetic-secret.txt"
           set +e
           "${install_dir}/gitleaks" dir --redact --no-banner "${probe_dir}"
