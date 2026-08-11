@@ -52,6 +52,19 @@ Runtime and development dependencies are pinned in [`uv.lock`](uv.lock) and
 [`package-lock.json`](package-lock.json). Their licenses are not reproduced in this
 notice file; consult each upstream package distribution for its license terms.
 
+### pypdfium2 / bundled PDFium
+
+Hardened local PDF import uses `pypdfium2 5.12.1` and the binary distribution `pypdfium2_raw 152.0.7947.0`, which bundles PDFium build `7947`. The wrapper distribution declares `BSD-3-Clause OR Apache-2.0` and carries both license texts. The binary distribution declares `Apache-2.0 OR BSD-3-Clause` and carries its complete transitive native notice bundle as `pypdfium2_raw-152.0.7947.0.dist-info/licenses/BUILD_LICENSES` inside the selected wheel.
+
+The locked Linux x86_64 distribution was inspected directly during Slice D implementation. `BUILD_LICENSES` includes the PDFium/Chromium BSD-style notice and notices for bundled third-party components including FreeType 2 (FreeType Project License or GPL-2.0), Abseil (Apache-2.0), libpng (PNG Reference Library License 2.0 and historical notices), Little CMS 2 (MIT), libjpeg-turbo (its documented IJG/BSD/zlib and wxWindows terms), OpenJPEG (BSD-2-Clause), fast_float (MIT), Anti-Grain Geometry 2.3 (MIT), bigint (Apple Public Source License 1.1), Clipper (Boost Software License 1.0), FXdiv (BSD-2-Clause), Highway (Apache-2.0/BSD-3-Clause), libtiff (libtiff license), libwebp (BSD-3-Clause), PartitionAlloc (Chromium BSD-style), pthreadpool (BSD-2-Clause), and the remaining components/notices concatenated by that exact `BUILD_LICENSES` file. The packaged file is the authoritative complete notice set for the bundled native build; this summary does not replace it.
+
+Runtime provenance validation requires the exact helper version, PDFium build and `pypdfium2_raw/libpdfium.so` from the installed binary wheel and rejects V8/XFA builds or a system/source PDFium substitution. Inspection of the selected x86_64 `libpdfium.so` showed only standard Linux/glibc runtime dependencies (`libdl`, `librt`, `libpthread`, `libm`, `libc` and the ELF loader), not a dynamically linked system PDFium.
+
+References:
+
+- [pypdfium2 project](https://github.com/pypdfium2-team/pypdfium2)
+- [pypdfium2 licensing documentation](https://pypdfium2.readthedocs.io/en/stable/python_api.html)
+
 ### OpenCV Python Headless
 
 The local OCR runtime uses the headless OpenCV Python wheel pinned in `uv.lock`. The `opencv-python` packaging scripts are MIT-licensed, OpenCV itself is Apache-2.0, and the binary wheels include additional third-party components documented by the upstream distribution. The headless package is used because MangaSensei does not require OpenCV GUI functions in its server or worker runtime.
