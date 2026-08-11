@@ -58,7 +58,7 @@ class JobRecord(Base):
         ),
         CheckConstraint(
             "cancel_requested_at IS NULL OR status IN "
-            "('claimed','processing_ocr','processing_linguistics','processing_gemini','cancelled')",
+            "('claimed','processing_ocr','processing_linguistics','processing_gemini','cancelled','expired')",
             name="cancel_request_state",
         ),
         CheckConstraint(
