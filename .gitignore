@@ -29,6 +29,11 @@ frontend/.vite/
 frontend/coverage/
 playwright-report/
 test-results/
+test-results-media/
+
+# Generated presentation media
+media-output/
+media-derivatives/
 
 # Runtime data and OCR models
 var/
