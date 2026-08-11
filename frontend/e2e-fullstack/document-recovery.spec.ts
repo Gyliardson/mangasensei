@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const redPage = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAAnUlEQVR4nO3PgQ0AEADAMPz/M1+Q1HrBNvf4y3odcFvDuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYd0B8+0B7+/9iFoAAAAASUVORK5CYII=",
+  "iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAAnUlEQVR4nO3PgQ0AEADAMPz/M1+Q1HrBNsceX1mvA25rWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYd0B8+0B7+/9iFoAAAAASUVORK5CYII=",
   "base64",
 );
 const bluePage = Buffer.from(
@@ -101,8 +101,8 @@ async function waitForDocument(
   while (Date.now() < deadline) {
     const snapshot = await readDocument(request, documentId, readDocumentToken);
     if (predicate(snapshot)) return snapshot;
-    // The real API enforces request-rate limits and the queue intentionally backs off retries.
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Keep test polling below the production request-rate envelope while the UI polls independently.
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
   throw new Error("document state did not satisfy the expected predicate");
 }
@@ -239,19 +239,16 @@ test("server cancellation leaves a completed sibling readable and persists termi
   expect(completedPageId).toBeTruthy();
   expect(unfinishedPageId).toBeTruthy();
 
-  await waitForDocument(
-    request,
-    document.documentId,
-    document.capabilities.readDocument,
-    (snapshot) =>
-      snapshot.status === "processing"
-      && snapshot.progress.completedPages === 1
-      && snapshot.progress.processingPages === 1,
-  );
+  // The reader already polls the aggregate. Wait for the completed sibling through the real UI,
+  // then cancel immediately instead of duplicating that polling through APIRequestContext.
   await expect(page.getByRole("button", { name: "Page 1: readable" })).toHaveAttribute(
     "data-page-status",
     "readable",
-    { timeout: 10_000 },
+    { timeout: 15_000 },
+  );
+  await expect(page.getByRole("button", { name: "Page 2: processing" })).toHaveAttribute(
+    "data-page-status",
+    "processing",
   );
   await expect(page.getByRole("button", { name: "Region 1: 猫です" })).toBeVisible();
 
@@ -265,13 +262,8 @@ test("server cancellation leaves a completed sibling readable and persists termi
   expect(await cancelResponse.request().headerValue("x-document-token")).toBe(
     document.capabilities.manageDocument,
   );
-
-  const cancelled = await waitForDocument(
-    request,
-    document.documentId,
-    document.capabilities.readDocument,
-    (snapshot) => snapshot.status === "cancelled",
-  );
+  const cancelled = ((await cancelResponse.json()) as DocumentSnapshotEnvelope).data;
+  expect(cancelled.status).toBe("cancelled");
   expect(cancelled.progress).toEqual({
     totalPages: 2,
     completedPages: 1,
@@ -300,7 +292,7 @@ test("server cancellation leaves a completed sibling readable and persists termi
   );
   await expect(page.getByRole("button", { name: "Region 1: 猫です" })).toBeVisible();
 
-  // A fresh server read proves cancellation is durable rather than only client-side polling state.
+  // One fresh server read proves cancellation is durable rather than only client-side state.
   const reloaded = await readDocument(
     request,
     document.documentId,
