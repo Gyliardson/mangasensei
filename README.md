@@ -88,12 +88,12 @@ PowerShell can use:
 Invoke-RestMethod http://127.0.0.1:8000/ready
 ```
 
-Then open **http://127.0.0.1:8000** and analyze a JPEG, PNG, or WebP manga page. You can also select multiple supported images to create an ordered temporary Document.
+Then open **http://127.0.0.1:8000** and analyze a JPEG, PNG, WebP, or one PDF manga source. Multiple supported images keep their chosen order; a PDF is rendered locally first and then becomes the same ordinary ordered temporary Document model.
 
 If bootstrap fails, inspect the relevant service logs:
 
 ```sh
-docker compose logs models jmdict migrate api worker
+docker compose logs models jmdict migrate api pdf-renderer pdf-importer worker
 ```
 
 ### 4. Stop or reset
@@ -116,7 +116,7 @@ The second command removes local database state, uploaded-page storage, OCR mode
 
 A normal reading session is intentionally simple:
 
-1. Select one supported manga image, or an ordered set of images.
+1. Select one supported manga image, an ordered set of images, or one PDF.
 2. MangaSensei preserves the original image and queues each Page for local OCR and linguistic analysis.
 3. Open completed pages in the responsive reader while study overlays remain separate from the source image.
 4. Select OCR regions to inspect Japanese text, furigana, tokens, and deterministic dictionary vocabulary.
@@ -132,11 +132,12 @@ The existing mobile reader is responsive as well:
 
 ## Multi-page workflow
 
-Slices B and C of [#105](https://github.com/Gyliardson/mangasensei/issues/105) support ordered multi-image Documents, partial results, and recovery controls without turning a manga volume into one giant OCR job.
+Slices B, C and D of [#105](https://github.com/Gyliardson/mangasensei/issues/105) support ordered multi-image Documents, partial results/recovery controls, and hardened local PDF import without turning a manga volume into one giant OCR job.
 
 **Available now:**
 
 - select multiple JPEG, PNG, or WebP images and inspect/reorder them before upload;
+- select one PDF for a bounded asynchronous local render/import stage; every raster is validated before the normal ordered Document is committed;
 - preserve that displayed pre-upload order as the Document's canonical initial order;
 - keep each Page as an independent OCR/study/job unit;
 - show truthful aggregate processing, completed, completed-with-errors, and cancelled states with completed / processing / failed / cancelled page counts;
@@ -148,7 +149,7 @@ Slices B and C of [#105](https://github.com/Gyliardson/mangasensei/issues/105) s
 - reprocess study language or dictionary language only for the current Page;
 - keep the Document and all child Pages on the same exact 24-hour retention boundary.
 
-**Still deferred under #105:** hardened PDF import, thumbnails, a persistent manga library, spread-aware/cross-page reading-order semantics, and later large-document/performance hardening.
+**Still deferred under #105:** thumbnails, a persistent manga library, spread-aware/cross-page reading-order semantics, and later large-document/performance hardening.
 
 See the [multi-image Document contract](docs/document-imports.md) for limits, capabilities, idempotency, retention, recovery, and failure semantics.
 
@@ -209,7 +210,7 @@ See the [language-axis contract](docs/study-languages.md) and [JMdict pack contr
 
 | Area | Capability |
 | --- | --- |
-| Upload | Safe standalone image upload plus bounded ordered multi-image Documents with idempotency and scoped capabilities |
+| Upload | Safe standalone images, bounded ordered multi-image Documents, and hardened local PDF import with idempotency and scoped capabilities |
 | OCR | Local Manga Image Translator subset with checksum-verified model artifacts |
 | Linguistics | Sudachi tokenization plus reviewed local English/German JMdict data over language-neutral canonical lexical identities |
 | Reader | Authenticated original-image Blob rendering, responsive SVG overlays, furigana, zoom/fit controls, multi-page navigation and partial-result reading |
@@ -221,7 +222,6 @@ See the [language-axis contract](docs/study-languages.md) and [JMdict pack contr
 
 MangaSensei is still pre-release software. In addition to the OCR limitations listed under [Current validation](#current-validation):
 
-- PDF import is not implemented yet;
 - Documents are temporary rather than a persistent manga library;
 - thumbnails and spread-aware/cross-page reading order are not implemented;
 - later large-document/performance hardening remains deferred under #105;

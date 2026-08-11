@@ -88,12 +88,12 @@ PowerShell では:
 Invoke-RestMethod http://127.0.0.1:8000/ready
 ```
 
-その後 **http://127.0.0.1:8000** を開き、JPEG・PNG・WebP の漫画ページを解析します。複数の対応画像を選択して、一時的な順序付き Document を作成することもできます。
+その後 **http://127.0.0.1:8000** を開き、JPEG・PNG・WebP または 1 つの PDF を解析します。複数画像は選択順を保持し、PDF は bounded な local render/import を完了してから同じ通常の順序付き Document になります。
 
 bootstrap が失敗した場合:
 
 ```sh
-docker compose logs models jmdict migrate api worker
+docker compose logs models jmdict migrate api pdf-renderer pdf-importer worker
 ```
 
 ### 4. Stop / reset
@@ -116,7 +116,7 @@ docker compose down --volumes --remove-orphans
 
 通常の読解 session はシンプルです。
 
-1. 対応画像 1 枚、または順序付きの複数画像を選択する。
+1. 対応画像 1 枚、順序付きの複数画像、または 1 つの PDF を選択する。
 2. MangaSensei は元画像を保持し、各 Page をローカル OCR・言語解析へ queue する。
 3. 完了した Page を responsive reader で開き、study overlay は source image と分離して表示する。
 4. OCR region を選び、日本語 text、ふりがな、token、決定論的 dictionary vocabulary を確認する。
@@ -132,11 +132,12 @@ mobile reader も responsive です。
 
 ## Multipage workflow
 
-[#105](https://github.com/Gyliardson/mangasensei/issues/105) の Slice B / C は、漫画 volume 全体を 1 個の巨大 OCR job にせず、順序付き複数画像 Document、partial result、recovery control を提供します。
+[#105](https://github.com/Gyliardson/mangasensei/issues/105) の Slice B / C / D は、漫画 volume 全体を 1 個の巨大 OCR job にせず、順序付き複数画像 Document、partial result/recovery、hardened local PDF import を提供します。
 
 **現在利用可能:**
 
 - 複数 JPEG・PNG・WebP を選択し、upload 前に確認・並べ替えする。
+- 1 つの PDF を bounded asynchronous local render/import に送り、全 raster 検証後だけ通常の Document を commit する。
 - 画面上の upload 前の順序を Document の canonical initial order として保持する。
 - 各 Page を独立した OCR / study / job 単位のままにする。
 - processing / completed / completed-with-errors / cancelled の正確な aggregate state と、completed / processing / failed / cancelled Page 件数を表示する。
@@ -148,7 +149,7 @@ mobile reader も responsive です。
 - study language / dictionary language の reprocess は current Page のみ行う。
 - Document と全 child Page が同一の正確な 24 時間 retention boundary を共有する。
 
-**#105 で引き続き未実装:** hardened PDF import、thumbnail、persistent manga library、spread-aware / cross-page reading-order semantics、後続の large-document/performance hardening。
+**#105 で引き続き未実装:** thumbnail、persistent manga library、spread-aware / cross-page reading-order semantics、後続の large-document/performance hardening。
 
 詳細は [multi-image Document contract](docs/document-imports.md) を参照してください。
 
@@ -209,7 +210,7 @@ MangaSensei は現在、汎用的な OCR accuracy percentage を公開してい�
 
 | Area | Capability |
 | --- | --- |
-| Upload | 安全な standalone image upload と、idempotency/scoped capability を持つ bounded ordered multi-image Document |
+| Upload | 安全な standalone image、bounded ordered multi-image Document、idempotency/scoped capability を持つ hardened local PDF import |
 | OCR | checksum-verified model artifact を使う local Manga Image Translator subset |
 | Linguistics | language-neutral canonical lexical identity 上の Sudachi tokenization と reviewed local English/German JMdict data |
 | Reader | authenticated original-image Blob、responsive SVG overlay、ふりがな、zoom/fit、multipage navigation、partial-result reading |
@@ -221,7 +222,6 @@ MangaSensei は現在、汎用的な OCR accuracy percentage を公開してい�
 
 MangaSensei は pre-release software です。上記 OCR limitation に加えて:
 
-- PDF import は未実装です。
 - Document は temporary で、persistent manga library ではありません。
 - thumbnail と spread-aware/cross-page reading order は未実装です。
 - large-document/performance の追加 hardening は #105 の後続 work として未実装です。

@@ -88,12 +88,12 @@ No PowerShell:
 Invoke-RestMethod http://127.0.0.1:8000/ready
 ```
 
-Depois abra **http://127.0.0.1:8000** e analise uma página JPEG, PNG ou WebP. Também é possível selecionar várias imagens suportadas para criar um Document temporário e ordenado.
+Depois abra **http://127.0.0.1:8000** e analise uma fonte JPEG, PNG, WebP ou um PDF. Várias imagens preservam a ordem escolhida; um PDF passa primeiro por renderização local limitada e depois usa o mesmo modelo normal de Document temporário e ordenado.
 
 Se o bootstrap falhar, consulte os logs relevantes:
 
 ```sh
-docker compose logs models jmdict migrate api worker
+docker compose logs models jmdict migrate api pdf-renderer pdf-importer worker
 ```
 
 ### 4. Pare ou limpe o ambiente
@@ -116,7 +116,7 @@ O segundo comando remove estado local do banco, storage de páginas enviadas, mo
 
 Uma sessão normal de leitura é intencionalmente simples:
 
-1. Selecione uma imagem suportada ou um conjunto ordenado de imagens.
+1. Selecione uma imagem suportada, um conjunto ordenado de imagens ou um PDF.
 2. O MangaSensei preserva a imagem original e enfileira cada Page para OCR local e análise linguística.
 3. Abra Pages concluídas no leitor responsivo enquanto os overlays de estudo permanecem separados da imagem-fonte.
 4. Selecione regiões de OCR para inspecionar texto japonês, furigana, tokens e vocabulário determinístico do dicionário.
@@ -132,11 +132,12 @@ O leitor atual também é responsivo em telas móveis:
 
 ## Fluxo multipágina
 
-Os Slices B e C de [#105](https://github.com/Gyliardson/mangasensei/issues/105) suportam Documents de múltiplas imagens ordenadas, resultados parciais e controles de recuperação sem transformar um volume inteiro em um único job de OCR.
+Os Slices B, C e D de [#105](https://github.com/Gyliardson/mangasensei/issues/105) suportam Documents de múltiplas imagens ordenadas, resultados parciais/recuperação e importação local endurecida de PDF sem transformar um volume inteiro em um único job de OCR.
 
 **Disponível agora:**
 
 - selecionar várias imagens JPEG, PNG ou WebP e inspecionar/reordenar antes do upload;
+- selecionar um PDF para uma etapa assíncrona, local e limitada de renderização/importação; todos os rasters são validados antes do commit do Document normal;
 - preservar a ordem exibida antes do envio como ordem inicial canônica do Document;
 - manter cada Page como unidade independente de OCR/estudo/job;
 - mostrar estados agregados verdadeiros de processando, concluído, concluído com erros e cancelado, com contagens de Pages concluídas / processando / com falha / canceladas;
@@ -148,7 +149,7 @@ Os Slices B e C de [#105](https://github.com/Gyliardson/mangasensei/issues/105) 
 - reprocessar idioma de estudo ou idioma de dicionário somente na Page atual;
 - manter Document e todas as Pages filhas no mesmo limite exato de retenção de 24 horas.
 
-**Ainda adiado em #105:** importação de PDF endurecida, thumbnails, biblioteca persistente de mangá, semântica de ordem de leitura em spreads/entre páginas e hardening posterior de performance/escala para Documents grandes.
+**Ainda adiado em #105:** thumbnails, biblioteca persistente de mangá, semântica de ordem de leitura em spreads/entre páginas e hardening posterior de performance/escala para Documents grandes.
 
 Consulte o [contrato de Documents multi-imagem](docs/document-imports.md) para limites, capabilities, idempotência, retenção, recuperação e semântica de falhas.
 
@@ -209,7 +210,7 @@ Veja o [contrato dos eixos de idioma](docs/study-languages.md) e o [contrato dos
 
 | Área | Capacidade |
 | --- | --- |
-| Upload | Upload seguro standalone mais Documents multi-imagem ordenados/limitados, com idempotência e capabilities com escopo |
+| Upload | Imagens standalone seguras, Documents multi-imagem ordenados/limitados e importação local endurecida de PDF, com idempotência e capabilities com escopo |
 | OCR | Subconjunto local do Manga Image Translator com modelos verificados por checksum |
 | Linguística | Tokenização Sudachi e dados JMdict locais revisados em inglês/alemão sobre identidades lexicais canônicas independentes de idioma |
 | Leitor | Renderização Blob autenticada da imagem original, overlays SVG responsivos, furigana, zoom/ajuste, navegação multipágina e leitura de resultados parciais |

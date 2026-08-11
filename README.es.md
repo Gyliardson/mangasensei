@@ -88,12 +88,12 @@ En PowerShell:
 Invoke-RestMethod http://127.0.0.1:8000/ready
 ```
 
-Después abre **http://127.0.0.1:8000** y analiza una página JPEG, PNG o WebP. También puedes seleccionar varias imágenes compatibles para crear un Document temporal y ordenado.
+Después abre **http://127.0.0.1:8000** y analiza una fuente JPEG, PNG, WebP o un PDF. Varias imágenes conservan el orden elegido; un PDF pasa primero por un render/import local acotado y después usa el mismo Document temporal y ordenado.
 
 Si el bootstrap falla:
 
 ```sh
-docker compose logs models jmdict migrate api worker
+docker compose logs models jmdict migrate api pdf-renderer pdf-importer worker
 ```
 
 ### 4. Detén o limpia el entorno
@@ -116,7 +116,7 @@ El segundo comando elimina el estado local de la base de datos, el almacenamient
 
 Una sesión normal de lectura es intencionadamente sencilla:
 
-1. Selecciona una imagen compatible o un conjunto ordenado de imágenes.
+1. Selecciona una imagen compatible, un conjunto ordenado de imágenes o un PDF.
 2. MangaSensei preserva la imagen original y encola cada Page para OCR local y análisis lingüístico.
 3. Abre Pages completadas en el lector responsivo mientras los overlays de estudio permanecen separados de la imagen fuente.
 4. Selecciona regiones OCR para inspeccionar texto japonés, furigana, tokens y vocabulario determinista del diccionario.
@@ -132,11 +132,12 @@ El lector actual también es responsivo en móvil:
 
 ## Flujo multipágina
 
-Los Slices B y C de [#105](https://github.com/Gyliardson/mangasensei/issues/105) admiten Documents de múltiples imágenes ordenadas, resultados parciales y controles de recuperación sin convertir un volumen entero en un único job gigante de OCR.
+Los Slices B, C y D de [#105](https://github.com/Gyliardson/mangasensei/issues/105) admiten Documents de múltiples imágenes ordenadas, resultados parciales/recuperación e importación PDF local endurecida sin convertir un volumen entero en un único job gigante de OCR.
 
 **Disponible ahora:**
 
 - seleccionar varias imágenes JPEG, PNG o WebP e inspeccionarlas/reordenarlas antes de subirlas;
+- seleccionar un PDF para una etapa asíncrona, local y acotada de render/import; todos los raster se validan antes de confirmar el Document normal;
 - conservar el orden mostrado antes de la carga como orden inicial canónico del Document;
 - mantener cada Page como unidad independiente de OCR/estudio/job;
 - mostrar estados agregados veraces de procesando, completado, completado con errores y cancelado, junto con contadores de Pages completadas / en proceso / con fallo / canceladas;
@@ -148,7 +149,7 @@ Los Slices B y C de [#105](https://github.com/Gyliardson/mangasensei/issues/105)
 - reprocesar idioma de estudio o idioma de diccionario solo para la Page actual;
 - mantener el Document y todas las Pages hijas en el mismo límite exacto de retención de 24 horas.
 
-**Aún aplazado en #105:** importación PDF endurecida, thumbnails, biblioteca persistente de manga, semántica de orden de lectura consciente de spreads/entre páginas y hardening posterior de rendimiento/escala para Documents grandes.
+**Aún aplazado en #105:** thumbnails, biblioteca persistente de manga, semántica de orden de lectura consciente de spreads/entre páginas y hardening posterior de rendimiento/escala para Documents grandes.
 
 Consulta el [contrato de Documents multiimagen](docs/document-imports.md) para límites, capabilities, idempotencia, retención, recuperación y semántica de fallos.
 
@@ -209,7 +210,7 @@ Consulta el [contrato de ejes de idioma](docs/study-languages.md) y el [contrato
 
 | Área | Capacidad |
 | --- | --- |
-| Carga | Carga segura standalone más Documents multiimagen ordenados/acotados con idempotencia y capabilities con alcance |
+| Carga | Imágenes standalone seguras, Documents multiimagen ordenados/acotados e importación PDF local endurecida con idempotencia y capabilities con alcance |
 | OCR | Subconjunto local de Manga Image Translator con modelos verificados por checksum |
 | Lingüística | Tokenización Sudachi y datos JMdict locales revisados en inglés/alemán sobre identidades léxicas canónicas independientes del idioma |
 | Lector | Renderizado Blob autenticado de la imagen original, overlays SVG responsivos, furigana, zoom/ajuste, navegación multipágina y lectura de resultados parciales |
@@ -221,7 +222,6 @@ Consulta el [contrato de ejes de idioma](docs/study-languages.md) y el [contrato
 
 MangaSensei sigue siendo software pre-release. Además de las limitaciones OCR indicadas arriba:
 
-- la importación de PDF aún no está implementada;
 - los Documents son temporales, no una biblioteca persistente de manga;
 - thumbnails y orden de lectura consciente de spreads/entre páginas no están implementados;
 - el hardening posterior de rendimiento/escala para Documents grandes sigue aplazado en #105;

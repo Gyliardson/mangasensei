@@ -1,6 +1,6 @@
-# Multi-image document imports
+# Document imports
 
-MangaSensei supports an ordered set of JPEG, PNG, or WebP images as one temporary `Document`. PDF import is not implemented in this slice.
+MangaSensei supports either an ordered set of JPEG, PNG, or WebP images or one PDF source as a temporary `Document`. PDF import uses a distinct transient asynchronous render/import resource; only after every raster page passes the existing image-validation contract is the ordinary ordered Document/Page/Job graph committed.
 
 ## Resource model
 
@@ -30,6 +30,65 @@ The multipart sequence is the canonical initial order. Filenames, EXIF timestamp
 One selected image continues to use the standalone `POST /api/v1/pages` flow in the SPA. Two or more selected images use `POST /api/v1/documents`.
 
 The browser lets the user inspect, move up/down, remove, or clear selected images before upload. Reordering is available through ordinary keyboard-focusable buttons and does not require drag-and-drop reordering.
+
+## PDF import (Slice D)
+
+`POST /api/v1/document-imports` accepts exactly one `application/pdf` part named `pdf`, one `studyLanguage` and an `Idempotency-Key`. A new request returns HTTP `202` with a transient import UUID, `pdfium-raster-v1`, expiry and a `read:document-import` capability. The browser polls `GET /api/v1/document-imports/{importId}` with that capability in `X-Document-Import-Token`. It does not put import or Document capabilities into URLs, history or `localStorage`.
+
+The import status is deliberately separate from normal Page `JobStatus`:
+
+```text
+PDF import: queued -> rendering -> completed | failed
+Document child: ordinary Page -> ordinary page_analysis Job / Attempt -> StudyResult
+```
+
+`completed` is the only import state that exposes a logical Document. The status response then returns the normal Document UUID plus freshly issued `read:document`, `read:document-image`, `reprocess:document` and `manage:document` capabilities. The SPA immediately reuses the existing Document reader/progress/recovery flow. A failed import returns a terminal stable PDF error code and no partial Document.
+
+### Renderer boundary
+
+The production renderer is a separate non-root Compose service. It has no database, capability pepper, OCR model, JMdict or Gemini configuration; no Docker socket; `network_mode: none`; `cap_drop: ALL`; `no-new-privileges`; a read-only root filesystem; bounded `/tmp`; one CPU; a 1 GiB memory limit; a PID limit; and only the transient PDF spool mounted writable. PDF rendering is sequential and each request executes inside a disposable subprocess supervised by the renderer service, so a native crash, signal or wall-clock overrun cannot be mistaken for a successful manifest.
+
+The supported runtime is pinned to `pypdfium2 5.12.1` with bundled PDFium `152.0.7947.0` build `7947`. Startup verifies that the native library resolves from `pypdfium2_raw/libpdfium.so`, that the helper/build identity is exact and that the build does not enable V8/XFA. A system PDFium or source-build fallback is therefore not accepted silently. The renderer never initializes PDF form environments and uses `may_draw_forms=False`; annotations are not drawn. Password/encrypted PDFs are rejected in v1, and malformed/truncated documents fail closed.
+
+### `pdfium-raster-v1` contract
+
+The persisted import identity freezes these raster choices:
+
+- PDFium page bounding box policy (`get_bbox()`, the MediaBox/CropBox intersection exposed by PDFium), embedded page rotation and PDFium canvas units;
+- fixed 200 DPI (`200 / 72` scale), no caller-selected renderer path or flags;
+- white background, RGB PNG, Pillow `compress_level=6`, `optimize=False`;
+- annotations/forms disabled; explicit PDFium smoothing/cache/byte-order flags;
+- contiguous source order, including duplicate pages and blank pages;
+- SHA-256, dimensions, byte size, bounding box, rotation and renderer provenance recorded per raster.
+
+PDFium does not expose `/UserUnit` as a separate helper value. The v1 contract therefore treats the bounded PDFium canvas-unit result as authoritative and regression-tests unusual `UserUnit` input for deterministic output rather than applying a second guessed scale. Same supported source bytes under the same pinned runtime contract are covered by deterministic raster-byte/hash regressions.
+
+### PDF limits and failure semantics
+
+| Setting / invariant | v1 limit |
+| --- | ---: |
+| Source PDF bytes | 256 MiB |
+| PDF pages | 200 |
+| Raster side | 10,000 px |
+| Raster pixels per Page | 25 MP |
+| Aggregate raster pixels | 1,000,000,000 |
+| Encoded raster bytes per Page | 12 MiB |
+| Aggregate encoded raster bytes | 512 MiB |
+| Per-import logical spool envelope | 768 MiB |
+| Production shared spool tmpfs | 1 GiB |
+| Renderer wall time | 180 s |
+| Import lease | 240 s |
+| Source/orphan privacy ceiling | exactly 1 h |
+
+Every produced PNG is re-read from the fixed spool path, checked for regular-file/no-symlink/no-hardlink semantics, compared with its manifest size/hash, and then passed through the same `ImageValidator` used by ordinary image upload. Manifest identity, source digest, fence, page order, aggregate counts, renderer provenance, raster dimensions and hashes are checked before commit. Failures use bounded public classes such as `pdf_invalid`, `pdf_encrypted_unsupported`, `pdf_page_limit`, `pdf_geometry_limit`, `pdf_pixel_limit`, `pdf_raster_bytes_limit`, `pdf_renderer_timeout`, `pdf_renderer_crash`, `pdf_temp_storage_exhausted`, `pdf_render_failed`, `pdf_raster_validation_failed` and `pdf_manifest_invalid`.
+
+### Atomicity, idempotency and cleanup
+
+The original PDF and intermediate rasters are transient spool material, not library objects. A coordinator owns database/storage credentials and lease/fencing state; the renderer owns only the spool. A source is deleted immediately after a terminal success/failure when cleanup succeeds, while queued/rendering sources have a fixed one-hour ceiling and expired/orphaned imports are reconciled. Normal Document/Page retention remains exactly 24 hours once the logical Document exists.
+
+The PDF request digest binds source-PDF SHA-256, requested study language, source kind `pdf` and raster-contract version. Filenames are not content identity. Replaying the same key/request recovers the original import/result; the same key with materially different content or language conflicts. Lease recovery increments a fencing token, and stale renderer manifests cannot commit.
+
+Atomic commit happens only after all rasters validate. One PostgreSQL transaction creates one `Document(source_kind=pdf)`, all ordered ordinary Pages and all normal initial Page jobs. Identical raster bytes can share the existing immutable blob, while duplicate source pages remain distinct ordered Page memberships. If render, manifest, raster validation, fencing, timeout or resource checks fail, zero logical Document Pages are committed.
 
 ### Creation idempotency
 
@@ -202,10 +261,9 @@ A successful reorder rewrites only contiguous Page ordinals. Page identity, Job/
 
 The current Document contract intentionally does not implement:
 
-- PDF import or a hardened local PDF renderer;
 - thumbnails;
 - two-page spreads or cross-page reading order;
 - a persistent manga library;
 - later large-document/performance hardening beyond the current bounded limits.
 
-PDF support remains deferred to a later slice of #105.
+Slice E remains deferred under #105; Slice D does not add thumbnails, a persistent manga library, spread-aware/cross-page reading order, or later large-document/performance work beyond the bounded PDF contract above.
