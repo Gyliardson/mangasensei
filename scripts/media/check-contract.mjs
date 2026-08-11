@@ -68,24 +68,29 @@ function listPlaywrightTests(configFile) {
   return result.stdout.replaceAll("\\", "/");
 }
 
-function mediaDiscoveryRecords(output) {
+function discoveryRecords(output) {
   const records = [];
   for (const line of output.split(/\r?\n/)) {
-    const match = line.match(
-      /\[([^\]]+)\]\s+›\s+(e2e\/media\/[^:]+):\d+:\d+\s+›\s+(.+)$/,
-    );
+    const match = line.match(/\[([^\]]+)\]\s+›\s+(.+?):\d+:\d+\s+›\s+(.+)$/);
     if (!match) continue;
     const [, project, testPath, title] = match;
-    const scenarioId = ids.find((id) => title === id || title.startsWith(`${id} `));
-    assert.ok(scenarioId, `unexpected media story in discovery: ${line.trim()}`);
-    records.push({ project, testPath, title, scenarioId });
+    records.push({ project, testPath, title });
   }
   return records;
 }
 
 const mediaList = listPlaywrightTests("playwright.media.config.ts");
-const mediaRecords = mediaDiscoveryRecords(mediaList);
-assert.ok(mediaRecords.length > 0, "dedicated media config discovered no media stories");
+const mediaRecords = discoveryRecords(mediaList).map((record) => {
+  const scenarioId = ids.find(
+    (id) => record.title === id || record.title.startsWith(`${id} `),
+  );
+  assert.ok(
+    scenarioId,
+    `unexpected media story in dedicated discovery: ${record.project} ${record.testPath} ${record.title}`,
+  );
+  return { ...record, scenarioId };
+});
+assert.ok(mediaRecords.length > 0, `dedicated media config discovered no media stories:\n${mediaList}`);
 assert.deepEqual(
   new Set(mediaRecords.map((record) => record.project)),
   new Set(["media-desktop", "media-mobile"]),
@@ -109,13 +114,19 @@ for (const scenario of catalog.scenarios) {
 }
 
 const defaultList = listPlaywrightTests("playwright.config.ts");
-const leakedMediaStories = defaultList
-  .split(/\r?\n/)
-  .filter((line) => line.includes("e2e/media/"));
+const defaultRecords = discoveryRecords(defaultList);
+assert.ok(defaultRecords.length > 0, `default Playwright config discovered no tests:\n${defaultList}`);
+const leakedMediaStories = defaultRecords.filter(
+  (record) =>
+    record.testPath.endsWith("e2e/media/capture.spec.ts") ||
+    record.testPath.endsWith("media/capture.spec.ts"),
+);
 assert.deepEqual(
   leakedMediaStories,
   [],
-  `default Playwright config discovered media stories:\n${leakedMediaStories.join("\n")}`,
+  `default Playwright config discovered media stories:\n${leakedMediaStories
+    .map((record) => `${record.project} ${record.testPath} ${record.title}`)
+    .join("\n")}`,
 );
 
 console.log(
