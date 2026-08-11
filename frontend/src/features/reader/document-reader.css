@@ -8,7 +8,8 @@
 }
 
 .document-progress,
-.document-prev-next {
+.document-prev-next,
+.document-recovery-controls {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -16,9 +17,15 @@
   flex-wrap: wrap;
 }
 
-.document-prev-next {
+.document-prev-next,
+.document-recovery-controls {
   margin-top: 0.75rem;
   justify-content: flex-start;
+}
+
+.document-action-error {
+  margin: 0.75rem 0 0;
+  font-weight: 600;
 }
 
 .document-page-index {
@@ -49,7 +56,8 @@
   outline-offset: 2px;
 }
 
-.document-page-index button[data-page-status="failed"] small {
+.document-page-index button[data-page-status="failed"] small,
+.document-page-index button[data-page-status="cancelled"] small {
   font-weight: 700;
 }
 
@@ -73,6 +81,10 @@
   .document-navigation-shell {
     width: min(100% - 1rem, 1180px);
     padding: 0.75rem;
+  }
+
+  .document-recovery-controls > button {
+    flex: 1 1 11rem;
   }
 
   .document-page-index {

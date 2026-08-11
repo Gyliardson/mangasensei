@@ -21,7 +21,7 @@ function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
 }
 
 export function documentNeedsPolling(snapshot: DocumentSnapshot): boolean {
-  return snapshot.progress.processingPages > 0;
+  return snapshot.status === "processing";
 }
 
 export async function waitForDocumentPageResult(
@@ -44,7 +44,11 @@ export async function waitForDocumentPageResult(
       throw new ApiError("request_failed");
     }
 
-    if (summary.status === "failed" || summary.status === "expired") {
+    if (
+      summary.status === "failed" ||
+      summary.status === "cancelled" ||
+      summary.status === "expired"
+    ) {
       if (summary.resultAvailable) {
         const page = await fetchDocumentPage(access, pageId, signal);
         throw new ApiError(page.error?.code ?? summary.status);

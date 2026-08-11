@@ -7,11 +7,14 @@ import {
   type DocumentUploadData,
   type JobStatus,
   type StudyPage,
+  cancelDocumentProcessing,
   fetchDocumentPage,
   fetchDocumentProtectedImage,
   fetchDocumentSnapshot,
+  reorderDocument,
   reprocessDocumentDictionaryLanguage,
   reprocessDocumentStudyLanguage,
+  retryFailedDocumentPages,
 } from "../../lib/api";
 import {
   type DictionaryLanguage,
@@ -42,6 +45,7 @@ interface DocumentReaderProps {
 }
 
 type LanguageMutation = "study" | "dictionary" | null;
+type DocumentMutation = "retry" | "cancel" | "reorder" | null;
 
 function requestedDictionaryLanguageOf(page: StudyPage): DictionaryLanguage {
   return page.requestedDictionaryLanguage ?? "en";
@@ -49,6 +53,10 @@ function requestedDictionaryLanguageOf(page: StudyPage): DictionaryLanguage {
 
 function isFailedStatus(status: JobStatus | undefined): boolean {
   return status === "failed" || status === "expired";
+}
+
+function isCancelledStatus(status: JobStatus | undefined): boolean {
+  return status === "cancelled";
 }
 
 export function DocumentReader({
@@ -65,10 +73,13 @@ export function DocumentReader({
   const [page, setPage] = useState<StudyPage | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [languageMutation, setLanguageMutation] = useState<LanguageMutation>(null);
+  const [documentMutation, setDocumentMutation] = useState<DocumentMutation>(null);
+  const [documentActionErrorCode, setDocumentActionErrorCode] = useState<string | null>(null);
   const [studyLanguageErrorCode, setStudyLanguageErrorCode] = useState<string | null>(null);
   const [dictionaryLanguageErrorCode, setDictionaryLanguageErrorCode] = useState<string | null>(null);
   const pageRequest = useRef<AbortController | null>(null);
   const mutationRequest = useRef<AbortController | null>(null);
+  const documentActionRequest = useRef<AbortController | null>(null);
   const requestGeneration = useRef(0);
   const autoDictionaryAttempt = useRef<string | null>(null);
   const currentPageIdRef = useRef(currentPageId);
@@ -99,6 +110,7 @@ export function DocumentReader({
   useEffect(() => () => {
     pageRequest.current?.abort();
     mutationRequest.current?.abort();
+    documentActionRequest.current?.abort();
     if (imageUrlRef.current) {
       URL.revokeObjectURL(imageUrlRef.current);
       imageUrlRef.current = null;
@@ -226,6 +238,51 @@ export function DocumentReader({
     setCurrentPageId(pageId);
   };
 
+  const runDocumentAction = async (
+    kind: Exclude<DocumentMutation, null>,
+    action: (signal: AbortSignal) => Promise<DocumentSnapshot | null>,
+  ) => {
+    if (documentMutation !== null) return;
+    const controller = new AbortController();
+    documentActionRequest.current?.abort();
+    documentActionRequest.current = controller;
+    setDocumentMutation(kind);
+    setDocumentActionErrorCode(null);
+    try {
+      const actionSnapshot = await action(controller.signal);
+      const next = actionSnapshot ?? await fetchDocumentSnapshot(access, controller.signal);
+      setSnapshot(next);
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
+      setDocumentActionErrorCode(caught instanceof ApiError ? caught.code : "document_action_failed");
+    } finally {
+      if (documentActionRequest.current === controller) {
+        documentActionRequest.current = null;
+        setDocumentMutation(null);
+      }
+    }
+  };
+
+  const retryFailed = () => void runDocumentAction("retry", async (signal) => {
+    await retryFailedDocumentPages(access, signal);
+    return null;
+  });
+
+  const cancelProcessing = () => void runDocumentAction("cancel", async (signal) => {
+    await cancelDocumentProcessing(access, signal);
+    return null;
+  });
+
+  const moveCurrentPage = (delta: -1 | 1) => void runDocumentAction("reorder", async (signal) => {
+    const targetIndex = currentIndex + delta;
+    if (targetIndex < 0 || targetIndex >= snapshot.pages.length) return snapshot;
+    const pageIds = snapshot.pages.map((summary) => summary.pageId);
+    const [moved] = pageIds.splice(currentIndex, 1);
+    if (!moved) return snapshot;
+    pageIds.splice(targetIndex, 0, moved);
+    return reorderDocument(access, pageIds, snapshot.orderRevision, signal);
+  });
+
   const changeStudyLanguage = async (target: StudyLanguage) => {
     if (!page || languageMutation) return;
     const previousPreference = preferredStudyLanguage;
@@ -312,20 +369,62 @@ export function DocumentReader({
       ? messages.dictionaryLanguageUpdateFailed
       : messages.apiError(dictionaryLanguageErrorCode)
     : null;
+  const documentActionError = documentActionErrorCode
+    ? documentActionErrorCode === "document_action_failed"
+      ? documentMessages.actionFailed
+      : messages.apiError(documentActionErrorCode)
+    : null;
 
   const navigation = (
     <section className="document-navigation-shell" aria-label={documentMessages.documentNavigation}>
       <div className="document-progress" role="status">
         <strong>{documentMessages.pageOf(currentIndex + 1, snapshot.progress.totalPages)}</strong>
+        <span>{documentMessages.aggregateStatus(snapshot.status)}</span>
         <span>
           {documentMessages.documentProgress(
             snapshot.progress.completedPages,
             snapshot.progress.totalPages,
             snapshot.progress.processingPages,
             snapshot.progress.failedPages,
+            snapshot.progress.cancelledPages,
           )}
         </span>
       </div>
+      <div className="document-recovery-controls" role="group" aria-label={documentMessages.documentNavigation}>
+        <button
+          type="button"
+          className="text-button"
+          disabled={documentMutation !== null || snapshot.progress.failedPages === 0}
+          onClick={retryFailed}
+        >
+          {documentMutation === "retry" ? documentMessages.retryingFailedPages : documentMessages.retryFailedPages}
+        </button>
+        <button
+          type="button"
+          className="text-button"
+          disabled={documentMutation !== null || snapshot.status !== "processing"}
+          onClick={cancelProcessing}
+        >
+          {documentMutation === "cancel" ? documentMessages.cancellingProcessing : documentMessages.cancelProcessing}
+        </button>
+        <button
+          type="button"
+          className="text-button"
+          disabled={documentMutation !== null || currentIndex <= 0}
+          onClick={() => moveCurrentPage(-1)}
+        >
+          {documentMessages.moveCurrentPageEarlier}
+        </button>
+        <button
+          type="button"
+          className="text-button"
+          disabled={documentMutation !== null || currentIndex >= snapshot.pages.length - 1}
+          onClick={() => moveCurrentPage(1)}
+        >
+          {documentMessages.moveCurrentPageLater}
+        </button>
+      </div>
+      {documentActionError ? <p className="document-action-error" role="alert">{documentActionError}</p> : null}
       <div className="document-prev-next" role="group" aria-label={documentMessages.documentNavigation}>
         <button
           type="button"
@@ -347,6 +446,14 @@ export function DocumentReader({
       <ol className="document-page-index">
         {snapshot.pages.map((summary) => {
           const failed = isFailedStatus(summary.status);
+          const cancelled = isCancelledStatus(summary.status);
+          const visualStatus = summary.resultAvailable
+            ? "readable"
+            : cancelled
+              ? "cancelled"
+              : failed
+                ? "failed"
+                : "processing";
           return (
             <li key={summary.pageId}>
               <button
@@ -357,16 +464,18 @@ export function DocumentReader({
                   summary.status,
                   summary.resultAvailable,
                 )}
-                data-page-status={summary.resultAvailable ? "readable" : failed ? "failed" : "processing"}
+                data-page-status={visualStatus}
                 onClick={() => selectPage(summary.pageId)}
               >
                 <span>{summary.ordinal + 1}</span>
                 <small>
                   {summary.resultAvailable
                     ? documentMessages.readablePage
-                    : failed
-                      ? documentMessages.failedPage
-                      : documentMessages.processingPage}
+                    : cancelled
+                      ? documentMessages.cancelledPage
+                      : failed
+                        ? documentMessages.failedPage
+                        : documentMessages.processingPage}
                 </small>
               </button>
             </li>
@@ -379,14 +488,19 @@ export function DocumentReader({
 
   if (!page || !imageUrl || !currentSummary?.resultAvailable) {
     const currentFailed = isFailedStatus(currentSummary?.status);
+    const currentCancelled = isCancelledStatus(currentSummary?.status);
     const loadError = currentSummary?.resultAvailable ? studyLanguageError : null;
-    const hasError = currentFailed || loadError !== null;
+    const hasError = currentFailed || currentCancelled || loadError !== null;
     return (
       <main id="conteudo" className="document-reader-loading">
         <h1 className="sr-only">{documentMessages.documentNavigation}</h1>
         {navigation}
         <p role={hasError ? "alert" : "status"}>
-          {currentFailed ? documentMessages.failedPage : loadError ?? documentMessages.processingPage}
+          {currentCancelled
+            ? documentMessages.cancelledPage
+            : currentFailed
+              ? documentMessages.failedPage
+              : loadError ?? documentMessages.processingPage}
         </p>
       </main>
     );

@@ -78,11 +78,13 @@ async def test_document_create_preserves_multipart_order_jobs_language_expiry_an
         "completedPages": 0,
         "processingPages": 3,
         "failedPages": 0,
+        "cancelledPages": 0,
     }
     assert set(data["capabilities"]) == {
         "readDocument",
         "readDocumentImage",
         "reprocessDocument",
+        "manageDocument",
     }
 
     async_url = clean_postgres_url.replace("postgresql://", "postgresql+psycopg://", 1)
@@ -118,6 +120,7 @@ async def test_document_create_preserves_multipart_order_jobs_language_expiry_an
         "read:document",
         "read:document-image",
         "reprocess:document",
+        "manage:document",
     }
     assert all(capability.expires_at == document.expires_at for capability in capabilities)
     await engine.dispose()

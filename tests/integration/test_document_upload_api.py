@@ -79,11 +79,13 @@ async def test_document_create_preserves_order_jobs_language_retention_and_capab
         "completedPages": 0,
         "processingPages": 2,
         "failedPages": 0,
+        "cancelledPages": 0,
     }
     assert set(data["capabilities"]) == {
         "readDocument",
         "readDocumentImage",
         "reprocessDocument",
+        "manageDocument",
     }
     assert all(data["capabilities"].values())
 
@@ -119,7 +121,12 @@ async def test_document_create_preserves_order_jobs_language_retention_and_capab
     assert len(jobs) == 2
     assert all(job.job_kind == "page_analysis" for job in jobs)
     assert all(job.study_language == "en" for job in jobs)
-    assert capability_scopes == {"read:document", "read:document-image", "reprocess:document"}
+    assert capability_scopes == {
+        "read:document",
+        "read:document-image",
+        "reprocess:document",
+        "manage:document",
+    }
     assert data["expiresAt"] == document.expires_at.isoformat()
     await engine.dispose()
 
@@ -201,7 +208,7 @@ async def test_document_creation_replay_reissues_capabilities_without_duplicate_
         assert await session.scalar(select(func.count()).select_from(DocumentRecord)) == 1
         assert await session.scalar(select(func.count()).select_from(PageRecord)) == 2
         assert await session.scalar(select(func.count()).select_from(JobRecord)) == 2
-        assert await session.scalar(select(func.count()).select_from(DocumentCapabilityRecord)) == 6
+        assert await session.scalar(select(func.count()).select_from(DocumentCapabilityRecord)) == 8
     await engine.dispose()
 
 
@@ -217,7 +224,6 @@ async def test_document_creation_idempotency_conflicts_when_request_identity_cha
     second = page_image((4, 5, 6))
     replacement = page_image((7, 8, 9))
     app = create_app(make_settings(clean_postgres_url, tmp_path))
-
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/documents",

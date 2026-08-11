@@ -38,6 +38,7 @@ class DocumentCapabilityTokens:
     read_document: str
     read_document_image: str
     reprocess_document: str
+    manage_document: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,8 +91,6 @@ class DocumentUploadService:
                 request_digest=request_digest,
             )
             if created:
-                # Acquire the complete unique lock set in digest order to avoid cross-request
-                # deadlocks when two documents contain the same blobs in different page order.
                 for digest in sorted({bytes.fromhex(image.sha256) for image in images}):
                     await acquire_image_blob_lock(session, digest)
                 ordered_inputs = zip(images, original_filenames, strict=True)
@@ -143,8 +142,6 @@ class DocumentUploadService:
             )
 
         for pending in pending_writes:
-            # The DB commit is authoritative. Pending markers make filesystem publication
-            # recoverable without ever deleting a blob referenced by another live Page.
             with suppress(OSError):
                 await self._storage.confirm(pending)
         return result
@@ -199,6 +196,7 @@ class DocumentUploadService:
             DocumentCapabilityScope.READ_DOCUMENT,
             DocumentCapabilityScope.READ_DOCUMENT_IMAGE,
             DocumentCapabilityScope.REPROCESS_DOCUMENT,
+            DocumentCapabilityScope.MANAGE_DOCUMENT,
         )
         issued = {
             scope: self._capabilities.issue(
@@ -224,6 +222,7 @@ class DocumentUploadService:
             read_document=issued[DocumentCapabilityScope.READ_DOCUMENT].token,
             read_document_image=issued[DocumentCapabilityScope.READ_DOCUMENT_IMAGE].token,
             reprocess_document=issued[DocumentCapabilityScope.REPROCESS_DOCUMENT].token,
+            manage_document=issued[DocumentCapabilityScope.MANAGE_DOCUMENT].token,
         )
 
     def _child_job_digest(self, upload_digest: bytes, ordinal: int) -> bytes:

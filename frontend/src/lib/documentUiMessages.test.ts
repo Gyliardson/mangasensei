@@ -11,8 +11,8 @@ describe("document UI messages", () => {
     expect(messages.analyzePages(1)).toBe("Analyze page");
     expect(messages.analyzePages(3)).toBe("Analyze 3 pages");
     expect(messages.pageOf(2, 7)).toBe("Page 2 of 7");
-    expect(messages.documentProgress(2, 7, 4, 1)).toBe(
-      "2 / 7 pages complete · 4 processing · 1 failed",
+    expect(messages.documentProgress(2, 7, 4, 1, 0)).toBe(
+      "2 / 7 pages readable · 4 processing · 1 failed · 0 cancelled",
     );
     expect(messages.pageStatus(3, "processing_linguistics", false)).toBe(
       "Page 3: processing linguistics",
@@ -31,8 +31,8 @@ describe("document UI messages", () => {
     expect(messages.analyzePages(1)).toBe("Analisar página");
     expect(messages.analyzePages(3)).toBe("Analisar 3 páginas");
     expect(messages.pageOf(2, 7)).toBe("Página 2 de 7");
-    expect(messages.documentProgress(2, 7, 4, 1)).toBe(
-      "2 / 7 páginas concluídas · 4 processando · 1 falharam",
+    expect(messages.documentProgress(2, 7, 4, 1, 0)).toBe(
+      "2 / 7 páginas disponíveis · 4 processando · 1 falharam · 0 canceladas",
     );
     expect(messages.pageStatus(3, "processing_ocr", false)).toBe("Página 3: processing ocr");
     expect(messages.pageStatus(3, "expired", true)).toBe("Página 3: disponível");

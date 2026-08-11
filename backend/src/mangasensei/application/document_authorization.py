@@ -50,6 +50,15 @@ class DocumentAuthorizer:
                 scope=DocumentCapabilityScope.READ_DOCUMENT,
             )
 
+    async def authorize_manage(self, *, document_id: UUID, token: str) -> AuthorizedDocument:
+        async with self._sessions() as session:
+            return await self._authorize_document_scope(
+                session,
+                document_id=document_id,
+                token=token,
+                scope=DocumentCapabilityScope.MANAGE_DOCUMENT,
+            )
+
     async def authorize_page(
         self,
         *,

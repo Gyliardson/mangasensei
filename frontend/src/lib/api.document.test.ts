@@ -15,6 +15,7 @@ const access: DocumentUploadData = {
   sourceKind: "images",
   expiresAt: "2026-08-11T12:00:00Z",
   orderRevision: 1,
+  status: "processing",
   pages: [
     { pageId: "page-a", ordinal: 0, status: "pending", resultAvailable: false },
     { pageId: "page-b", ordinal: 1, status: "pending", resultAvailable: false },
@@ -24,11 +25,13 @@ const access: DocumentUploadData = {
     completedPages: 0,
     processingPages: 2,
     failedPages: 0,
+    cancelledPages: 0,
   },
   capabilities: {
     readDocument: "read-document-token",
     readDocumentImage: "read-document-image-token",
     reprocessDocument: "reprocess-document-token",
+    manageDocument: "manage-document-token",
   },
 };
 

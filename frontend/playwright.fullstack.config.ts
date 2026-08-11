@@ -4,8 +4,11 @@ export default defineConfig({
   testDir: "./e2e-fullstack",
   outputDir: "../test-results-fullstack",
   fullyParallel: false,
+  workers: 1,
   forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 1 : 0,
+  // The real-server harness shares one database, rate limiter, and stateful deterministic worker.
+  // Retrying a test in the same worker would reuse fixture attempt history instead of reproducing it.
+  retries: 0,
   reporter: [
     ["list"],
     ["html", { outputFolder: "../playwright-report-fullstack", open: "never" }],

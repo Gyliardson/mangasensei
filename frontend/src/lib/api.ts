@@ -10,8 +10,10 @@ export type JobStatus =
   | "completed"
   | "retryable_failure"
   | "failed"
+  | "cancelled"
   | "expired";
 
+export type DocumentAggregateStatus = "processing" | "completed" | "completed_with_errors" | "cancelled";
 export type EffectiveDictionaryLanguage = "en" | "de";
 export type DictionaryFallbackReason =
   | "unsupported_requested_language"
@@ -49,6 +51,7 @@ export interface DocumentCapabilityTokens {
   readonly readDocument: string;
   readonly readDocumentImage: string;
   readonly reprocessDocument: string;
+  readonly manageDocument: string;
 }
 
 export interface DocumentPageSummary {
@@ -63,6 +66,7 @@ export interface DocumentProgress {
   readonly completedPages: number;
   readonly processingPages: number;
   readonly failedPages: number;
+  readonly cancelledPages: number;
 }
 
 export interface DocumentSnapshot {
@@ -70,12 +74,28 @@ export interface DocumentSnapshot {
   readonly sourceKind: "images";
   readonly expiresAt: string;
   readonly orderRevision: number;
+  readonly status: DocumentAggregateStatus;
   readonly pages: readonly DocumentPageSummary[];
   readonly progress: DocumentProgress;
 }
 
 export interface DocumentUploadData extends DocumentSnapshot {
   readonly capabilities: DocumentCapabilityTokens;
+}
+
+export interface RetryFailedDocumentData {
+  readonly created: boolean;
+  readonly retriedPageIds: readonly string[];
+  readonly jobIds: readonly string[];
+  readonly status: DocumentAggregateStatus;
+  readonly progress: DocumentProgress;
+}
+
+export interface CancelDocumentData {
+  readonly cancelledPages: number;
+  readonly cancelRequestedPages: number;
+  readonly status: DocumentAggregateStatus;
+  readonly progress: DocumentProgress;
 }
 
 export interface ReprocessData {
@@ -251,6 +271,60 @@ export async function fetchDocumentProtectedImage(
   return URL.createObjectURL(await response.blob());
 }
 
+export async function retryFailedDocumentPages(
+  access: DocumentUploadData,
+  signal: AbortSignal,
+): Promise<RetryFailedDocumentData> {
+  const response = await fetch(
+    `/api/v1/documents/${encodeURIComponent(access.documentId)}/retry-failed`,
+    {
+      method: "POST",
+      headers: {
+        "Idempotency-Key": createIdempotencyKey("document-retry-failed"),
+        "X-Document-Token": access.capabilities.manageDocument,
+      },
+      signal,
+    },
+  );
+  return parseEnvelope<RetryFailedDocumentData>(response);
+}
+
+export async function cancelDocumentProcessing(
+  access: DocumentUploadData,
+  signal: AbortSignal,
+): Promise<CancelDocumentData> {
+  const response = await fetch(
+    `/api/v1/documents/${encodeURIComponent(access.documentId)}/cancel`,
+    {
+      method: "POST",
+      headers: { "X-Document-Token": access.capabilities.manageDocument },
+      signal,
+    },
+  );
+  return parseEnvelope<CancelDocumentData>(response);
+}
+
+export async function reorderDocument(
+  access: DocumentUploadData,
+  pageIds: readonly string[],
+  expectedOrderRevision: number,
+  signal: AbortSignal,
+): Promise<DocumentSnapshot> {
+  const response = await fetch(
+    `/api/v1/documents/${encodeURIComponent(access.documentId)}/order`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Document-Token": access.capabilities.manageDocument,
+      },
+      body: JSON.stringify({ pageIds, expectedOrderRevision }),
+      signal,
+    },
+  );
+  return parseEnvelope<DocumentSnapshot>(response);
+}
+
 export async function reprocessStudyLanguage(
   upload: UploadData,
   studyLanguage: StudyLanguage,
@@ -375,7 +449,7 @@ export async function waitForPage(
         signal,
       );
     }
-    if (status.status === "failed" || status.status === "expired") {
+    if (status.status === "failed" || status.status === "cancelled" || status.status === "expired") {
       throw new ApiError(status.error?.code ?? status.status);
     }
     await abortableDelay(delay, signal);
@@ -396,7 +470,7 @@ export async function waitForDocumentPage(
     const page = await fetchDocumentPage(access, pageId, signal);
     onStatus(page.status);
     if (page.status === "completed" && isSatisfied(page)) return page;
-    if (page.status === "failed" || page.status === "expired") {
+    if (page.status === "failed" || page.status === "cancelled" || page.status === "expired") {
       throw new ApiError(page.error?.code ?? page.status);
     }
     await abortableDelay(delay, signal);
@@ -441,6 +515,7 @@ function validateClientFile(file: File): void {
 type IdempotencyNamespace =
   | "upload"
   | "document-upload"
+  | "document-retry-failed"
   | "study-reprocess"
   | "dictionary-reprocess"
   | "document-study-reprocess"
