@@ -6,26 +6,31 @@ import { App } from "./App";
 import { documentMessagesFor } from "./lib/documentUiMessages";
 import { messagesFor } from "./lib/uiMessages";
 
-function documentData() {
+function documentData(sourceKind: "images" | "pdf" = "images", totalPages = 2) {
   return {
     documentId: "document-001",
-    sourceKind: "images",
-    expiresAt: "2026-08-11T00:00:00Z",
+    sourceKind,
+    expiresAt: "2026-08-12T00:00:00Z",
     orderRevision: 1,
-    pages: [
-      { pageId: "page-a", ordinal: 0, status: "pending", resultAvailable: false },
-      { pageId: "page-b", ordinal: 1, status: "pending", resultAvailable: false },
-    ],
+    status: "processing",
+    pages: Array.from({ length: totalPages }, (_, ordinal) => ({
+      pageId: `page-${ordinal + 1}`,
+      ordinal,
+      status: "pending",
+      resultAvailable: false,
+    })),
     progress: {
-      totalPages: 2,
+      totalPages,
       completedPages: 0,
-      processingPages: 2,
+      processingPages: totalPages,
       failedPages: 0,
+      cancelledPages: 0,
     },
     capabilities: {
       readDocument: "read-document-token",
       readDocumentImage: "read-document-image-token",
       reprocessDocument: "reprocess-document-token",
+      manageDocument: "manage-document-token",
     },
   };
 }
@@ -33,7 +38,7 @@ function documentData() {
 async function selectTwoImages(user: ReturnType<typeof userEvent.setup>) {
   const first = new File(["first"], "z-first.png", { type: "image/png" });
   const second = new File(["second"], "a-second.png", { type: "image/png" });
-  await user.upload(screen.getByLabelText("Imagem da página"), [first, second]);
+  await user.upload(screen.getByLabelText(/Imagem da página/), [first, second]);
   return { first, second };
 }
 
@@ -69,6 +74,72 @@ describe("App document upload", () => {
     expect(capturedImages).toEqual([first, second]);
     expect(capturedStudyLanguages).toEqual(["pt-BR"]);
     expect(capturedDictionaryLanguage).toBe(false);
+  });
+
+  it("shows a truthful PDF import phase and then reuses the Document reader", async () => {
+    const user = userEvent.setup();
+    const pdf = new File(["%PDF-1.7\n"], "chapter.pdf", { type: "application/pdf" });
+    const importCreated = {
+      importId: "import-001",
+      sourceKind: "pdf",
+      status: "queued",
+      rasterContract: "pdfium-raster-v1",
+      expiresAt: "2026-08-12T00:00:00Z",
+      capabilities: { readDocumentImport: "import-read-token" },
+    };
+    const document = documentData("pdf", 1);
+    const importCompleted = {
+      ...importCreated,
+      status: "completed",
+      pageCount: 1,
+      errorCode: null,
+      createdAt: "2026-08-11T00:00:00Z",
+      document: { documentId: document.documentId, capabilities: document.capabilities },
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/document-imports" && init?.method === "POST") {
+        expect((init.body as FormData).get("pdf")).toBe(pdf);
+        return Response.json({ success: true, data: importCreated, error: null }, { status: 202 });
+      }
+      if (url === "/api/v1/document-imports/import-001") {
+        expect(init?.headers).toEqual({ "X-Document-Import-Token": "import-read-token" });
+        return Response.json({ success: true, data: importCompleted, error: null });
+      }
+      if (url === "/api/v1/documents/document-001") {
+        return Response.json({ success: true, data: document, error: null });
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", {
+      randomUUID: vi.fn(() => "00000000-0000-4000-8000-000000000138"),
+      getRandomValues: vi.fn(),
+    });
+    render(<App />);
+
+    await user.upload(screen.getByLabelText(/Imagem da página/), pdf);
+    expect(screen.getByText("1 PDF selecionado")).toBeVisible();
+    expect(screen.getByText(/renderização local acontece antes do OCR/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Analisar 1 página" }));
+
+    expect(await screen.findByText("Página 1 de 1")).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects mixing a PDF with image pages before network access", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    const pdf = new File(["%PDF-1.7\n"], "chapter.pdf", { type: "application/pdf" });
+    const image = new File(["image"], "page.png", { type: "image/png" });
+
+    await user.upload(screen.getByLabelText(/Imagem da página/), [pdf, image]);
+    await user.click(screen.getByRole("button", { name: "Analisar 2 páginas" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("pdf_must_be_single");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it.each([
