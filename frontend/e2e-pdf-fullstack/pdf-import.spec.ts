@@ -27,7 +27,7 @@ test("imports a PDF through the real local render boundary and normal page pipel
     response.request().method() === "POST"
       && new URL(response.url()).pathname === "/api/v1/document-imports",
   );
-  await page.getByRole("button", { name: "Analyze 1 page" }).click();
+  await page.getByRole("button", { name: "Analyze page" }).click();
   expect((await accepted).status()).toBe(202);
 
   await expect(page.getByText("Page 1 of 1")).toBeVisible({ timeout: 20_000 });
