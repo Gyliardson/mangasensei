@@ -86,6 +86,7 @@ jobs:
           retention-days: 30
 
       - name: Post result checkpoint
+        id: result
         if: >-
           steps.validate.outputs.protocol_status == 'accepted' &&
           steps.experiment.outcome == 'success' &&
@@ -108,7 +109,9 @@ jobs:
         if: >-
           always() &&
           steps.validate.outputs.protocol_status == 'accepted' &&
-          (steps.experiment.outcome != 'success' || steps.artifact.outcome != 'success')
+          (steps.experiment.outcome != 'success' ||
+          steps.artifact.outcome != 'success' ||
+          steps.result.outcome != 'success')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-

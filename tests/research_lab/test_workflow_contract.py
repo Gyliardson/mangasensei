@@ -23,6 +23,8 @@ def test_research_workflow_is_fail_closed_and_least_privilege() -> None:
     assert "${{ github.event.comment.body }}" not in workflow
     assert "retention-days: 30" in workflow
     assert "always()" in workflow
+    assert "id: result" in workflow
+    assert "steps.result.outcome != 'success'" in workflow
     assert "--kind failure" in workflow
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in workflow
     assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in workflow
