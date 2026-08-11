@@ -92,6 +92,7 @@ def test_javascript_open_action_is_not_executed_or_fetched(tmp_path: Path) -> No
     spool = PdfSpool(settings.pdf_spool_root)
     content = _javascript_pdf()
     request = _request_for(settings, spool, content)
+    spool.prepare_attempt_dir(request.import_id, request.fencing_token)
 
     manifest = PdfRenderer(settings)._render(request)
 
@@ -125,6 +126,7 @@ def test_per_page_and_aggregate_resource_limits_fail_closed(tmp_path: Path) -> N
 def test_spool_rejects_traversal_symlink_and_hardlink_rasters(tmp_path: Path) -> None:
     spool = PdfSpool(tmp_path / "spool")
     import_id = uuid4()
+    spool.prepare_import_dir(import_id)
     attempt = spool.prepare_attempt_dir(import_id, 1)
 
     with pytest.raises(PdfSpoolError, match="invalid raster filename"):
