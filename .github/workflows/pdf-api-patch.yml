@@ -1,0 +1,79 @@
+name: PDF API integration patch
+
+on:
+  push:
+    branches: [feat/105-hardened-pdf-import]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/105-hardened-pdf-import
+
+      - name: Apply focused API wiring
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("backend/src/mangasensei/api/app.py")
+          text = path.read_text()
+
+          replacements = [
+              (
+                  "import mangasensei\nfrom mangasensei.application.authorization import PageAuthorizer, ResourceNotFoundError\n",
+                  "import mangasensei\nfrom mangasensei.api.pdf_imports import register_pdf_import_routes\nfrom mangasensei.application.authorization import PageAuthorizer, ResourceNotFoundError\n",
+              ),
+              (
+                  "from mangasensei.application.page_queries import PageQueryService\n",
+                  "from mangasensei.application.page_queries import PageQueryService\nfrom mangasensei.application.pdf_imports import PdfImportQueryService, PdfImportService\n",
+              ),
+              (
+                  "from mangasensei.infrastructure.rate_limits import PostgreSQLRateLimiter\nfrom mangasensei.storage.images import ImageValidationError, ImageValidator, ValidatedImage\n",
+                  "from mangasensei.infrastructure.rate_limits import PostgreSQLRateLimiter\nfrom mangasensei.pdf_imports.spool import PdfSpool\nfrom mangasensei.storage.images import ImageValidationError, ImageValidator, ValidatedImage\n",
+              ),
+              (
+                  '_EXPECTED_DATABASE_REVISION = "f6a3c2d91b47"',
+                  '_EXPECTED_DATABASE_REVISION = "a3f9d712c640"',
+              ),
+              (
+                  "    reprocess_service = ReprocessService(\n        sessions,\n        idempotency_pepper=capability_peppers[0],\n    )\n",
+                  "    reprocess_service = ReprocessService(\n        sessions,\n        idempotency_pepper=capability_peppers[0],\n    )\n    pdf_spool = PdfSpool(settings.pdf_spool_root)\n    pdf_import_service = PdfImportService(\n        sessions=sessions,\n        spool=pdf_spool,\n        capabilities=capability_service,\n        idempotency_pepper=capability_peppers[0],\n        max_pdf_bytes=settings.max_pdf_bytes,\n    )\n    pdf_import_queries = PdfImportQueryService(\n        sessions=sessions,\n        capabilities=capability_service,\n    )\n",
+              ),
+              (
+                  "    app = FastAPI(\n        title=\"MangaSensei API\",\n        version=mangasensei.__version__,\n        docs_url=\"/api/docs\",\n        openapi_url=\"/api/openapi.json\",\n        lifespan=lifespan,\n    )\n\n",
+                  "    app = FastAPI(\n        title=\"MangaSensei API\",\n        version=mangasensei.__version__,\n        docs_url=\"/api/docs\",\n        openapi_url=\"/api/openapi.json\",\n        lifespan=lifespan,\n    )\n    register_pdf_import_routes(\n        app,\n        imports=pdf_import_service,\n        queries=pdf_import_queries,\n    )\n\n",
+              ),
+              (
+                  '    if request.method == "POST" and request.url.path in {"/api/v1/pages", "/api/v1/documents"}:\n',
+                  '    if request.method == "POST" and request.url.path in {\n        "/api/v1/pages",\n        "/api/v1/documents",\n        "/api/v1/document-imports",\n    }:\n',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count == 0:
+                  if new in text:
+                      continue
+                  raise SystemExit(f"expected API patch anchor not found: {old[:80]!r}")
+              if count != 1:
+                  raise SystemExit(f"API patch anchor matched {count} times: {old[:80]!r}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Commit focused API wiring
+        run: |
+          if git diff --quiet -- backend/src/mangasensei/api/app.py; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/src/mangasensei/api/app.py
+          git commit -m "feat(pdf): wire asynchronous import API"
+          git push origin HEAD:feat/105-hardened-pdf-import
