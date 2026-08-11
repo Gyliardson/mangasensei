@@ -38,7 +38,7 @@ jobs:
         run: uv run ruff check scripts/public_benchmark tests/public_benchmark --output-format=github
 
       - name: Strict type check public benchmark evaluator
-        run: uv run mypy --strict scripts/public_benchmark
+        run: uv run mypy --strict --explicit-package-bases scripts/public_benchmark
 
       - name: Run public benchmark regression suite
         run: uv run pytest tests/public_benchmark
