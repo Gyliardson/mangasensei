@@ -121,7 +121,7 @@ describe("App document upload", () => {
     await user.upload(screen.getByLabelText(/Imagem da página/), pdf);
     expect(screen.getByText("1 PDF selecionado")).toBeVisible();
     expect(screen.getByText(/renderização local acontece antes do OCR/)).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Analisar 1 página" }));
+    await user.click(screen.getByRole("button", { name: "Analisar página" }));
 
     expect(await screen.findByText("Página 1 de 1")).toBeVisible();
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -138,7 +138,9 @@ describe("App document upload", () => {
     await user.upload(screen.getByLabelText(/Imagem da página/), [pdf, image]);
     await user.click(screen.getByRole("button", { name: "Analisar 2 páginas" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("pdf_must_be_single");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      messagesFor("pt-BR").apiError("pdf_must_be_single"),
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
