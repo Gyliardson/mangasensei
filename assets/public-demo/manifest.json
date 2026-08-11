@@ -143,7 +143,7 @@
       },
       "annotation": {
         "file": "annotations/msdemo-004-rain.json",
-        "sha256": "afbcce29fe17d98011539fe9169bcdf58ec64f094ae386875b0321bb26f9d1a9",
+        "sha256": "dc8c693a3e91dadce285a40f9083856f5ab26318025243e84b932f42908755c4",
         "schema": "annotations/schema-v1.json"
       },
       "purposes": [
@@ -194,8 +194,8 @@
     },
     {
       "file": "annotations/msdemo-004-rain.json",
-      "sha256": "afbcce29fe17d98011539fe9169bcdf58ec64f094ae386875b0321bb26f9d1a9",
-      "bytes": 14060
+      "sha256": "dc8c693a3e91dadce285a40f9083856f5ab26318025243e84b932f42908755c4",
+      "bytes": 14159
     },
     {
       "file": "annotations/schema-v1.json",
