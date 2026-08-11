@@ -20,6 +20,11 @@ from sqlalchemy import text
 import mangasensei
 from mangasensei.application.authorization import PageAuthorizer, ResourceNotFoundError
 from mangasensei.application.document_authorization import DocumentAuthorizer
+from mangasensei.application.document_mutations import (
+    DocumentMutationService,
+    DocumentOrderConflictError,
+    DocumentOrderMembershipError,
+)
 from mangasensei.application.document_queries import DocumentQueryService
 from mangasensei.application.document_uploads import DocumentCreateResult, DocumentUploadService
 from mangasensei.application.idempotency import InvalidIdempotencyKeyError
@@ -44,7 +49,7 @@ from mangasensei.infrastructure.rate_limits import PostgreSQLRateLimiter
 from mangasensei.storage.images import ImageValidationError, ImageValidator, ValidatedImage
 from mangasensei.storage.local import LocalFilesystemStorage
 
-_EXPECTED_DATABASE_REVISION = "e2f6a0c84b11"
+_EXPECTED_DATABASE_REVISION = "f6a3c2d91b47"
 _HTTP_REQUESTS = Counter(
     "http_requests",
     "HTTP requests completed by method and status code.",
@@ -70,6 +75,13 @@ class ReprocessRequest(BaseModel):
         if (self.study_language is None) == (self.dictionary_language is None):
             raise ValueError("exactly one reprocessing language axis is required")
         return self
+
+
+class DocumentOrderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    page_ids: list[UUID] = Field(alias="pageIds")
+    expected_order_revision: int = Field(alias="expectedOrderRevision", ge=1)
 
 
 class DocumentLimitError(ValueError):
@@ -110,12 +122,14 @@ def _document_data(result: DocumentCreateResult, projection: dict[str, Any]) -> 
         "sourceKind": result.source_kind,
         "expiresAt": result.expires_at.isoformat(),
         "orderRevision": result.order_revision,
+        "status": projection["status"],
         "pages": projection["pages"],
         "progress": projection["progress"],
         "capabilities": {
             "readDocument": result.capabilities.read_document,
             "readDocumentImage": result.capabilities.read_document_image,
             "reprocessDocument": result.capabilities.reprocess_document,
+            "manageDocument": result.capabilities.manage_document,
         },
     }
 
@@ -153,6 +167,11 @@ def create_app(settings: Settings) -> FastAPI:
     document_authorizer = DocumentAuthorizer(sessions, capability_service)
     page_queries = PageQueryService(sessions)
     document_queries = DocumentQueryService(sessions)
+    document_mutations = DocumentMutationService(
+        sessions,
+        idempotency_pepper=capability_peppers[0],
+        max_pages=settings.max_document_images,
+    )
     reprocess_service = ReprocessService(
         sessions,
         idempotency_pepper=capability_peppers[0],
@@ -268,6 +287,28 @@ def create_app(settings: Settings) -> FastAPI:
             content=_error(
                 "result_unavailable",
                 "A página ainda não possui análise linguística concluída para reprojeção.",
+            ),
+        )
+
+    @app.exception_handler(DocumentOrderConflictError)
+    async def document_order_conflict(_: Request, __: DocumentOrderConflictError) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content=_error(
+                "order_revision_conflict",
+                "A ordem do documento foi alterada por outra operação.",
+            ),
+        )
+
+    @app.exception_handler(DocumentOrderMembershipError)
+    async def document_order_membership(
+        _: Request, __: DocumentOrderMembershipError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content=_error(
+                "invalid_document_order",
+                "A nova ordem deve conter exatamente as páginas do documento.",
             ),
         )
 
@@ -459,6 +500,75 @@ def create_app(settings: Settings) -> FastAPI:
         )
         return _success(await document_queries.get_progress(authorized.internal_id))
 
+    @app.post("/api/v1/documents/{document_id}/retry-failed")
+    async def retry_failed_document_pages(
+        response: Response,
+        document_id: UUID,
+        document_token: Annotated[str, Header(alias="X-Document-Token")],
+        idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    ) -> dict[str, Any]:
+        authorized = await document_authorizer.authorize_manage(
+            document_id=document_id,
+            token=document_token,
+        )
+        result = await document_mutations.retry_failed(
+            document_id=authorized.internal_id,
+            idempotency_key=idempotency_key,
+        )
+        projection = await document_queries.get(authorized.internal_id)
+        response.status_code = status.HTTP_202_ACCEPTED if result.created else status.HTTP_200_OK
+        return _success(
+            {
+                "created": result.created,
+                "retriedPageIds": [str(page_id) for page_id in result.page_ids],
+                "jobIds": [str(job_id) for job_id in result.job_ids],
+                "status": projection["status"],
+                "progress": projection["progress"],
+            }
+        )
+
+    @app.post("/api/v1/documents/{document_id}/cancel")
+    async def cancel_document(
+        document_id: UUID,
+        document_token: Annotated[str, Header(alias="X-Document-Token")],
+    ) -> dict[str, Any]:
+        authorized = await document_authorizer.authorize_manage(
+            document_id=document_id,
+            token=document_token,
+        )
+        result = await document_mutations.cancel(document_id=authorized.internal_id)
+        projection = await document_queries.get(authorized.internal_id)
+        return _success(
+            {
+                "cancelledPages": result.cancelled_pages,
+                "cancelRequestedPages": result.cancel_requested_pages,
+                "status": projection["status"],
+                "progress": projection["progress"],
+            }
+        )
+
+    @app.put("/api/v1/documents/{document_id}/order")
+    async def reorder_document(
+        document_id: UUID,
+        document_token: Annotated[str, Header(alias="X-Document-Token")],
+        payload: Annotated[DocumentOrderRequest, Body()],
+    ) -> dict[str, Any]:
+        authorized = await document_authorizer.authorize_manage(
+            document_id=document_id,
+            token=document_token,
+        )
+        result = await document_mutations.reorder(
+            document_id=authorized.internal_id,
+            ordered_page_ids=tuple(payload.page_ids),
+            expected_order_revision=payload.expected_order_revision,
+        )
+        data = await document_queries.get(authorized.internal_id)
+        data["documentId"] = str(authorized.public_id)
+        data["sourceKind"] = authorized.source_kind
+        data["orderRevision"] = result.order_revision
+        data["expiresAt"] = authorized.expires_at.isoformat()
+        return _success(data)
+
     @app.get("/api/v1/documents/{document_id}/pages/{page_id}")
     async def get_document_page(
         document_id: UUID,
@@ -566,10 +676,10 @@ async def _read_limited(upload: UploadFile, maximum: int) -> bytes:
     chunks: list[bytes] = []
     total = 0
     while chunk := await upload.read(min(1024 * 1024, maximum + 1 - total)):
-        total += len(chunk)
+        total += len(content := chunk)
         if total > maximum:
             raise ImageValidationError("image exceeds maximum byte size")
-        chunks.append(chunk)
+        chunks.append(content)
     return b"".join(chunks)
 
 
@@ -578,6 +688,8 @@ def _rate_limit_policy(request: Request, settings: Settings) -> tuple[str, int] 
         return None
     if request.method == "POST" and request.url.path in {"/api/v1/pages", "/api/v1/documents"}:
         return "upload", settings.upload_rate_limit_per_minute
-    if request.method == "POST" and request.url.path.endswith("/reprocess"):
+    if request.method == "POST" and (
+        request.url.path.endswith("/reprocess") or request.url.path.endswith("/retry-failed")
+    ):
         return "reprocess", settings.reprocess_rate_limit_per_minute
     return "api", settings.api_rate_limit_per_minute

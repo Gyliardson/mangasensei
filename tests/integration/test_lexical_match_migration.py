@@ -8,7 +8,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 
 _PREVIOUS_HEAD = "b7d2f4a91c63"
-_CURRENT_HEAD = "e2f6a0c84b11"
+_CURRENT_HEAD = "4b913c2a7e56"
 
 
 def _config(database_url: str) -> Config:
@@ -245,7 +245,7 @@ def test_lexical_match_migration_backfills_resolved_token_meanings_and_gemini_li
                 {"region_analysis_id": region_analysis_id, "token_id": token_id},
             )
 
-        command.upgrade(config, "head")
+        command.upgrade(config, _CURRENT_HEAD)
 
         with engine.connect() as connection:
             revision = connection.execute(

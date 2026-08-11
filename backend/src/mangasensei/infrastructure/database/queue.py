@@ -19,6 +19,7 @@ def build_claim_statement(*, worker_id: str, lease_seconds: int) -> Update:
         .join(PageRecord, PageRecord.id == JobRecord.page_id)
         .where(
             text("mangasensei.jobs.status IN ('pending','retryable_failure')"),
+            JobRecord.cancel_requested_at.is_(None),
             JobRecord.available_at <= func.now(),
             JobRecord.attempt_count < JobRecord.max_attempts,
             PageRecord.expires_at > func.now(),

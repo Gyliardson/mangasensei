@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from mangasensei.domain.jobs import JobStatus, transition_dictionary_projection_job
 from mangasensei.domain.languages import FALLBACK_DICTIONARY_LANGUAGE, StudyLanguage
 from mangasensei.gemini.service import GeminiAdapter
 from mangasensei.infrastructure.database.dictionary_projection_models import (
@@ -210,7 +211,9 @@ class DictionaryProjectionWorker(Worker):
                     for ordinal, meaning in enumerate(gloss.meanings)
                 ]
             )
-            job.status = "completed"
+            job.status = transition_dictionary_projection_job(
+                JobStatus(job.status), JobStatus.COMPLETED
+            ).value
             _finish_job(job)
             await _finish_attempt(session, claim, "completed_dictionary_projection")
 

@@ -79,6 +79,7 @@ class QueueRepository:
                         JobRecord.fencing_token,
                         JobRecord.attempt_count,
                         JobRecord.max_attempts,
+                        JobRecord.cancel_requested_at,
                         (PageRecord.expires_at <= func.now()).label("page_expired"),
                     )
                     .join(PageRecord, PageRecord.id == JobRecord.page_id)
@@ -92,9 +93,18 @@ class QueueRepository:
                 )
             ).all()
             recovered = 0
-            for job_id, fencing_token, attempt_count, max_attempts, page_expired in expired:
+            for (
+                job_id,
+                fencing_token,
+                attempt_count,
+                max_attempts,
+                cancel_requested_at,
+                page_expired,
+            ) in expired:
                 target = (
-                    "expired"
+                    "cancelled"
+                    if cancel_requested_at is not None
+                    else "expired"
                     if page_expired
                     else "failed"
                     if attempt_count >= max_attempts
@@ -114,9 +124,17 @@ class QueueRepository:
                         worker_id=None,
                         heartbeat_at=None,
                         lease_expires_at=None,
-                        finished_at=func.now() if target in {"failed", "expired"} else None,
-                        error_code="lease_expired",
-                        error_detail="worker lease expired before completion",
+                        finished_at=(
+                            func.now()
+                            if target in {"failed", "cancelled", "expired"}
+                            else None
+                        ),
+                        error_code=None if target == "cancelled" else "lease_expired",
+                        error_detail=(
+                            None
+                            if target == "cancelled"
+                            else "worker lease expired before completion"
+                        ),
                         updated_at=func.now(),
                     )
                     .returning(JobRecord.id)
@@ -137,9 +155,13 @@ class QueueRepository:
                     )
                     .values(
                         ended_at=func.now(),
-                        outcome="lease_expired",
-                        error_code="lease_expired",
-                        error_detail="worker lease expired before completion",
+                        outcome="cancelled" if target == "cancelled" else "lease_expired",
+                        error_code=None if target == "cancelled" else "lease_expired",
+                        error_detail=(
+                            None
+                            if target == "cancelled"
+                            else "worker lease expired before completion"
+                        ),
                     )
                 )
                 recovered += 1

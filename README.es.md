@@ -132,22 +132,25 @@ El lector actual también es responsivo en móvil:
 
 ## Flujo multipágina
 
-El Slice B ya integrado de [#105](https://github.com/Gyliardson/mangasensei/issues/105) admite Documents de múltiples imágenes ordenadas sin convertir un volumen entero en un único job gigante de OCR.
+Los Slices B y C de [#105](https://github.com/Gyliardson/mangasensei/issues/105) admiten Documents de múltiples imágenes ordenadas, resultados parciales y controles de recuperación sin convertir un volumen entero en un único job gigante de OCR.
 
 **Disponible ahora:**
 
 - seleccionar varias imágenes JPEG, PNG o WebP e inspeccionarlas/reordenarlas antes de subirlas;
 - conservar el orden mostrado antes de la carga como orden inicial canónico del Document;
 - mantener cada Page como unidad independiente de OCR/estudio/job;
-- mostrar contadores agregados de Pages completadas / en proceso / con fallo;
-- leer una Page completada mientras Pages hermanas siguen procesándose;
+- mostrar estados agregados veraces de procesando, completado, completado con errores y cancelado, junto con contadores de Pages completadas / en proceso / con fallo / canceladas;
+- mantener legibles las Pages completadas mientras trabajo hermano o posterior sigue procesándose, falla o se cancela;
+- reintentar Pages fallidas sin resultado legible mediante una operación de Document acotada/idempotente sin recomputar hermanas exitosas;
+- cancelar cooperativamente el procesamiento activo del Document sin reescribir Pages ya completadas;
+- persistir el orden de Pages después de la creación con concurrencia optimista;
 - navegar mediante selección directa y controles Anterior / Siguiente;
 - reprocesar idioma de estudio o idioma de diccionario solo para la Page actual;
 - mantener el Document y todas las Pages hijas en el mismo límite exacto de retención de 24 horas.
 
-**Aún aplazado en #105:** importación de PDF, UX de recuperación retry/cancel de Slice C y retry/cancel masivo, reordenación persistida tras la creación, thumbnails, biblioteca persistente de manga y semántica de orden de lectura consciente de spreads/entre páginas.
+**Aún aplazado en #105:** importación PDF endurecida, thumbnails, biblioteca persistente de manga, semántica de orden de lectura consciente de spreads/entre páginas y hardening posterior de rendimiento/escala para Documents grandes.
 
-Consulta el [contrato de Documents multiimagen](docs/document-imports.md) para límites, capabilities, idempotencia, retención y semántica de fallos.
+Consulta el [contrato de Documents multiimagen](docs/document-imports.md) para límites, capabilities, idempotencia, retención, recuperación y semántica de fallos.
 
 ## Validación actual
 
@@ -219,10 +222,9 @@ Consulta el [contrato de ejes de idioma](docs/study-languages.md) y el [contrato
 MangaSensei sigue siendo software pre-release. Además de las limitaciones OCR indicadas arriba:
 
 - la importación de PDF aún no está implementada;
-- retry/cancel masivo de Pages fallidas y la UX de recuperación de Slice C siguen aplazados;
 - los Documents son temporales, no una biblioteca persistente de manga;
-- la reordenación tras la creación no es una función de edición persistida;
 - thumbnails y orden de lectura consciente de spreads/entre páginas no están implementados;
+- el hardening posterior de rendimiento/escala para Documents grandes sigue aplazado en #105;
 - los capability tokens de Document solo se mantienen en la sesión activa de la página del navegador, por lo que un reload pierde el acceso en vez de persistir de forma insegura un token sensible;
 - la salida contextual de Gemini es enriquecimiento opcional y no se necesita para estudiar localmente con OCR/JMdict.
 
@@ -330,11 +332,14 @@ FastAPI sirve documentación interactiva de la API en `/api/docs` cuando MangaSe
 | `GET` | `/api/v1/pages/{page_id}/image` | Devuelve la imagen original standalone protegida |
 | `POST` | `/api/v1/pages/{page_id}/reprocess` | Reprocesa un eje de idioma standalone |
 | `POST` | `/api/v1/documents` | Crea un Document multiimagen ordenado |
-| `GET` | `/api/v1/documents/{document_id}` | Lee hijos ordenados y progreso agregado |
-| `GET` | `/api/v1/documents/{document_id}/progress` | Lee contadores completados/en proceso/con fallo |
+| `GET` | `/api/v1/documents/{document_id}` | Lee hijos ordenados, estado agregado y progreso |
+| `GET` | `/api/v1/documents/{document_id}/progress` | Lee contadores completados/en proceso/con fallo/cancelados |
 | `GET` | `/api/v1/documents/{document_id}/pages/{page_id}` | Lee una StudyPage miembro |
 | `GET` | `/api/v1/documents/{document_id}/pages/{page_id}/image` | Devuelve la imagen original protegida de un miembro |
 | `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | Reprocesa un eje de idioma en una Page miembro |
+| `POST` | `/api/v1/documents/{document_id}/retry-failed` | Reintenta de forma idempotente Pages miembro elegibles con fallo y sin resultado legible |
+| `POST` | `/api/v1/documents/{document_id}/cancel` | Solicita cancelación cooperativa del trabajo activo del Document |
+| `PUT` | `/api/v1/documents/{document_id}/order` | Persiste el orden completo de miembros con concurrencia optimista |
 | `GET` | `/health` | Health del proceso |
 | `GET` | `/ready` | Readiness de base de datos, storage y schema |
 | `GET` | `/metrics` | Métricas Prometheus |

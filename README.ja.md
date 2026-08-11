@@ -132,20 +132,23 @@ mobile reader も responsive です。
 
 ## Multipage workflow
 
-merge 済みの [#105](https://github.com/Gyliardson/mangasensei/issues/105) Slice B は、漫画 volume 全体を 1 個の巨大 OCR job にせず、順序付き複数画像 Document を扱います。
+[#105](https://github.com/Gyliardson/mangasensei/issues/105) の Slice B / C は、漫画 volume 全体を 1 個の巨大 OCR job にせず、順序付き複数画像 Document、partial result、recovery control を提供します。
 
 **現在利用可能:**
 
 - 複数 JPEG・PNG・WebP を選択し、upload 前に確認・並べ替えする。
 - 画面上の upload 前の順序を Document の canonical initial order として保持する。
 - 各 Page を独立した OCR / study / job 単位のままにする。
-- 完了 / 処理中 / 失敗の Page 件数を aggregate progress として表示する。
-- sibling Page が処理中でも完了済み Page を読む。
+- processing / completed / completed-with-errors / cancelled の正確な aggregate state と、completed / processing / failed / cancelled Page 件数を表示する。
+- sibling または後続 work が処理中・失敗・cancelled でも、完了済み Page を読み続ける。
+- unreadable な failed Page のみを bounded/idempotent な Document operation で retry し、成功済み sibling を再計算しない。
+- すでに完了した sibling を書き換えず、active Document processing を cooperative に cancel する。
+- optimistic concurrency を使って作成後の Page order を persisted に更新する。
 - direct page selection と Previous / Next で移動する。
 - study language / dictionary language の reprocess は current Page のみ行う。
 - Document と全 child Page が同一の正確な 24 時間 retention boundary を共有する。
 
-**#105 で未実装:** PDF import、Slice C retry/cancel recovery UX と bulk retry/cancel、作成後の persisted reorder、thumbnail、persistent manga library、spread-aware / cross-page reading-order semantics。
+**#105 で引き続き未実装:** hardened PDF import、thumbnail、persistent manga library、spread-aware / cross-page reading-order semantics、後続の large-document/performance hardening。
 
 詳細は [multi-image Document contract](docs/document-imports.md) を参照してください。
 
@@ -219,10 +222,9 @@ MangaSensei は現在、汎用的な OCR accuracy percentage を公開してい�
 MangaSensei は pre-release software です。上記 OCR limitation に加えて:
 
 - PDF import は未実装です。
-- failed Page の bulk retry/cancel と Slice C recovery UX は未実装です。
 - Document は temporary で、persistent manga library ではありません。
-- post-create reorder は persisted editing feature ではありません。
 - thumbnail と spread-aware/cross-page reading order は未実装です。
+- large-document/performance の追加 hardening は #105 の後続 work として未実装です。
 - Document capability token は active browser page session のみに保持されるため、reload すると sensitive token を不安全に永続化する代わりに access を失います。
 - Gemini の contextual output は optional enrichment であり、local OCR/JMdict study の必須要件ではありません。
 
@@ -330,11 +332,14 @@ MangaSensei 起動中は FastAPI の interactive API docs を `/api/docs` で利
 | `GET` | `/api/v1/pages/{page_id}/image` | protected standalone original image を取得 |
 | `POST` | `/api/v1/pages/{page_id}/reprocess` | standalone Page の言語軸 1 つを reprocess |
 | `POST` | `/api/v1/documents` | ordered multi-image Document を作成 |
-| `GET` | `/api/v1/documents/{document_id}` | ordered child summary と aggregate progress を取得 |
-| `GET` | `/api/v1/documents/{document_id}/progress` | completed/processing/failed counters を取得 |
+| `GET` | `/api/v1/documents/{document_id}` | ordered child summary、aggregate status、progress を取得 |
+| `GET` | `/api/v1/documents/{document_id}/progress` | completed/processing/failed/cancelled counters を取得 |
 | `GET` | `/api/v1/documents/{document_id}/pages/{page_id}` | member StudyPage を取得 |
 | `GET` | `/api/v1/documents/{document_id}/pages/{page_id}/image` | protected member original image を取得 |
 | `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | member Page の言語軸 1 つを reprocess |
+| `POST` | `/api/v1/documents/{document_id}/retry-failed` | eligible な unreadable failed member Page を idempotent に retry |
+| `POST` | `/api/v1/documents/{document_id}/cancel` | active Document work の cooperative cancellation を request |
+| `PUT` | `/api/v1/documents/{document_id}/order` | optimistic concurrency で完全な member order を persisted に更新 |
 | `GET` | `/health` | process health |
 | `GET` | `/ready` | database/storage/schema readiness |
 | `GET` | `/metrics` | Prometheus metrics |

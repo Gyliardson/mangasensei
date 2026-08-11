@@ -23,28 +23,60 @@ const access: DocumentUploadData = {
   sourceKind: "images",
   expiresAt: "2026-08-11T12:00:00Z",
   orderRevision: 1,
+  status: "processing",
   pages: [],
-  progress: { totalPages: 1, completedPages: 0, processingPages: 1, failedPages: 0 },
+  progress: {
+    totalPages: 1,
+    completedPages: 0,
+    processingPages: 1,
+    failedPages: 0,
+    cancelledPages: 0,
+  },
   capabilities: {
     readDocument: "read-document",
     readDocumentImage: "read-image",
     reprocessDocument: "reprocess-document",
+    manageDocument: "manage-document",
   },
 };
+
+function aggregateStatus(
+  status: JobStatus,
+  resultAvailable: boolean,
+): DocumentSnapshot["status"] {
+  if (
+    status === "pending" ||
+    status === "claimed" ||
+    status === "processing_ocr" ||
+    status === "processing_linguistics" ||
+    status === "processing_gemini" ||
+    status === "retryable_failure"
+  ) {
+    return "processing";
+  }
+  if (resultAvailable) return "completed";
+  if (status === "cancelled") return "cancelled";
+  if (status === "failed" || status === "expired") return "completed_with_errors";
+  return "completed";
+}
 
 function snapshot(
   status: JobStatus,
   resultAvailable: boolean,
-  processingPages = status === "completed" || status === "failed" || status === "expired" ? 0 : 1,
+  processingPages = status === "completed" || status === "failed" || status === "expired" || status === "cancelled"
+    ? 0
+    : 1,
 ): DocumentSnapshot {
   return {
     ...access,
+    status: aggregateStatus(status, resultAvailable),
     pages: [{ pageId: "page-1", ordinal: 0, status, resultAvailable }],
     progress: {
       totalPages: 1,
       completedPages: resultAvailable ? 1 : 0,
       processingPages,
       failedPages: status === "failed" || status === "expired" ? 1 : 0,
+      cancelledPages: status === "cancelled" ? 1 : 0,
     },
   };
 }
@@ -77,9 +109,11 @@ afterEach(() => {
 });
 
 describe("document polling", () => {
-  it("uses the aggregate processing counter as the polling authority", () => {
+  it("uses aggregate status as the polling authority", () => {
     expect(documentNeedsPolling(snapshot("pending", false, 1))).toBe(true);
-    expect(documentNeedsPolling(snapshot("pending", false, 0))).toBe(false);
+    expect(documentNeedsPolling(snapshot("pending", false, 0))).toBe(true);
+    expect(documentNeedsPolling(snapshot("failed", false, 0))).toBe(false);
+    expect(documentNeedsPolling(snapshot("cancelled", false, 0))).toBe(false);
   });
 
   it("returns a completed child after one aggregate refresh", async () => {
@@ -90,8 +124,12 @@ describe("document polling", () => {
     const onSnapshot = vi.fn();
 
     await expect(
-      waitForDocumentPageResult(access, "page-1", new AbortController().signal, onSnapshot, (candidate) =>
-        candidate.studyLanguage === "pt-BR",
+      waitForDocumentPageResult(
+        access,
+        "page-1",
+        new AbortController().signal,
+        onSnapshot,
+        (candidate) => candidate.studyLanguage === "pt-BR",
       ),
     ).resolves.toEqual(page);
     expect(onSnapshot).toHaveBeenCalledWith(completed);
@@ -164,6 +202,21 @@ describe("document polling", () => {
     ).rejects.toMatchObject({ code: "pipeline_failed" });
   });
 
+  it("surfaces terminal cancellation without fetching an unreadable result", async () => {
+    apiMocks.fetchDocumentSnapshot.mockResolvedValue(snapshot("cancelled", false));
+
+    await expect(
+      waitForDocumentPageResult(
+        access,
+        "page-1",
+        new AbortController().signal,
+        vi.fn(),
+        () => true,
+      ),
+    ).rejects.toMatchObject({ code: "cancelled" });
+    expect(apiMocks.fetchDocumentPage).not.toHaveBeenCalled();
+  });
+
   it("falls back to the terminal status when a readable failed result has no error code", async () => {
     apiMocks.fetchDocumentSnapshot.mockResolvedValue(snapshot("expired", true));
     apiMocks.fetchDocumentPage.mockResolvedValue(studyPage());
@@ -182,8 +235,15 @@ describe("document polling", () => {
   it("rejects when the requested child disappears from the aggregate", async () => {
     apiMocks.fetchDocumentSnapshot.mockResolvedValue({
       ...access,
+      status: "completed",
       pages: [],
-      progress: { totalPages: 0, completedPages: 0, processingPages: 0, failedPages: 0 },
+      progress: {
+        totalPages: 0,
+        completedPages: 0,
+        processingPages: 0,
+        failedPages: 0,
+        cancelledPages: 0,
+      },
     });
 
     await expect(

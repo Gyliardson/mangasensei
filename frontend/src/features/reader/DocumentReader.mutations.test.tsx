@@ -63,6 +63,7 @@ const capabilities = {
   readDocument: "read-document",
   readDocumentImage: "read-image",
   reprocessDocument: "reprocess-document",
+  manageDocument: "manage-document",
 };
 
 function studyPage(pageId: string, overrides: Partial<StudyPage> = {}): StudyPage {
@@ -90,6 +91,7 @@ function documentAccess(pageIds: string[] = ["page-a"]): DocumentUploadData {
     sourceKind: "images",
     expiresAt: "2026-08-11T12:00:00Z",
     orderRevision: 1,
+    status: "completed",
     pages: pageIds.map((pageId, ordinal) => ({
       pageId,
       ordinal,
@@ -101,6 +103,7 @@ function documentAccess(pageIds: string[] = ["page-a"]): DocumentUploadData {
       completedPages: pageIds.length,
       processingPages: 0,
       failedPages: 0,
+      cancelledPages: 0,
     },
     capabilities,
   };

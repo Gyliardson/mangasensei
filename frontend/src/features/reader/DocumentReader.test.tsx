@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiError,
+  type DocumentProgress,
   type DocumentSnapshot,
   type DocumentUploadData,
   type StudyPage,
@@ -14,11 +15,14 @@ import type { UiLocale } from "../../lib/uiLocale";
 import { DocumentReader } from "./DocumentReader";
 
 const apiMocks = vi.hoisted(() => ({
+  cancelDocumentProcessing: vi.fn(),
   fetchDocumentPage: vi.fn(),
   fetchDocumentProtectedImage: vi.fn(),
   fetchDocumentSnapshot: vi.fn(),
+  reorderDocument: vi.fn(),
   reprocessDocumentDictionaryLanguage: vi.fn(),
   reprocessDocumentStudyLanguage: vi.fn(),
+  retryFailedDocumentPages: vi.fn(),
 }));
 const pollingMocks = vi.hoisted(() => ({
   waitForDocumentPageResult: vi.fn(),
@@ -70,17 +74,34 @@ const capabilities = {
   readDocument: "read-document",
   readDocumentImage: "read-image",
   reprocessDocument: "reprocess-document",
+  manageDocument: "manage-document",
 };
+
+type LegacyProgressInput = Omit<DocumentProgress, "cancelledPages"> & {
+  readonly cancelledPages?: number;
+};
+
+function aggregateStatus(progress: DocumentProgress): DocumentSnapshot["status"] {
+  if (progress.processingPages > 0) return "processing";
+  if (progress.cancelledPages > 0) return "cancelled";
+  if (progress.failedPages > 0) return "completed_with_errors";
+  return "completed";
+}
 
 function access(
   pages: DocumentUploadData["pages"],
-  progress: DocumentUploadData["progress"],
+  progressInput: LegacyProgressInput,
 ): DocumentUploadData {
+  const progress: DocumentProgress = {
+    ...progressInput,
+    cancelledPages: progressInput.cancelledPages ?? 0,
+  };
   return {
     documentId: "document-1",
     sourceKind: "images",
     expiresAt: "2026-08-11T12:00:00Z",
     orderRevision: 1,
+    status: aggregateStatus(progress),
     pages,
     progress,
     capabilities,
@@ -140,6 +161,31 @@ beforeEach(() => {
   apiMocks.fetchDocumentSnapshot.mockImplementation(async (document: DocumentUploadData) =>
     document,
   );
+  apiMocks.retryFailedDocumentPages.mockResolvedValue({
+    created: true,
+    retriedPageIds: ["page-b"],
+    jobIds: ["retry-job"],
+    status: "processing",
+    progress: {
+      totalPages: 2,
+      completedPages: 1,
+      processingPages: 1,
+      failedPages: 0,
+      cancelledPages: 0,
+    },
+  });
+  apiMocks.cancelDocumentProcessing.mockResolvedValue({
+    cancelledPages: 1,
+    cancelRequestedPages: 0,
+    status: "cancelled",
+    progress: {
+      totalPages: 2,
+      completedPages: 1,
+      processingPages: 0,
+      failedPages: 0,
+      cancelledPages: 1,
+    },
+  });
   pollingMocks.waitForDocumentPageResult.mockImplementation(
     async (_access, pageId: string) => studyPage(pageId),
   );
@@ -164,7 +210,10 @@ describe("DocumentReader", () => {
     renderReader(document);
 
     expect(await screen.findByTestId("reader-page")).toHaveTextContent("page-a");
-    expect(screen.getByText("1 / 2 pages complete · 1 processing · 0 failed")).toBeVisible();
+    expect(
+      screen.getByText("1 / 2 pages readable · 1 processing · 0 failed · 0 cancelled"),
+    ).toBeVisible();
+    expect(screen.getByText("Document processing")).toBeVisible();
     const pageButtons = screen.getAllByRole("button", { name: /^Page / });
     expect(pageButtons[0]).toHaveAttribute("aria-current", "page");
     expect(pageButtons[0]).toHaveAttribute("data-page-status", "readable");
@@ -205,8 +254,15 @@ describe("DocumentReader", () => {
     );
     const completed: DocumentSnapshot = {
       ...document,
+      status: "completed",
       pages: [{ pageId: "page-a", ordinal: 0, status: "completed", resultAvailable: true }],
-      progress: { totalPages: 1, completedPages: 1, processingPages: 0, failedPages: 0 },
+      progress: {
+        totalPages: 1,
+        completedPages: 1,
+        processingPages: 0,
+        failedPages: 0,
+        cancelledPages: 0,
+      },
     };
     apiMocks.fetchDocumentSnapshot.mockResolvedValue(completed);
 
@@ -223,7 +279,9 @@ describe("DocumentReader", () => {
 
   it("continues aggregate polling while processing remains and stops on terminal progress", async () => {
     vi.useFakeTimers();
-    const pages = [{ pageId: "page-a", ordinal: 0, status: "pending" as const, resultAvailable: false }];
+    const pages = [
+      { pageId: "page-a", ordinal: 0, status: "pending" as const, resultAvailable: false },
+    ];
     const document = access(pages, {
       totalPages: 1,
       completedPages: 0,
@@ -232,12 +290,20 @@ describe("DocumentReader", () => {
     });
     const stillProcessing: DocumentSnapshot = {
       ...document,
+      status: "processing",
       pages: [{ ...pages[0]!, status: "processing_linguistics" }],
     };
     const terminal: DocumentSnapshot = {
       ...document,
+      status: "completed_with_errors",
       pages: [{ ...pages[0]!, status: "failed" }],
-      progress: { totalPages: 1, completedPages: 0, processingPages: 0, failedPages: 1 },
+      progress: {
+        totalPages: 1,
+        completedPages: 0,
+        processingPages: 0,
+        failedPages: 1,
+        cancelledPages: 0,
+      },
     };
     apiMocks.fetchDocumentSnapshot
       .mockResolvedValueOnce(stillProcessing)
@@ -253,7 +319,10 @@ describe("DocumentReader", () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
     expect(apiMocks.fetchDocumentSnapshot).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("0 / 1 pages complete · 0 processing · 1 failed")).toBeVisible();
+    expect(
+      screen.getByText("0 / 1 pages readable · 0 processing · 1 failed · 0 cancelled"),
+    ).toBeVisible();
+    expect(screen.getByText("Document complete with errors")).toBeVisible();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5_000);
@@ -269,8 +338,15 @@ describe("DocumentReader", () => {
     );
     const terminal: DocumentSnapshot = {
       ...document,
+      status: "completed_with_errors",
       pages: [{ pageId: "page-a", ordinal: 0, status: "failed", resultAvailable: false }],
-      progress: { totalPages: 1, completedPages: 0, processingPages: 0, failedPages: 1 },
+      progress: {
+        totalPages: 1,
+        completedPages: 0,
+        processingPages: 0,
+        failedPages: 1,
+        cancelledPages: 0,
+      },
     };
     apiMocks.fetchDocumentSnapshot
       .mockRejectedValueOnce(new Error("temporary network failure"))
@@ -289,20 +365,174 @@ describe("DocumentReader", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Failed");
   });
 
-  it.each(["failed", "expired"] as const)("renders %s children as failed without fetching a result", (status) => {
+  it.each(["failed", "expired"] as const)(
+    "renders %s children as failed without fetching a result",
+    (status) => {
+      const document = access(
+        [{ pageId: "page-a", ordinal: 0, status, resultAvailable: false }],
+        { totalPages: 1, completedPages: 0, processingPages: 0, failedPages: 1 },
+      );
+
+      renderReader(document);
+
+      expect(screen.getByRole("alert")).toHaveTextContent("Failed");
+      expect(
+        screen.getByRole("button", { name: new RegExp(`Page 1: ${status}`) }),
+      ).toHaveAttribute("data-page-status", "failed");
+      expect(apiMocks.fetchDocumentPage).not.toHaveBeenCalled();
+    },
+  );
+
+  it("renders cancelled children as terminal without fetching a result", () => {
     const document = access(
-      [{ pageId: "page-a", ordinal: 0, status, resultAvailable: false }],
-      { totalPages: 1, completedPages: 0, processingPages: 0, failedPages: 1 },
+      [{ pageId: "page-a", ordinal: 0, status: "cancelled", resultAvailable: false }],
+      {
+        totalPages: 1,
+        completedPages: 0,
+        processingPages: 0,
+        failedPages: 0,
+        cancelledPages: 1,
+      },
     );
 
     renderReader(document);
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Failed");
-    expect(screen.getByRole("button", { name: new RegExp(`Page 1: ${status}`) })).toHaveAttribute(
+    expect(screen.getByRole("alert")).toHaveTextContent("Cancelled");
+    expect(screen.getByText("Document processing cancelled")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Page 1: cancelled" })).toHaveAttribute(
       "data-page-status",
-      "failed",
+      "cancelled",
     );
     expect(apiMocks.fetchDocumentPage).not.toHaveBeenCalled();
+  });
+
+  it("retries failed children without recomputing the readable sibling", async () => {
+    const user = userEvent.setup();
+    const document = access(
+      [
+        { pageId: "page-a", ordinal: 0, status: "completed", resultAvailable: true },
+        { pageId: "page-b", ordinal: 1, status: "failed", resultAvailable: false },
+      ],
+      { totalPages: 2, completedPages: 1, processingPages: 0, failedPages: 1 },
+    );
+    const processing: DocumentSnapshot = {
+      ...document,
+      status: "processing",
+      pages: [
+        document.pages[0]!,
+        { pageId: "page-b", ordinal: 1, status: "pending", resultAvailable: false },
+      ],
+      progress: {
+        totalPages: 2,
+        completedPages: 1,
+        processingPages: 1,
+        failedPages: 0,
+        cancelledPages: 0,
+      },
+    };
+    apiMocks.fetchDocumentSnapshot.mockResolvedValue(processing);
+
+    renderReader(document);
+    expect(await screen.findByTestId("reader-page")).toHaveTextContent("page-a");
+    expect(apiMocks.fetchDocumentPage).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Retry failed pages" }));
+
+    await waitFor(() => expect(apiMocks.retryFailedDocumentPages).toHaveBeenCalledTimes(1));
+    expect(apiMocks.retryFailedDocumentPages).toHaveBeenCalledWith(
+      document,
+      expect.any(AbortSignal),
+    );
+    expect(await screen.findByText("Document processing")).toBeVisible();
+    expect(apiMocks.fetchDocumentPage).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Page 1: readable" })).toHaveAttribute(
+      "data-page-status",
+      "readable",
+    );
+  });
+
+  it("cancels unfinished server work while keeping a completed sibling readable", async () => {
+    const user = userEvent.setup();
+    const document = access(
+      [
+        { pageId: "page-a", ordinal: 0, status: "completed", resultAvailable: true },
+        { pageId: "page-b", ordinal: 1, status: "pending", resultAvailable: false },
+      ],
+      { totalPages: 2, completedPages: 1, processingPages: 1, failedPages: 0 },
+    );
+    const cancelled: DocumentSnapshot = {
+      ...document,
+      status: "cancelled",
+      pages: [
+        document.pages[0]!,
+        { pageId: "page-b", ordinal: 1, status: "cancelled", resultAvailable: false },
+      ],
+      progress: {
+        totalPages: 2,
+        completedPages: 1,
+        processingPages: 0,
+        failedPages: 0,
+        cancelledPages: 1,
+      },
+    };
+    apiMocks.fetchDocumentSnapshot.mockResolvedValue(cancelled);
+
+    renderReader(document);
+    expect(await screen.findByTestId("reader-page")).toHaveTextContent("page-a");
+
+    await user.click(screen.getByRole("button", { name: "Cancel processing" }));
+
+    await waitFor(() => expect(apiMocks.cancelDocumentProcessing).toHaveBeenCalledTimes(1));
+    expect(apiMocks.cancelDocumentProcessing).toHaveBeenCalledWith(
+      document,
+      expect.any(AbortSignal),
+    );
+    expect(screen.getByText("Document processing cancelled")).toBeVisible();
+    expect(screen.getByTestId("reader-page")).toHaveTextContent("page-a");
+    expect(screen.getByRole("button", { name: "Page 2: cancelled" })).toHaveAttribute(
+      "data-page-status",
+      "cancelled",
+    );
+  });
+
+  it("persists current-page reorder through the versioned backend contract", async () => {
+    const user = userEvent.setup();
+    const document = access(
+      [
+        { pageId: "page-a", ordinal: 0, status: "completed", resultAvailable: true },
+        { pageId: "page-b", ordinal: 1, status: "completed", resultAvailable: true },
+        { pageId: "page-c", ordinal: 2, status: "completed", resultAvailable: true },
+      ],
+      { totalPages: 3, completedPages: 3, processingPages: 0, failedPages: 0 },
+    );
+    const reordered: DocumentSnapshot = {
+      ...document,
+      orderRevision: 2,
+      pages: [
+        { pageId: "page-b", ordinal: 0, status: "completed", resultAvailable: true },
+        { pageId: "page-a", ordinal: 1, status: "completed", resultAvailable: true },
+        { pageId: "page-c", ordinal: 2, status: "completed", resultAvailable: true },
+      ],
+    };
+    apiMocks.reorderDocument.mockResolvedValue(reordered);
+
+    renderReader(document);
+    expect(await screen.findByTestId("reader-page")).toHaveTextContent("page-a");
+
+    await user.click(screen.getByRole("button", { name: "Move page later" }));
+
+    await waitFor(() => expect(apiMocks.reorderDocument).toHaveBeenCalledTimes(1));
+    expect(apiMocks.reorderDocument).toHaveBeenCalledWith(
+      document,
+      ["page-b", "page-a", "page-c"],
+      1,
+      expect.any(AbortSignal),
+    );
+    expect(screen.getByText("Page 2 of 3")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Page 2: readable" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   it("revokes the old Blob URL when navigating to another completed child", async () => {
@@ -506,6 +736,7 @@ describe("DocumentReader", () => {
 
     expect(screen.getByText("Página 1 de 1")).toBeVisible();
     expect(screen.getAllByText("Processando")).toHaveLength(2);
+    expect(screen.getByText("Documento em processamento")).toBeVisible();
     expect(screen.getByRole("button", { name: "Página 1: processing ocr" })).toHaveAttribute(
       "data-page-status",
       "processing",
@@ -528,12 +759,14 @@ describe("DocumentReader", () => {
     });
     const terminal: DocumentSnapshot = {
       ...document,
+      status: "completed_with_errors",
       pages: pages.map((item) => ({ ...item, status: "failed" as const })),
       progress: {
         totalPages: 200,
         completedPages: 0,
         processingPages: 0,
         failedPages: 200,
+        cancelledPages: 0,
       },
     };
     apiMocks.fetchDocumentSnapshot.mockResolvedValue(terminal);
@@ -549,6 +782,8 @@ describe("DocumentReader", () => {
     expect(apiMocks.fetchDocumentSnapshot).toHaveBeenCalledTimes(1);
     expect(apiMocks.fetchDocumentPage).not.toHaveBeenCalled();
     expect(apiMocks.fetchDocumentProtectedImage).not.toHaveBeenCalled();
-    expect(screen.getByText("0 / 200 pages complete · 0 processing · 200 failed")).toBeVisible();
+    expect(
+      screen.getByText("0 / 200 pages readable · 0 processing · 200 failed · 0 cancelled"),
+    ).toBeVisible();
   });
 });
