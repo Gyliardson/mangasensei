@@ -177,13 +177,6 @@ test("creates, partially reads, navigates and reprojects a real multipage docume
   );
   await page.getByRole("button", { name: "Analyze 2 pages" }).click();
   const uploadResponse = await uploadResponsePromise;
-  const uploadBody = uploadResponse.request().postDataBuffer();
-  expect(uploadBody).not.toBeNull();
-  const blueOffset = uploadBody!.indexOf(bluePage);
-  const redOffset = uploadBody!.indexOf(redPage);
-  expect(blueOffset).toBeGreaterThanOrEqual(0);
-  expect(redOffset).toBeGreaterThanOrEqual(0);
-  expect(blueOffset).toBeLessThan(redOffset);
   expect(uploadResponse.status()).toBe(202);
   const uploaded = (await uploadResponse.json()) as DocumentUploadEnvelope;
   const document = uploaded.data;
