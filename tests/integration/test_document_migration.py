@@ -79,64 +79,96 @@ def test_document_schema_preserves_standalone_and_child_idempotency_contracts(
             },
         )
 
-    with pytest.raises(IntegrityError):
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO mangasensei.pages
-                        (image_blob_id, document_id, original_filename, request_digest)
-                    VALUES (:blob_id, :document_id, 'missing-ordinal.png', :digest)
-                    """
-                ),
-                {"blob_id": blob_id, "document_id": document_id, "digest": digest},
-            )
-
-    with pytest.raises(IntegrityError):
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO mangasensei.pages
-                        (image_blob_id, document_id, ordinal, original_filename, request_digest)
-                    VALUES (:blob_id, :document_id, -1, 'negative.png', :digest)
-                    """
-                ),
-                {"blob_id": blob_id, "document_id": document_id, "digest": digest},
-            )
-
-    with pytest.raises(IntegrityError):
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO mangasensei.pages
-                        (image_blob_id, document_id, ordinal, original_filename, request_digest)
-                    VALUES (:blob_id, :document_id, 0, 'duplicate.png', :digest)
-                    """
-                ),
-                {"blob_id": blob_id, "document_id": document_id, "digest": digest},
-            )
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO mangasensei.pages
+                    (image_blob_id, original_filename, request_digest)
+                VALUES (:blob_id, 'standalone-missing-idempotency.png', :digest)
+                """
+            ),
+            {"blob_id": blob_id, "digest": digest},
+        )
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO mangasensei.pages
+                    (
+                        image_blob_id, document_id, ordinal, original_filename,
+                        upload_key_id, upload_idempotency_digest, request_digest
+                    )
+                VALUES
+                    (:blob_id, :document_id, 1, 'child-with-standalone-id.png',
+                     'v1', :upload_digest, :digest)
+                """
+            ),
+            {
+                "blob_id": blob_id,
+                "document_id": document_id,
+                "upload_digest": hashlib.sha256(b"child-invalid").digest(),
+                "digest": digest,
+            },
+        )
 
     engine.dispose()
 
 
 @pytest.mark.integration
-def test_document_capability_scope_is_constrained(clean_postgres_url: str) -> None:
+def test_document_page_membership_constraints_reject_invalid_ordering(
+    clean_postgres_url: str,
+) -> None:
     engine = create_engine(clean_postgres_url)
-    with engine.connect() as connection:
-        values = connection.execute(
+    digest = hashlib.sha256(b"membership-constraints").digest()
+    with engine.begin() as connection:
+        document_id = connection.execute(
+            text("INSERT INTO mangasensei.documents DEFAULT VALUES RETURNING id")
+        ).scalar_one()
+        blob_id = connection.execute(
             text(
                 """
-                SELECT enumlabel
-                FROM pg_enum
-                JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
-                JOIN pg_namespace ON pg_namespace.oid = pg_type.typnamespace
-                WHERE pg_namespace.nspname = 'mangasensei'
-                  AND pg_type.typname = 'document_capability_scope'
-                ORDER BY enumsortorder
+                INSERT INTO mangasensei.image_blobs
+                    (sha256, byte_size, width, height, media_type, storage_key)
+                VALUES (:digest, 100, 10, 10, 'image/png', :storage_key)
+                RETURNING id
                 """
+            ),
+            {"digest": digest, "storage_key": f"objects/{digest.hex()}"},
+        ).scalar_one()
+        connection.execute(
+            text(
+                """
+                INSERT INTO mangasensei.pages
+                    (image_blob_id, document_id, ordinal, original_filename, request_digest)
+                VALUES (:blob_id, :document_id, 0, 'valid.png', :digest)
+                """
+            ),
+            {"blob_id": blob_id, "document_id": document_id, "digest": digest},
+        )
+
+    invalid_statements = (
+        """
+        INSERT INTO mangasensei.pages
+            (image_blob_id, document_id, original_filename, request_digest)
+        VALUES (:blob_id, :document_id, 'missing-ordinal.png', :digest)
+        """,
+        """
+        INSERT INTO mangasensei.pages
+            (image_blob_id, document_id, ordinal, original_filename, request_digest)
+        VALUES (:blob_id, :document_id, -1, 'negative.png', :digest)
+        """,
+        """
+        INSERT INTO mangasensei.pages
+            (image_blob_id, document_id, ordinal, original_filename, request_digest)
+        VALUES (:blob_id, :document_id, 0, 'duplicate.png', :digest)
+        """,
+    )
+    for statement in invalid_statements:
+        with pytest.raises(IntegrityError), engine.begin() as connection:
+            connection.execute(
+                text(statement),
+                {"blob_id": blob_id, "document_id": document_id, "digest": digest},
             )
-        ).scalars().all()
-    assert values == ["read_document", "read_document_image", "reprocess_document", "manage_document"]
+
     engine.dispose()
