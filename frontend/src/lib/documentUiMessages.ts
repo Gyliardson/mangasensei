@@ -1,4 +1,4 @@
-import type { JobStatus } from "./api";
+import type { DocumentAggregateStatus, JobStatus } from "./api";
 import type { UiLocale } from "./uiLocale";
 
 export interface DocumentUiMessages {
@@ -18,11 +18,21 @@ export interface DocumentUiMessages {
     total: number,
     processing: number,
     failed: number,
+    cancelled: number,
   ) => string;
+  readonly aggregateStatus: (status: DocumentAggregateStatus) => string;
   readonly processingPage: string;
   readonly failedPage: string;
+  readonly cancelledPage: string;
   readonly readablePage: string;
   readonly pageStatus: (page: number, status: JobStatus, readable: boolean) => string;
+  readonly retryFailedPages: string;
+  readonly retryingFailedPages: string;
+  readonly cancelProcessing: string;
+  readonly cancellingProcessing: string;
+  readonly moveCurrentPageEarlier: string;
+  readonly moveCurrentPageLater: string;
+  readonly actionFailed: string;
   readonly documentUploadFailed: string;
   readonly documentPageLimit: string;
   readonly documentByteLimit: string;
@@ -42,12 +52,26 @@ const en: DocumentUiMessages = {
   previousPage: "Previous",
   nextPage: "Next",
   documentNavigation: "Document pages",
-  documentProgress: (completed, total, processing, failed) =>
-    `${completed} / ${total} pages complete · ${processing} processing · ${failed} failed`,
+  documentProgress: (completed, total, processing, failed, cancelled) =>
+    `${completed} / ${total} pages readable · ${processing} processing · ${failed} failed · ${cancelled} cancelled`,
+  aggregateStatus: (status) => ({
+    processing: "Document processing",
+    completed: "Document complete",
+    completed_with_errors: "Document complete with errors",
+    cancelled: "Document processing cancelled",
+  })[status],
   processingPage: "Processing",
   failedPage: "Failed",
+  cancelledPage: "Cancelled",
   readablePage: "Readable",
   pageStatus: (page, status, readable) => `Page ${page}: ${readable ? "readable" : status.replaceAll("_", " ")}`,
+  retryFailedPages: "Retry failed pages",
+  retryingFailedPages: "Retrying failed pages…",
+  cancelProcessing: "Cancel processing",
+  cancellingProcessing: "Cancelling processing…",
+  moveCurrentPageEarlier: "Move page earlier",
+  moveCurrentPageLater: "Move page later",
+  actionFailed: "The document operation could not be completed.",
   documentUploadFailed: "The document could not be created.",
   documentPageLimit: "This document contains too many pages.",
   documentByteLimit: "The combined image size exceeds the document limit.",
@@ -67,12 +91,26 @@ const ptBR: DocumentUiMessages = {
   previousPage: "Anterior",
   nextPage: "Próxima",
   documentNavigation: "Páginas do documento",
-  documentProgress: (completed, total, processing, failed) =>
-    `${completed} / ${total} páginas concluídas · ${processing} processando · ${failed} falharam`,
+  documentProgress: (completed, total, processing, failed, cancelled) =>
+    `${completed} / ${total} páginas disponíveis · ${processing} processando · ${failed} falharam · ${cancelled} canceladas`,
+  aggregateStatus: (status) => ({
+    processing: "Documento em processamento",
+    completed: "Documento concluído",
+    completed_with_errors: "Documento concluído com erros",
+    cancelled: "Processamento do documento cancelado",
+  })[status],
   processingPage: "Processando",
   failedPage: "Falhou",
+  cancelledPage: "Cancelada",
   readablePage: "Disponível",
   pageStatus: (page, status, readable) => `Página ${page}: ${readable ? "disponível" : status.replaceAll("_", " ")}`,
+  retryFailedPages: "Tentar páginas com falha novamente",
+  retryingFailedPages: "Tentando páginas com falha novamente…",
+  cancelProcessing: "Cancelar processamento",
+  cancellingProcessing: "Cancelando processamento…",
+  moveCurrentPageEarlier: "Mover página para antes",
+  moveCurrentPageLater: "Mover página para depois",
+  actionFailed: "Não foi possível concluir a operação do documento.",
   documentUploadFailed: "Não foi possível criar o documento.",
   documentPageLimit: "Este documento contém páginas demais.",
   documentByteLimit: "O tamanho combinado das imagens excede o limite do documento.",
