@@ -268,9 +268,10 @@ jobs:
           python_bin="$(UV_PYTHON_INSTALL_DIR=/opt/mangasensei-ci-python uv python find 3.11)"
           UV_PYTHON_INSTALL_DIR=/opt/mangasensei-ci-python uv sync --frozen --python "${python_bin}"
           sudo chmod -R a+rX /opt/mangasensei-ci-python
+          sudo chmod -R a+rX "${GITHUB_WORKSPACE}"
           grep -q "/opt/mangasensei-ci-python" .venv/pyvenv.cfg
           sudo setpriv --reuid=10001 --regid=10001 --clear-groups \
-            .venv/bin/python -c 'import encodings; print("cross-uid Python ready")'
+            .venv/bin/python -c 'import encodings; import mangasensei; print("cross-uid Python ready")'
       - name: Start real PDF import and study runtime
         run: |
           rm -rf "${MANGASENSEI_STORAGE_ROOT}" "${MANGASENSEI_PDF_SPOOL_ROOT}"
