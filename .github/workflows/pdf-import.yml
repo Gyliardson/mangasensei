@@ -324,7 +324,7 @@ jobs:
           echo $! > "${RUNNER_TEMP}/pdf-importer.pid"
           for attempt in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:8000/ready >/dev/null \
-              && test -f "${MANGASENSEI_PDF_SPOOL_ROOT}/renderer/heartbeat.json"; then
+              && docker exec mangasensei-pdf-renderer-e2e test -f /app/var/pdf-spool/renderer/heartbeat.json; then
               exit 0
             fi
             sleep 1
