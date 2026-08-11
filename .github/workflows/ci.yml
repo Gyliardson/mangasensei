@@ -127,15 +127,26 @@ jobs:
 
           compose = json.loads(Path("/tmp/mangasensei-compose.json").read_text(encoding="utf-8"))
           services = compose["services"]
-          app_roles = {"models", "jmdict", "migrate", "api", "worker", "retention"}
+          app_roles = {
+              "models",
+              "jmdict",
+              "migrate",
+              "api",
+              "pdf-renderer",
+              "pdf-importer",
+              "worker",
+              "retention",
+          }
           environment_keys = {
               name: set(services[name].get("environment", {})) for name in app_roles
           }
 
           expected_secret_consumers = {
               "GOOGLE_API_KEY": {"worker"},
-              "MANGASENSEI_CAPABILITY_PEPPERS": {"api"},
-              "MANGASENSEI_DATABASE_URL": {"migrate", "api", "worker", "retention"},
+              "MANGASENSEI_CAPABILITY_PEPPERS": {"api", "pdf-importer"},
+              "MANGASENSEI_DATABASE_URL": {
+                  "migrate", "api", "pdf-importer", "worker", "retention"
+              },
           }
           for variable, expected in expected_secret_consumers.items():
               actual = {name for name, keys in environment_keys.items() if variable in keys}
@@ -148,9 +159,74 @@ jobs:
           }
           assert environment_keys["models"].isdisjoint(unrelated_secrets)
           assert environment_keys["jmdict"].isdisjoint(unrelated_secrets)
+          assert environment_keys["pdf-renderer"].isdisjoint(unrelated_secrets)
           assert services["worker"]["environment"]["GOOGLE_API_KEY"] == ""
           PY
           docker run --rm -e GOOGLE_API_KEY= --entrypoint python mangasensei:ci -c "from mangasensei.config import Settings; from mangasensei.runtime import _gemini_adapter; settings = Settings(_env_file=None); assert settings.google_api_key is None; assert _gemini_adapter(settings) is None"
+
+      - name: Prove hardened local PDF renderer boundary
+        run: |
+          container_name=mangasensei-pdf-renderer-ci
+          docker rm -f "${container_name}" >/dev/null 2>&1 || true
+          docker run --detach --name "${container_name}" \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --memory 1g \
+            --cpus 1 \
+            --pids-limit 64 \
+            --tmpfs /tmp:rw,size=128m,mode=1777 \
+            --tmpfs /app/var/pdf-spool:rw,size=1g,mode=0700,uid=10001,gid=10001 \
+            -e MANGASENSEI_ENVIRONMENT=test \
+            -e MANGASENSEI_PDF_SPOOL_ROOT=/app/var/pdf-spool \
+            mangasensei:ci mangasensei pdf-renderer >/dev/null
+          for attempt in $(seq 1 30); do
+            if docker exec "${container_name}" test -f /app/var/pdf-spool/renderer/heartbeat.json; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec "${container_name}" python - <<'PY'
+          import os
+          import socket
+          from pathlib import Path
+          from mangasensei.pdf_imports.renderer import renderer_provenance
+
+          assert os.getuid() == 10001
+          status = Path('/proc/self/status').read_text()
+          assert 'NoNewPrivs:\t1' in status
+          assert 'CapEff:\t0000000000000000' in status
+          provenance = renderer_provenance()
+          assert provenance.pypdfium2 == '5.12.1'
+          assert provenance.pdfium_build == 7947
+          assert provenance.native_library == 'pypdfium2_raw/libpdfium.so'
+          Path('/app/var/pdf-spool/ci-write-proof').write_text('ok')
+          try:
+              Path('/app/ci-root-write-proof').write_text('forbidden')
+          except OSError:
+              pass
+          else:
+              raise SystemExit('renderer root filesystem was writable')
+          socket.setdefaulttimeout(1)
+          try:
+              socket.getaddrinfo('pypi.org', 443)
+          except OSError:
+              pass
+          else:
+              raise SystemExit('renderer unexpectedly resolved outbound DNS')
+          try:
+              socket.create_connection(('1.1.1.1', 443), timeout=1)
+          except OSError:
+              pass
+          else:
+              raise SystemExit('renderer unexpectedly opened outbound TCP')
+          PY
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "${container_name}")" = true
+          test "$(docker inspect --format '{{.HostConfig.NetworkMode}}' "${container_name}")" = none
+          test "$(docker inspect --format '{{.HostConfig.Memory}}' "${container_name}")" = 1073741824
+          test "$(docker inspect --format '{{.HostConfig.PidsLimit}}' "${container_name}")" = 64
+          docker rm -f "${container_name}" >/dev/null
 
   frontend:
     name: Frontend (lint, typecheck, coverage, build, e2e)
@@ -172,6 +248,7 @@ jobs:
     env:
       MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55432/mangasensei
       MANGASENSEI_STORAGE_ROOT: /tmp/mangasensei-fullstack-storage
+      MANGASENSEI_PDF_SPOOL_ROOT: /tmp/mangasensei-pdf-fullstack-spool
       MANGASENSEI_FRONTEND_DIST: frontend/dist
       MANGASENSEI_CAPABILITY_PEPPERS: '["fullstack-e2e-capability-pepper-000000000001"]'
     steps:
@@ -215,30 +292,62 @@ jobs:
       - name: Install backend dependencies for full-stack harness
         run: uv sync --frozen
 
-      - name: Start real API, migrations and deterministic worker
+      - name: Start real API, isolated PDF renderer, importer and deterministic worker
         run: |
+          rm -rf "${MANGASENSEI_STORAGE_ROOT}" "${MANGASENSEI_PDF_SPOOL_ROOT}"
+          mkdir -p "${MANGASENSEI_PDF_SPOOL_ROOT}"
+          chmod 0770 "${MANGASENSEI_PDF_SPOOL_ROOT}"
           uv run mangasensei migrate
+          docker build --build-arg MANGASENSEI_VERSION="$(cat VERSION)" -t mangasensei:pdf-fullstack .
+          docker rm -f mangasensei-pdf-renderer-e2e >/dev/null 2>&1 || true
+          docker run --detach --name mangasensei-pdf-renderer-e2e \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --memory 1g \
+            --cpus 1 \
+            --pids-limit 64 \
+            --tmpfs /tmp:rw,size=128m,mode=1777 \
+            --group-add "$(id -g)" \
+            --mount "type=bind,src=${MANGASENSEI_PDF_SPOOL_ROOT},dst=/app/var/pdf-spool" \
+            -e MANGASENSEI_ENVIRONMENT=test \
+            -e MANGASENSEI_PDF_SPOOL_ROOT=/app/var/pdf-spool \
+            mangasensei:pdf-fullstack mangasensei pdf-renderer >/dev/null
           uv run mangasensei api --host 127.0.0.1 --port 8000 > "${RUNNER_TEMP}/mangasensei-api.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/mangasensei-api.pid"
           uv run python tests/fullstack/worker.py > "${RUNNER_TEMP}/mangasensei-worker.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/mangasensei-worker.pid"
+          uv run mangasensei pdf-importer > "${RUNNER_TEMP}/mangasensei-pdf-importer.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/mangasensei-pdf-importer.pid"
           for attempt in $(seq 1 60); do
-            if curl --fail --silent --show-error http://127.0.0.1:8000/ready > /dev/null; then
+            if curl --fail --silent --show-error http://127.0.0.1:8000/ready > /dev/null \
+              && test -f "${MANGASENSEI_PDF_SPOOL_ROOT}/renderer/heartbeat.json"; then
               exit 0
             fi
             sleep 1
           done
-          cat "${RUNNER_TEMP}/mangasensei-api.log"
-          cat "${RUNNER_TEMP}/mangasensei-worker.log"
+          cat "${RUNNER_TEMP}/mangasensei-api.log" || true
+          cat "${RUNNER_TEMP}/mangasensei-worker.log" || true
+          cat "${RUNNER_TEMP}/mangasensei-pdf-importer.log" || true
+          docker logs mangasensei-pdf-renderer-e2e || true
           exit 1
 
       - name: Full-stack critical-flow E2E
         run: npm run e2e:fullstack
 
+      - name: Full-stack PDF import through isolated renderer
+        run: npx --no-install playwright test --config frontend/playwright.pdf-fullstack.config.ts
+
       - name: Stop full-stack runtime processes
         if: always()
         run: |
-          for pid_file in "${RUNNER_TEMP}/mangasensei-api.pid" "${RUNNER_TEMP}/mangasensei-worker.pid"; do
+          docker logs mangasensei-pdf-renderer-e2e > "${RUNNER_TEMP}/mangasensei-pdf-renderer.log" 2>&1 || true
+          docker rm -f mangasensei-pdf-renderer-e2e >/dev/null 2>&1 || true
+          for pid_file in \
+            "${RUNNER_TEMP}/mangasensei-api.pid" \
+            "${RUNNER_TEMP}/mangasensei-worker.pid" \
+            "${RUNNER_TEMP}/mangasensei-pdf-importer.pid"; do
             if test -f "${pid_file}"; then
               kill "$(cat "${pid_file}")" 2>/dev/null || true
             fi
@@ -252,10 +361,14 @@ jobs:
           path: |
             playwright-report
             playwright-report-fullstack
+            playwright-report-pdf-fullstack
             test-results
             test-results-fullstack
+            test-results-pdf-fullstack
             ${{ runner.temp }}/mangasensei-api.log
             ${{ runner.temp }}/mangasensei-worker.log
+            ${{ runner.temp }}/mangasensei-pdf-importer.log
+            ${{ runner.temp }}/mangasensei-pdf-renderer.log
           if-no-files-found: ignore
 
   security:
