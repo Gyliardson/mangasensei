@@ -1,0 +1,136 @@
+name: PDF documentation synchronization
+
+on:
+  push:
+    branches: [feat/105-hardened-pdf-import]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/105-hardened-pdf-import
+
+      - name: Synchronize PDF behavior docs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              if old in text:
+                  text = text.replace(old, new, 1)
+              elif new not in text:
+                  raise SystemExit(f"missing documentation anchor in {path}: {old[:100]!r}")
+              file.write_text(text, encoding="utf-8")
+
+          doc = "docs/document-imports.md"
+          replace(
+              doc,
+              "# Multi-image document imports\n\nMangaSensei supports an ordered set of JPEG, PNG, or WebP images as one temporary `Document`. PDF import is not implemented in this slice.",
+              "# Document imports\n\nMangaSensei supports either an ordered set of JPEG, PNG, or WebP images or one PDF source as a temporary `Document`. PDF import uses a distinct transient asynchronous render/import resource; only after every raster page passes the existing image-validation contract is the ordinary ordered Document/Page/Job graph committed.",
+          )
+          pdf_section = '''\n## PDF import (Slice D)\n\n`POST /api/v1/document-imports` accepts exactly one `application/pdf` part named `pdf`, one `studyLanguage` and an `Idempotency-Key`. A new request returns HTTP `202` with a transient import UUID, `pdfium-raster-v1`, expiry and a `read:document-import` capability. The browser polls `GET /api/v1/document-imports/{importId}` with that capability in `X-Document-Import-Token`. It does not put import or Document capabilities into URLs, history or `localStorage`.\n\nThe import status is deliberately separate from normal Page `JobStatus`:\n\n```text\nPDF import: queued -> rendering -> completed | failed\nDocument child: ordinary Page -> ordinary page_analysis Job / Attempt -> StudyResult\n```\n\n`completed` is the only import state that exposes a logical Document. The status response then returns the normal Document UUID plus freshly issued `read:document`, `read:document-image`, `reprocess:document` and `manage:document` capabilities. The SPA immediately reuses the existing Document reader/progress/recovery flow. A failed import returns a terminal stable PDF error code and no partial Document.\n\n### Renderer boundary\n\nThe production renderer is a separate non-root Compose service. It has no database, capability pepper, OCR model, JMdict or Gemini configuration; no Docker socket; `network_mode: none`; `cap_drop: ALL`; `no-new-privileges`; a read-only root filesystem; bounded `/tmp`; one CPU; a 1 GiB memory limit; a PID limit; and only the transient PDF spool mounted writable. PDF rendering is sequential and each request executes inside a disposable subprocess supervised by the renderer service, so a native crash, signal or wall-clock overrun cannot be mistaken for a successful manifest.\n\nThe supported runtime is pinned to `pypdfium2 5.12.1` with bundled PDFium `152.0.7947.0` build `7947`. Startup verifies that the native library resolves from `pypdfium2_raw/libpdfium.so`, that the helper/build identity is exact and that the build does not enable V8/XFA. A system PDFium or source-build fallback is therefore not accepted silently. The renderer never initializes PDF form environments and uses `may_draw_forms=False`; annotations are not drawn. Password/encrypted PDFs are rejected in v1, and malformed/truncated documents fail closed.\n\n### `pdfium-raster-v1` contract\n\nThe persisted import identity freezes these raster choices:\n\n- PDFium page bounding box policy (`get_bbox()`, the MediaBox/CropBox intersection exposed by PDFium), embedded page rotation and PDFium canvas units;\n- fixed 200 DPI (`200 / 72` scale), no caller-selected renderer path or flags;\n- white background, RGB PNG, Pillow `compress_level=6`, `optimize=False`;\n- annotations/forms disabled; explicit PDFium smoothing/cache/byte-order flags;\n- contiguous source order, including duplicate pages and blank pages;\n- SHA-256, dimensions, byte size, bounding box, rotation and renderer provenance recorded per raster.\n\nPDFium does not expose `/UserUnit` as a separate helper value. The v1 contract therefore treats the bounded PDFium canvas-unit result as authoritative and regression-tests unusual `UserUnit` input for deterministic output rather than applying a second guessed scale. Same supported source bytes under the same pinned runtime contract are covered by deterministic raster-byte/hash regressions.\n\n### PDF limits and failure semantics\n\n| Setting / invariant | v1 limit |\n| --- | ---: |\n| Source PDF bytes | 256 MiB |\n| PDF pages | 200 |\n| Raster side | 10,000 px |\n| Raster pixels per Page | 25 MP |\n| Aggregate raster pixels | 1,000,000,000 |\n| Encoded raster bytes per Page | 12 MiB |\n| Aggregate encoded raster bytes | 512 MiB |\n| Per-import logical spool envelope | 768 MiB |\n| Production shared spool tmpfs | 1 GiB |\n| Renderer wall time | 180 s |\n| Import lease | 240 s |\n| Source/orphan privacy ceiling | exactly 1 h |\n\nEvery produced PNG is re-read from the fixed spool path, checked for regular-file/no-symlink/no-hardlink semantics, compared with its manifest size/hash, and then passed through the same `ImageValidator` used by ordinary image upload. Manifest identity, source digest, fence, page order, aggregate counts, renderer provenance, raster dimensions and hashes are checked before commit. Failures use bounded public classes such as `pdf_invalid`, `pdf_encrypted_unsupported`, `pdf_page_limit`, `pdf_geometry_limit`, `pdf_pixel_limit`, `pdf_raster_bytes_limit`, `pdf_renderer_timeout`, `pdf_renderer_crash`, `pdf_temp_storage_exhausted`, `pdf_render_failed`, `pdf_raster_validation_failed` and `pdf_manifest_invalid`.\n\n### Atomicity, idempotency and cleanup\n\nThe original PDF and intermediate rasters are transient spool material, not library objects. A coordinator owns database/storage credentials and lease/fencing state; the renderer owns only the spool. A source is deleted immediately after a terminal success/failure when cleanup succeeds, while queued/rendering sources have a fixed one-hour ceiling and expired/orphaned imports are reconciled. Normal Document/Page retention remains exactly 24 hours once the logical Document exists.\n\nThe PDF request digest binds source-PDF SHA-256, requested study language, source kind `pdf` and raster-contract version. Filenames are not content identity. Replaying the same key/request recovers the original import/result; the same key with materially different content or language conflicts. Lease recovery increments a fencing token, and stale renderer manifests cannot commit.\n\nAtomic commit happens only after all rasters validate. One PostgreSQL transaction creates one `Document(source_kind=pdf)`, all ordered ordinary Pages and all normal initial Page jobs. Identical raster bytes can share the existing immutable blob, while duplicate source pages remain distinct ordered Page memberships. If render, manifest, raster validation, fencing, timeout or resource checks fail, zero logical Document Pages are committed.\n'''
+          anchor = "The browser lets the user inspect, move up/down, remove, or clear selected images before upload. Reordering is available through ordinary keyboard-focusable buttons and does not require drag-and-drop reordering.\n"
+          text = Path(doc).read_text(encoding="utf-8")
+          if "## PDF import (Slice D)" not in text:
+              if anchor not in text:
+                  raise SystemExit("PDF section insertion anchor missing")
+              text = text.replace(anchor, anchor + pdf_section, 1)
+              Path(doc).write_text(text, encoding="utf-8")
+          replace(
+              doc,
+              "- PDF import or a hardened local PDF renderer;\n- thumbnails;",
+              "- thumbnails;",
+          )
+          replace(
+              doc,
+              "PDF support remains deferred to a later slice of #105.",
+              "Slice E remains deferred under #105; Slice D does not add thumbnails, a persistent manga library, spread-aware/cross-page reading order, or later large-document/performance work beyond the bounded PDF contract above.",
+          )
+
+          replace(
+              "CHANGELOG.md",
+              "- Bounded ordered multi-image Document import with creation idempotency, one independent Page/job per image, separate document-scoped read/image/reprocess/manage capabilities, truthful aggregate terminal states and page-count progress, partial-result reader navigation, bounded/idempotent failed-page retry, cooperative fenced cancellation, persisted optimistic-concurrency post-create reorder, current-child language reprocessing, and real full-stack multipage browser coverage; PDF remains deferred.",
+              "- Bounded ordered multi-image Document import with creation idempotency, one independent Page/job per image, separate document-scoped read/image/reprocess/manage capabilities, truthful aggregate terminal states and page-count progress, partial-result reader navigation, bounded/idempotent failed-page retry, cooperative fenced cancellation, persisted optimistic-concurrency post-create reorder, current-child language reprocessing, and real full-stack multipage browser coverage.\n- Hardened local PDF import with a transient fenced import resource, pinned PDFium raster contract, no-network isolated renderer process, explicit resource/time/temp-storage limits, all-raster image revalidation, atomic Document/Page/Job commit, idempotent recovery, transient source cleanup, and real isolated-renderer browser coverage.",
+          )
+
+          # English README shared public behavior.
+          replacements = [
+              ("README.md", "Then open **http://127.0.0.1:8000** and analyze a JPEG, PNG, or WebP manga page. You can also select multiple supported images to create an ordered temporary Document.", "Then open **http://127.0.0.1:8000** and analyze a JPEG, PNG, WebP, or one PDF manga source. Multiple supported images keep their chosen order; a PDF is rendered locally first and then becomes the same ordinary ordered temporary Document model."),
+              ("README.md", "docker compose logs models jmdict migrate api worker", "docker compose logs models jmdict migrate api pdf-renderer pdf-importer worker"),
+              ("README.md", "1. Select one supported manga image, or an ordered set of images.", "1. Select one supported manga image, an ordered set of images, or one PDF."),
+              ("README.md", "Slices B and C of [#105](https://github.com/Gyliardson/mangasensei/issues/105) support ordered multi-image Documents, partial results, and recovery controls without turning a manga volume into one giant OCR job.", "Slices B, C and D of [#105](https://github.com/Gyliardson/mangasensei/issues/105) support ordered multi-image Documents, partial results/recovery controls, and hardened local PDF import without turning a manga volume into one giant OCR job."),
+              ("README.md", "- select multiple JPEG, PNG, or WebP images and inspect/reorder them before upload;", "- select multiple JPEG, PNG, or WebP images and inspect/reorder them before upload;\n- select one PDF for a bounded asynchronous local render/import stage; every raster is validated before the normal ordered Document is committed;"),
+              ("README.md", "**Still deferred under #105:** hardened PDF import, thumbnails, a persistent manga library, spread-aware/cross-page reading-order semantics, and later large-document/performance hardening.", "**Still deferred under #105:** thumbnails, a persistent manga library, spread-aware/cross-page reading-order semantics, and later large-document/performance hardening."),
+              ("README.md", "| Upload | Safe standalone image upload plus bounded ordered multi-image Documents with idempotency and scoped capabilities |", "| Upload | Safe standalone images, bounded ordered multi-image Documents, and hardened local PDF import with idempotency and scoped capabilities |"),
+              ("README.md", "- PDF import is not implemented yet;\n", ""),
+          ]
+          for args in replacements:
+              replace(*args)
+
+          # Portuguese.
+          replacements = [
+              ("README.pt-BR.md", "Depois abra **http://127.0.0.1:8000** e analise uma página JPEG, PNG ou WebP. Também é possível selecionar várias imagens suportadas para criar um Document temporário e ordenado.", "Depois abra **http://127.0.0.1:8000** e analise uma fonte JPEG, PNG, WebP ou um PDF. Várias imagens preservam a ordem escolhida; um PDF passa primeiro por renderização local limitada e depois usa o mesmo modelo normal de Document temporário e ordenado."),
+              ("README.pt-BR.md", "docker compose logs models jmdict migrate api worker", "docker compose logs models jmdict migrate api pdf-renderer pdf-importer worker"),
+              ("README.pt-BR.md", "1. Selecione uma imagem suportada ou um conjunto ordenado de imagens.", "1. Selecione uma imagem suportada, um conjunto ordenado de imagens ou um PDF."),
+              ("README.pt-BR.md", "Os Slices B e C de [#105](https://github.com/Gyliardson/mangasensei/issues/105) suportam Documents de múltiplas imagens ordenadas, resultados parciais e controles de recuperação sem transformar um volume inteiro em um único job de OCR.", "Os Slices B, C e D de [#105](https://github.com/Gyliardson/mangasensei/issues/105) suportam Documents de múltiplas imagens ordenadas, resultados parciais/recuperação e importação local endurecida de PDF sem transformar um volume inteiro em um único job de OCR."),
+              ("README.pt-BR.md", "- selecionar várias imagens JPEG, PNG ou WebP e inspecionar/reordenar antes do upload;", "- selecionar várias imagens JPEG, PNG ou WebP e inspecionar/reordenar antes do upload;\n- selecionar um PDF para uma etapa assíncrona, local e limitada de renderização/importação; todos os rasters são validados antes do commit do Document normal;"),
+              ("README.pt-BR.md", "**Ainda adiado em #105:** importação de PDF endurecida, thumbnails, biblioteca persistente de mangá, semântica de ordem de leitura em spreads/entre páginas e hardening posterior de performance/escala para Documents grandes.", "**Ainda adiado em #105:** thumbnails, biblioteca persistente de mangá, semântica de ordem de leitura em spreads/entre páginas e hardening posterior de performance/escala para Documents grandes."),
+              ("README.pt-BR.md", "| Upload | Upload seguro standalone mais Documents multi-imagem ordenados/limitados, com idempotência e capabilities com escopo |", "| Upload | Imagens standalone seguras, Documents multi-imagem ordenados/limitados e importação local endurecida de PDF, com idempotência e capabilities com escopo |"),
+              ("README.pt-BR.md", "- A importação de PDF ainda não está implementada;\n", ""),
+              ("README.pt-BR.md", "- importação de PDF ainda não está implementada;\n", ""),
+          ]
+          for args in replacements:
+              try:
+                  replace(*args)
+              except SystemExit:
+                  # The known-limit capitalization differs across revisions; only one form must exist.
+                  if "PDF" in args[1] and "implementada" in args[1]:
+                      continue
+                  raise
+
+          # Japanese.
+          replacements = [
+              ("README.ja.md", "その後 **http://127.0.0.1:8000** を開き、JPEG・PNG・WebP の漫画ページを解析します。複数の対応画像を選択して、一時的な順序付き Document を作成することもできます。", "その後 **http://127.0.0.1:8000** を開き、JPEG・PNG・WebP または 1 つの PDF を解析します。複数画像は選択順を保持し、PDF は bounded な local render/import を完了してから同じ通常の順序付き Document になります。"),
+              ("README.ja.md", "docker compose logs models jmdict migrate api worker", "docker compose logs models jmdict migrate api pdf-renderer pdf-importer worker"),
+              ("README.ja.md", "1. 対応画像 1 枚、または順序付きの複数画像を選択する。", "1. 対応画像 1 枚、順序付きの複数画像、または 1 つの PDF を選択する。"),
+              ("README.ja.md", "[#105](https://github.com/Gyliardson/mangasensei/issues/105) の Slice B / C は、漫画 volume 全体を 1 個の巨大 OCR job にせず、順序付き複数画像 Document、partial result、recovery control を提供します。", "[#105](https://github.com/Gyliardson/mangasensei/issues/105) の Slice B / C / D は、漫画 volume 全体を 1 個の巨大 OCR job にせず、順序付き複数画像 Document、partial result/recovery、hardened local PDF import を提供します。"),
+              ("README.ja.md", "- 複数 JPEG・PNG・WebP を選択し、upload 前に確認・並べ替えする。", "- 複数 JPEG・PNG・WebP を選択し、upload 前に確認・並べ替えする。\n- 1 つの PDF を bounded asynchronous local render/import に送り、全 raster 検証後だけ通常の Document を commit する。"),
+              ("README.ja.md", "**#105 で引き続き未実装:** hardened PDF import、thumbnail、persistent manga library、spread-aware / cross-page reading-order semantics、後続の large-document/performance hardening。", "**#105 で引き続き未実装:** thumbnail、persistent manga library、spread-aware / cross-page reading-order semantics、後続の large-document/performance hardening。"),
+              ("README.ja.md", "| Upload | 安全な standalone image upload と、idempotency/scoped capability を持つ bounded ordered multi-image Document |", "| Upload | 安全な standalone image、bounded ordered multi-image Document、idempotency/scoped capability を持つ hardened local PDF import |"),
+              ("README.ja.md", "- PDF import は未実装です。\n", ""),
+          ]
+          for args in replacements:
+              replace(*args)
+
+          # Spanish.
+          replacements = [
+              ("README.es.md", "Después abre **http://127.0.0.1:8000** y analiza una página JPEG, PNG o WebP. También puedes seleccionar varias imágenes compatibles para crear un Document temporal y ordenado.", "Después abre **http://127.0.0.1:8000** y analiza una fuente JPEG, PNG, WebP o un PDF. Varias imágenes conservan el orden elegido; un PDF pasa primero por un render/import local acotado y después usa el mismo Document temporal y ordenado."),
+              ("README.es.md", "docker compose logs models jmdict migrate api worker", "docker compose logs models jmdict migrate api pdf-renderer pdf-importer worker"),
+              ("README.es.md", "1. Selecciona una imagen compatible o un conjunto ordenado de imágenes.", "1. Selecciona una imagen compatible, un conjunto ordenado de imágenes o un PDF."),
+              ("README.es.md", "Los Slices B y C de [#105](https://github.com/Gyliardson/mangasensei/issues/105) admiten Documents de múltiples imágenes ordenadas, resultados parciales y controles de recuperación sin convertir un volumen entero en un único job gigante de OCR.", "Los Slices B, C y D de [#105](https://github.com/Gyliardson/mangasensei/issues/105) admiten Documents de múltiples imágenes ordenadas, resultados parciales/recuperación e importación PDF local endurecida sin convertir un volumen entero en un único job gigante de OCR."),
+              ("README.es.md", "- seleccionar varias imágenes JPEG, PNG o WebP e inspeccionarlas/reordenarlas antes de subirlas;", "- seleccionar varias imágenes JPEG, PNG o WebP e inspeccionarlas/reordenarlas antes de subirlas;\n- seleccionar un PDF para una etapa asíncrona, local y acotada de render/import; todos los raster se validan antes de confirmar el Document normal;"),
+              ("README.es.md", "**Aún aplazado en #105:** importación PDF endurecida, thumbnails, biblioteca persistente de manga, semántica de orden de lectura consciente de spreads/entre páginas y hardening posterior de rendimiento/escala para Documents grandes.", "**Aún aplazado en #105:** thumbnails, biblioteca persistente de manga, semántica de orden de lectura consciente de spreads/entre páginas y hardening posterior de rendimiento/escala para Documents grandes."),
+              ("README.es.md", "| Carga | Carga segura standalone más Documents multiimagen ordenados/acotados con idempotencia y capabilities con alcance |", "| Carga | Imágenes standalone seguras, Documents multiimagen ordenados/acotados e importación PDF local endurecida con idempotencia y capabilities con alcance |"),
+              ("README.es.md", "- la importación de PDF aún no está implementada;\n", ""),
+          ]
+          for args in replacements:
+              replace(*args)
+          PY
+
+      - name: Commit synchronized documentation
+        run: |
+          if git diff --quiet -- docs/document-imports.md CHANGELOG.md README.md README.pt-BR.md README.ja.md README.es.md; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/document-imports.md CHANGELOG.md README.md README.pt-BR.md README.ja.md README.es.md
+          git commit -m "docs(pdf): document hardened local import"
+          git push origin HEAD:feat/105-hardened-pdf-import
