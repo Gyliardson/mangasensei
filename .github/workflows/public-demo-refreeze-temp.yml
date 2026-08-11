@@ -1,0 +1,46 @@
+name: Public Demo Refreeze (temporary)
+
+on:
+  push:
+    branches: [feat/public-demo-corpus-v1]
+
+permissions:
+  contents: write
+
+jobs:
+  refreeze:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - name: Install locked toolchain
+        run: |
+          uv sync --frozen
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Refreeze annotation integrity without changing source intent
+        run: |
+          sha256sum assets/public-demo/images/*.png | sort > "${RUNNER_TEMP}/before.sha256"
+          uv run python scripts/public_demo/freeze.py
+          sha256sum assets/public-demo/images/*.png | sort > "${RUNNER_TEMP}/after.sha256"
+          diff -u "${RUNNER_TEMP}/before.sha256" "${RUNNER_TEMP}/after.sha256"
+          uv run python scripts/public_demo/validate.py
+          uv run pytest tests/public_demo -q
+          uv run ruff check scripts/public_demo tests/public_demo
+          uv run python scripts/check_markdown_links.py
+      - name: Commit refreshed manifest and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/public-demo-refreeze-temp.yml
+          git add assets/public-demo
+          git commit -m "chore(public-demo): refreeze annotation integrity"
+          git push origin HEAD:feat/public-demo-corpus-v1
