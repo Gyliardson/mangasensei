@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unicodedata
-from decimal import Decimal, ROUND_HALF_UP, localcontext
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 from fractions import Fraction
 from typing import TypeAlias
 

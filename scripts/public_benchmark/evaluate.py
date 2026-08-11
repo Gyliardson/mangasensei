@@ -55,10 +55,7 @@ def resolve_repository_sha(repo_root: Path, explicit: str | None) -> str:
 
     git_dir = _git_dir(repo_root)
     head = (git_dir / "HEAD").read_text(encoding="ascii").strip()
-    if head.startswith("ref: "):
-        sha = _read_ref(git_dir, head[5:])
-    else:
-        sha = head
+    sha = _read_ref(git_dir, head[5:]) if head.startswith("ref: ") else head
     if _HEX40.fullmatch(sha) is None:
         raise RuntimeError("could not resolve a valid evaluator repository SHA")
     return sha

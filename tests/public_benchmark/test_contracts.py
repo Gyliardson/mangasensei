@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from scripts.public_benchmark.contracts import BenchmarkContractError, bind_observation
 from scripts.public_benchmark.corpus import load_corpus
 from scripts.public_benchmark.observation import load_observation

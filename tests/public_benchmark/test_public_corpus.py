@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from scripts.public_benchmark.corpus import load_corpus
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

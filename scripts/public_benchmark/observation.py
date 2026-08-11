@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from .contracts import (
-    OBSERVATION_KIND,
-    OBSERVATION_SCHEMA_VERSION,
     _HEX40,
     _HEX64,
+    OBSERVATION_KIND,
+    OBSERVATION_SCHEMA_VERSION,
     Observation,
     ObservationPage,
     ObservedRegion,

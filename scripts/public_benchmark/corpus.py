@@ -8,7 +8,6 @@ from .contracts import (
     CorpusBundle,
     GroundTruthPage,
     GroundTruthRegion,
-    JsonObject,
     NegativeZone,
     _array,
     _bbox,
@@ -416,3 +415,4 @@ def load_corpus(root: Path) -> CorpusBundle:
         annotation_schema_sha256=annotation_schema_sha256,
         pages=tuple(pages),
     )
+
