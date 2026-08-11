@@ -71,6 +71,7 @@ _TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
 _STUDY_LANGUAGE_REUSE_DIRECT_TRANSITIONS = frozenset(
     {JobStatus.PROCESSING_GEMINI, JobStatus.COMPLETED}
 )
+_DICTIONARY_PROJECTION_DIRECT_TRANSITIONS = frozenset({JobStatus.COMPLETED})
 
 
 def transition_job(current: JobStatus, target: JobStatus) -> JobStatus:
@@ -83,5 +84,13 @@ def transition_study_language_reuse_job(current: JobStatus, target: JobStatus) -
     """Allow a reuse job to skip OCR/linguistics without weakening normal jobs."""
 
     if current is JobStatus.CLAIMED and target in _STUDY_LANGUAGE_REUSE_DIRECT_TRANSITIONS:
+        return target
+    return transition_job(current, target)
+
+
+def transition_dictionary_projection_job(current: JobStatus, target: JobStatus) -> JobStatus:
+    """Allow dictionary-only projection to complete directly from a fenced claim."""
+
+    if current is JobStatus.CLAIMED and target in _DICTIONARY_PROJECTION_DIRECT_TRANSITIONS:
         return target
     return transition_job(current, target)
