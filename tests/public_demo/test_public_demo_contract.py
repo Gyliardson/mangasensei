@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from scripts.public_demo import validate as public_demo_validate
 
 ROOT = Path(__file__).resolve().parents[2]
