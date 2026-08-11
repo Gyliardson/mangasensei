@@ -250,24 +250,8 @@ test("server cancellation leaves a completed sibling readable and persists termi
   expect(await cancelResponse.request().headerValue("x-document-token")).toBe(
     document.capabilities.manageDocument,
   );
-  const cancelled = ((await cancelResponse.json()) as DocumentSnapshotEnvelope).data;
-  expect(cancelled.status).toBe("cancelled");
-  expect(cancelled.progress).toEqual({
-    totalPages: 2,
-    completedPages: 1,
-    processingPages: 0,
-    failedPages: 0,
-    cancelledPages: 1,
-  });
-  expect(cancelled.pages[0]).toMatchObject({
-    pageId: completedPageId,
-    resultAvailable: true,
-  });
-  expect(cancelled.pages[1]).toMatchObject({
-    pageId: unfinishedPageId,
-    status: "cancelled",
-    resultAvailable: false,
-  });
+  // For an already leased child, HTTP 200 acknowledges durable cancel intent. The lease owner
+  // performs the fenced terminal transition asynchronously, so this response may still be processing.
 
   await expect(page.getByText("Document processing cancelled")).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "Page 1: readable" }).click();
@@ -281,14 +265,27 @@ test("server cancellation leaves a completed sibling readable and persists termi
   );
   await expect(page.getByRole("button", { name: "Region 1: 猫です" })).toBeVisible();
 
-  // One fresh server read proves cancellation is durable rather than only client-side state.
+  // One fresh server read proves the lease owner acknowledged cancellation durably.
   const reloaded = await readDocument(
     request,
     document.documentId,
     document.capabilities.readDocument,
   );
   expect(reloaded.status).toBe("cancelled");
-  expect(reloaded.progress.cancelledPages).toBe(1);
-  expect(reloaded.pages[0]?.resultAvailable).toBe(true);
-  expect(reloaded.pages[1]?.status).toBe("cancelled");
+  expect(reloaded.progress).toEqual({
+    totalPages: 2,
+    completedPages: 1,
+    processingPages: 0,
+    failedPages: 0,
+    cancelledPages: 1,
+  });
+  expect(reloaded.pages[0]).toMatchObject({
+    pageId: completedPageId,
+    resultAvailable: true,
+  });
+  expect(reloaded.pages[1]).toMatchObject({
+    pageId: unfinishedPageId,
+    status: "cancelled",
+    resultAvailable: false,
+  });
 });
