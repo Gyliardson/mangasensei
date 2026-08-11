@@ -132,13 +132,15 @@ def test_slice_c_upgrade_preserves_document_jobs_standalone_pages_and_retention(
                 ).scalar_one()
                 child = connection.execute(
                     text(
-                        "SELECT document_id, ordinal, expires_at FROM mangasensei.pages WHERE id=:id"
+                        "SELECT document_id, ordinal, expires_at "
+                        "FROM mangasensei.pages WHERE id=:id"
                     ),
                     {"id": child_id},
                 ).one()
                 standalone = connection.execute(
                     text(
-                        "SELECT document_id, upload_idempotency_digest FROM mangasensei.pages WHERE id=:id"
+                        "SELECT document_id, upload_idempotency_digest "
+                        "FROM mangasensei.pages WHERE id=:id"
                     ),
                     {"id": standalone_id},
                 ).one()
