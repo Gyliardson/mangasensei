@@ -46,6 +46,9 @@ test("Document recovery controls remain usable and axe-clean on a mobile viewpor
   await page.getByRole("button", { name: "Analyze 2 pages" }).click();
   const uploaded = (await (await uploadResponsePromise).json()) as DocumentEnvelope;
 
+  const beforeCancel = await new AxeBuilder({ page }).analyze();
+  expect(beforeCancel.violations).toEqual([]);
+
   await expect
     .poll(async () => {
       const response = await page.request.get(
@@ -60,9 +63,6 @@ test("Document recovery controls remain usable and axe-clean on a mobile viewpor
   await expect(page.getByRole("button", { name: "Cancel processing" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Move page later" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Page 1: readable" })).toBeVisible();
-
-  const beforeCancel = await new AxeBuilder({ page }).analyze();
-  expect(beforeCancel.violations).toEqual([]);
 
   await page.getByRole("button", { name: "Cancel processing" }).click();
   await expect(page.getByText("Document processing cancelled")).toBeVisible({ timeout: 10_000 });
