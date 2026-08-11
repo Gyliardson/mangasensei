@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
 
 _PREVIOUS_REVISION = "4b913c2a7e56"
-_NEW_REVISION = "e2f6a0c84b11"
+_NEW_REVISION = "9c2e7d4a1160"
 
 
 def _alembic_config(database_url: str) -> Config:
@@ -221,7 +221,7 @@ def test_dictionary_projection_migration_backfill_and_lossy_downgrade(
             {"job_id": job_id, "linguistic_run_id": linguistic_run_id},
         )
 
-    command.upgrade(config, "head")
+    command.upgrade(config, _NEW_REVISION)
 
     expected_ref = f"jmdict:en:{dictionary_version}:{dictionary_digest.hex()[:16]}"
     with engine.connect() as connection:
