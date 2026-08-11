@@ -33,6 +33,11 @@ import {
 } from "./lib/dictionaryLanguage";
 import { documentMessagesFor, type DocumentUiMessages } from "./lib/documentUiMessages";
 import {
+  type PdfImportStatus,
+  uploadPdfImport,
+  waitForPdfImport,
+} from "./lib/pdfImports";
+import {
   type StudyLanguage,
   isStudyLanguage,
   loadStudyLanguagePreference,
@@ -48,14 +53,21 @@ import {
 import { APPLICATION_VERSION, versionLabel } from "./version";
 import "./document-upload.css";
 
-const acceptedTypes = ".jpg,.jpeg,.png,.webp";
+const acceptedTypes = ".jpg,.jpeg,.png,.webp,.pdf";
 
-type LocalErrorCode = "select_image_first" | "unexpected_processing";
+type LocalErrorCode = "select_image_first" | "pdf_must_be_single" | "unexpected_processing";
 type DisplayError =
   | { readonly kind: "local"; readonly code: LocalErrorCode }
   | { readonly kind: "api"; readonly code: string };
 type LanguageMutation = "study" | "dictionary" | null;
-type AppPhase = "idle" | "uploading" | "processing" | "complete" | "document" | "error";
+type AppPhase =
+  | "idle"
+  | "uploading"
+  | "importing"
+  | "processing"
+  | "complete"
+  | "document"
+  | "error";
 
 function requestedDictionaryLanguageOf(page: StudyPage): DictionaryLanguage {
   return page.requestedDictionaryLanguage ?? "en";
@@ -65,6 +77,7 @@ export function App() {
   const [files, setFiles] = useState<File[]>([]);
   const [phase, setPhase] = useState<AppPhase>("idle");
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
+  const [pdfImportStatus, setPdfImportStatus] = useState<PdfImportStatus | null>(null);
   const [page, setPage] = useState<StudyPage | null>(null);
   const [pageAccess, setPageAccess] = useState<UploadData | null>(null);
   const [documentAccess, setDocumentAccess] = useState<DocumentUploadData | null>(null);
@@ -105,6 +118,7 @@ export function App() {
     setFiles([]);
     setPhase("idle");
     setJobStatus(null);
+    setPdfImportStatus(null);
     setPage(null);
     setPageAccess(null);
     setDocumentAccess(null);
@@ -197,12 +211,33 @@ export function App() {
       setPhase("error");
       return;
     }
+    const pdfFiles = files.filter(isPdfFile);
+    if (pdfFiles.length > 0 && (pdfFiles.length !== 1 || files.length !== 1)) {
+      setError({ kind: "local", code: "pdf_must_be_single" });
+      setPhase("error");
+      return;
+    }
+    const pdfFile = pdfFiles[0] ?? null;
     const controller = new AbortController();
     operation.current?.abort();
     operation.current = controller;
     setError(null);
-    setPhase("uploading");
+    setPhase(pdfFile ? "importing" : "uploading");
     try {
+      if (pdfFile) {
+        const imported = await uploadPdfImport(pdfFile, preferredStudyLanguage, controller.signal);
+        setPdfImportStatus(imported.status);
+        const document = await waitForPdfImport(
+          imported,
+          controller.signal,
+          setPdfImportStatus,
+        );
+        setDocumentAccess(document);
+        setPhase("document");
+        operation.current = null;
+        return;
+      }
+
       if (files.length > 1) {
         const document = await uploadDocument(files, preferredStudyLanguage, controller.signal);
         setDocumentAccess(document);
@@ -360,6 +395,7 @@ export function App() {
               <h2 id="upload-title">{messages.uploadTitle}</h2>
             </div>
             <p>{messages.uploadRequirements}</p>
+            <p className="pdf-upload-note">{pdfUploadHint(uiLocale)}</p>
             <label className="upload-study-language">
               <span>{messages.studyLanguageLabel}</span>
               <select
@@ -386,7 +422,11 @@ export function App() {
             <FileImage aria-hidden="true" />
             <span className="file-action">{messages.selectImage}</span>
             <span className="file-detail">
-              {files.length > 0 ? documentMessages.selectedPages(files.length) : messages.fileDropHint}
+              {files.length > 0
+                ? files.length === 1 && files[0] && isPdfFile(files[0])
+                  ? pdfSelectedLabel(uiLocale)
+                  : documentMessages.selectedPages(files.length)
+                : messages.fileDropHint}
             </span>
           </label>
           <input
@@ -396,7 +436,7 @@ export function App() {
             type="file"
             multiple
             accept={acceptedTypes}
-            aria-label={messages.pageImageAria}
+            aria-label={`${messages.pageImageAria} / PDF`}
             aria-describedby="upload-retention page-order-hint"
             onChange={(event) => selectFiles(Array.from(event.target.files ?? []))}
           />
@@ -448,19 +488,26 @@ export function App() {
           <button
             className="primary-button"
             type="submit"
-            disabled={files.length === 0 || phase === "uploading" || phase === "processing"}
+            disabled={
+              files.length === 0 ||
+              phase === "uploading" ||
+              phase === "importing" ||
+              phase === "processing"
+            }
           >
-            {phase === "uploading" || phase === "processing"
+            {phase === "uploading" || phase === "importing" || phase === "processing"
               ? <LoaderCircle className="spinner" aria-hidden="true" />
               : <ScanText aria-hidden="true" />}
             {phase === "uploading"
               ? messages.uploadingImage
-              : phase === "processing"
-                ? messages.jobStatus(jobStatus)
-                : documentMessages.analyzePages(files.length)}
+              : phase === "importing"
+                ? pdfImportStatusLabel(uiLocale, pdfImportStatus)
+                : phase === "processing"
+                  ? messages.jobStatus(jobStatus)
+                  : documentMessages.analyzePages(files.length)}
           </button>
 
-          {phase === "uploading" || phase === "processing" ? (
+          {phase === "uploading" || phase === "importing" || phase === "processing" ? (
             <button className="cancel-button" type="button" onClick={reset} aria-describedby="upload-retention">
               <X aria-hidden="true" /> {messages.stopFollowing}
             </button>
@@ -542,6 +589,7 @@ function displayError(
   error: DisplayError,
 ): string {
   if (error.kind === "api") {
+    if (error.code.startsWith("pdf_")) return pdfErrorMessage(messages, error.code);
     if (error.code === "document_page_limit_exceeded") return documentMessages.documentPageLimit;
     if (error.code === "document_byte_limit_exceeded") return documentMessages.documentByteLimit;
     if (error.code === "document_pixel_limit_exceeded") return documentMessages.documentPixelLimit;
@@ -549,5 +597,54 @@ function displayError(
     return messages.apiError(error.code);
   }
   if (error.code === "select_image_first") return messages.selectImageFirst;
+  if (error.code === "pdf_must_be_single") {
+    return messages.apiError("pdf_must_be_single");
+  }
   return messages.unexpectedProcessingError;
+}
+
+function isPdfFile(file: File): boolean {
+  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function pdfUploadHint(locale: UiLocale): string {
+  return locale === "pt-BR"
+    ? "PDF: envie um único arquivo de até 256 MiB e 200 páginas; a renderização local acontece antes do OCR."
+    : "PDF: upload one file up to 256 MiB and 200 pages; local rendering happens before OCR.";
+}
+
+function pdfSelectedLabel(locale: UiLocale): string {
+  return locale === "pt-BR" ? "1 PDF selecionado" : "1 PDF selected";
+}
+
+function pdfImportStatusLabel(locale: UiLocale, status: PdfImportStatus | null): string {
+  if (locale === "pt-BR") {
+    return status === "rendering"
+      ? "Renderizando PDF localmente"
+      : "Aguardando renderização local do PDF";
+  }
+  return status === "rendering" ? "Rendering PDF locally" : "Waiting for local PDF rendering";
+}
+
+function pdfErrorMessage(messages: UiMessages, code: string): string {
+  const portuguese = document.documentElement.lang === "pt-BR";
+  const labels: Readonly<Record<string, readonly [string, string]>> = {
+    pdf_invalid: ["The PDF is invalid or unsupported.", "O PDF é inválido ou não suportado."],
+    pdf_encrypted_unsupported: [
+      "Password-protected PDFs are not supported.",
+      "PDFs protegidos por senha não são suportados.",
+    ],
+    pdf_page_limit: ["The PDF exceeds the 200-page limit.", "O PDF excede o limite de 200 páginas."],
+    pdf_geometry_limit: ["A PDF page has unsupported geometry.", "Uma página do PDF possui geometria não suportada."],
+    pdf_pixel_limit: ["The rendered PDF exceeds the pixel limit.", "O PDF renderizado excede o limite de pixels."],
+    pdf_raster_bytes_limit: ["The rendered PDF exceeds the byte limit.", "O PDF renderizado excede o limite de bytes."],
+    pdf_renderer_timeout: ["Local PDF rendering timed out.", "A renderização local do PDF excedeu o tempo limite."],
+    pdf_renderer_crash: ["The local PDF renderer stopped unexpectedly.", "O renderizador local de PDF foi interrompido inesperadamente."],
+    pdf_temp_storage_exhausted: ["Temporary PDF storage is exhausted.", "O armazenamento temporário do PDF foi esgotado."],
+    pdf_raster_validation_failed: ["A rendered page failed image validation.", "Uma página renderizada falhou na validação de imagem."],
+    pdf_manifest_invalid: ["The PDF render manifest failed integrity checks.", "O manifesto de renderização do PDF falhou nas verificações de integridade."],
+    pdf_render_failed: ["Local PDF rendering failed.", "A renderização local do PDF falhou."],
+  };
+  const label = labels[code];
+  return label ? label[portuguese ? 1 : 0] : messages.apiError(code);
 }
