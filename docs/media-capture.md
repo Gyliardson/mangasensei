@@ -24,8 +24,10 @@ The current executable source ID is `synthetic-v1`. Any other `MANGASENSEI_MEDIA
 - light color scheme and reduced motion;
 - service workers blocked;
 - Playwright trace/screenshot/video auto-recorders disabled so only named media outputs are written;
-- CSS animation/transition suppression, hidden caret, fixed capture font stack and `document.fonts.ready` before screenshots;
+- CSS animation/transition suppression, hidden caret/focus, fixed capture font stack and `document.fonts.ready` before every screenshot or WebM screencast starts;
 - deterministic fixture IDs, polling transitions, filenames and directory layout.
+
+Before either capture format starts, the shared media preflight applies those stabilization controls and scans browser-visible text, DOM attributes and resolved URLs for the deterministic fixture capability strings. The screencast path scans that browser-visible surface again immediately before stopping. Screenshot capture may safely call the same preflight again after a screencast; the controls are intentionally reusable.
 
 Chromium is controlled by the pinned `@playwright/test` version and `playwright install chromium`. Provenance records the actual browser version and the bundled Chromium revision inferred from Playwright's executable path, plus Node/platform/architecture and the computed font stack. For publication-grade pixel identity, run captures in the same reviewed OS/container image as well as the same Playwright revision.
 
@@ -46,16 +48,24 @@ Run the lightweight contract/discovery check:
 npm run media:check
 ```
 
+The contract executes Playwright `--list` itself and fails unless the dedicated media config discovers the canonical stories/projects while the normal `playwright.config.ts` discovers no test under `e2e/media/**`.
+
 Capture all fixture stories:
 
 ```bash
 npm run media:capture
 ```
 
-Capture one story/profile:
+Capture one still smoke/profile:
 
 ```bash
 npm run media:capture -- --project media-desktop --grep '@media-smoke'
+```
+
+Capture the short WebM smoke/profile:
+
+```bash
+npm run media:capture -- --project media-desktop --grep '@media-webm-smoke'
 ```
 
 Override the output root without changing filenames:
@@ -102,7 +112,7 @@ Every story writes `provenance.json` without timestamps or credentials. Schema v
 - font readiness/computed font stack;
 - every resulting artifact path, byte count and SHA-256.
 
-The capture test re-reads the manifest, re-hashes each output and rejects any occurrence of the deterministic fixture capability tokens in emitted media/provenance. Capability tokens remain header-only fixture data and never enter media URLs or filenames.
+The capture test re-reads the manifest, re-hashes every PNG/WebM artifact, verifies its byte count and rejects any occurrence of the deterministic fixture capability strings in emitted media/provenance. The shared preflight separately rejects those strings from browser-visible text/DOM/attributes/URLs before capture begins, and screencasts repeat that browser-visible check before stopping. Capability tokens remain fixture-only request data and never enter media URLs or filenames.
 
 ## Derivatives with ffmpeg
 
@@ -130,4 +140,4 @@ The MP4 profile uses H.264 (`libx264`), CRF 18, `yuv420p`, `+faststart`, strips 
 
 ## CI policy
 
-[`.github/workflows/media-contract.yml`](../.github/workflows/media-contract.yml) runs only a lightweight catalog/discovery check plus one representative desktop screenshot/provenance smoke. It does not generate the video suite or commit/upload promotional media. Full capture remains an explicit local/on-demand action.
+[`.github/workflows/media-contract.yml`](../.github/workflows/media-contract.yml) runs the catalog/path/derivative/discovery contract plus one representative PNG smoke and one short `core-workflow` WebM smoke. The WebM smoke exercises native Playwright screencast start/stop and the same manifest re-read/re-hash verification used by normal captures. The workflow is path-scoped, includes `package-lock.json` because the locked Playwright/browser graph is capture input, and does not generate the rest of the video suite or commit/upload promotional media. Full capture remains an explicit local/on-demand action.

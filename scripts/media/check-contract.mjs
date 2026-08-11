@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const catalogPath = path.join(repoRoot, "frontend/e2e/media/scenarios.json");
+const frontendRoot = path.join(repoRoot, "frontend");
+const catalogPath = path.join(frontendRoot, "e2e/media/scenarios.json");
 const catalog = JSON.parse(readFileSync(catalogPath, "utf8"));
 
 assert.equal(catalog.schemaVersion, 1);
@@ -52,4 +53,71 @@ assert.equal(derivativeDryRun.status, 0, derivativeDryRun.stderr);
 assert.match(derivativeDryRun.stdout, /ffmpeg/);
 assert.match(derivativeDryRun.stdout, /libx264/);
 
-console.log(`media contract ok: ${ids.length} scenarios, deterministic paths, derivative dry-run`);
+function listPlaywrightTests(configFile) {
+  const npx = process.platform === "win32" ? "npx.cmd" : "npx";
+  const result = spawnSync(
+    npx,
+    ["--no-install", "playwright", "test", "--config", configFile, "--list"],
+    { cwd: frontendRoot, encoding: "utf8" },
+  );
+  assert.equal(
+    result.status,
+    0,
+    `Playwright discovery failed for ${configFile}:\n${result.stderr || result.stdout}`,
+  );
+  return result.stdout.replaceAll("\\", "/");
+}
+
+function mediaDiscoveryRecords(output) {
+  const records = [];
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(
+      /\[([^\]]+)\]\s+›\s+(e2e\/media\/[^:]+):\d+:\d+\s+›\s+(.+)$/,
+    );
+    if (!match) continue;
+    const [, project, testPath, title] = match;
+    const scenarioId = ids.find((id) => title === id || title.startsWith(`${id} `));
+    assert.ok(scenarioId, `unexpected media story in discovery: ${line.trim()}`);
+    records.push({ project, testPath, title, scenarioId });
+  }
+  return records;
+}
+
+const mediaList = listPlaywrightTests("playwright.media.config.ts");
+const mediaRecords = mediaDiscoveryRecords(mediaList);
+assert.ok(mediaRecords.length > 0, "dedicated media config discovered no media stories");
+assert.deepEqual(
+  new Set(mediaRecords.map((record) => record.project)),
+  new Set(["media-desktop", "media-mobile"]),
+  "dedicated media project inventory drifted",
+);
+assert.deepEqual(
+  new Set(mediaRecords.map((record) => record.scenarioId)),
+  expected,
+  "dedicated media config did not discover the expected stories",
+);
+for (const scenario of catalog.scenarios) {
+  for (const profile of scenario.profiles) {
+    const expectedProject = profile === "desktop" ? "media-desktop" : "media-mobile";
+    assert.ok(
+      mediaRecords.some(
+        (record) => record.project === expectedProject && record.scenarioId === scenario.id,
+      ),
+      `${scenario.id} is missing from expected project ${expectedProject}`,
+    );
+  }
+}
+
+const defaultList = listPlaywrightTests("playwright.config.ts");
+const leakedMediaStories = defaultList
+  .split(/\r?\n/)
+  .filter((line) => line.includes("e2e/media/"));
+assert.deepEqual(
+  leakedMediaStories,
+  [],
+  `default Playwright config discovered media stories:\n${leakedMediaStories.join("\n")}`,
+);
+
+console.log(
+  `media contract ok: ${ids.length} scenarios, deterministic paths, derivative dry-run, discovery boundaries`,
+);

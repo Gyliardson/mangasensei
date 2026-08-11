@@ -62,7 +62,7 @@ test("reader-mobile", async ({ page, browser }, testInfo) => {
   await finishCapture({ browser, page, testInfo, scenario: item, artifacts: [screenshot] });
 });
 
-test("core-workflow", async ({ page, browser }, testInfo) => {
+test("core-workflow @media-webm-smoke", async ({ page, browser }, testInfo) => {
   const item = scenario("core-workflow");
   test.skip(profileForProject(testInfo.project.name) !== "desktop", "desktop-only capture story");
   await installSinglePageFixture(page, "workflow");
@@ -74,6 +74,9 @@ test("core-workflow", async ({ page, browser }, testInfo) => {
   await expect(page.getByText("It is a cat.")).toBeVisible();
   await page.waitForTimeout(500);
   const video = await stopScreencast(page, videoPath);
+  expect(video.path).toBe("synthetic-v1/core-workflow/desktop/master.webm");
+  expect(video.bytes).toBeGreaterThan(0);
+  expect(video.sha256).toMatch(/^[0-9a-f]{64}$/);
   const screenshot = await captureScreenshot(page, item.id, "desktop");
   await finishCapture({ browser, page, testInfo, scenario: item, artifacts: [screenshot, video] });
 });

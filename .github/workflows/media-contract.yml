@@ -9,6 +9,7 @@ on:
       - "scripts/media/**"
       - "docs/media-capture.md"
       - "package.json"
+      - "package-lock.json"
       - "frontend/package.json"
       - ".github/workflows/media-contract.yml"
       - ".gitignore"
@@ -37,7 +38,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check media catalog, paths, dry-run derivatives and Playwright discovery
+      - name: Check media catalog, paths, dry-run derivatives and Playwright discovery boundaries
         run: npm run media:check
 
       - name: Install pinned Chromium
@@ -48,6 +49,11 @@ jobs:
         env:
           MANGASENSEI_MEDIA_OUTPUT: ${{ runner.temp }}/mangasensei-media-smoke
         run: npm run media:capture -- --project media-desktop --grep '@media-smoke'
+
+      - name: Generate one representative WebM and verify provenance
+        env:
+          MANGASENSEI_MEDIA_OUTPUT: ${{ runner.temp }}/mangasensei-media-smoke
+        run: npm run media:capture -- --project media-desktop --grep '@media-webm-smoke'
 
       - name: Upload media diagnostics on failure
         if: failure()
