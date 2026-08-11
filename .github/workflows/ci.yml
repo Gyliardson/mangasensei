@@ -410,10 +410,36 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Scan for secrets
-        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install and self-test Gitleaks
+        run: |
+          version=8.29.1
+          archive=/tmp/gitleaks_${version}_linux_x64.tar.gz
+          install_dir=/tmp/gitleaks-${version}
+          curl --fail --silent --show-error --location \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+            --output "${archive}"
+          echo "e4eb209d04e20339d77122a3bdf9cd41351255cfb27ebcb75e85325e04f88924  ${archive}" \
+            | sha256sum --check --strict
+          mkdir "${install_dir}"
+          tar -xzf "${archive}" -C "${install_dir}" gitleaks
+          "${install_dir}/gitleaks" version
+          probe_dir="$(mktemp -d)"
+          printf 'token = "%s%s"\n' 'ghp_1234567890abcdef' 'ghijklmnopqrstuvwxyz' \
+            > "${probe_dir}/synthetic-secret.txt"
+          set +e
+          "${install_dir}/gitleaks" dir --redact --no-banner "${probe_dir}"
+          probe_status=$?
+          set -e
+          rm -rf "${probe_dir}"
+          if test "${probe_status}" -ne 1; then
+            echo "Gitleaks synthetic-secret self-test returned ${probe_status}, expected 1." >&2
+            exit 1
+          fi
+          echo "Gitleaks synthetic-secret self-test passed."
+          echo "GITLEAKS_BIN=${install_dir}/gitleaks" >> "${GITHUB_ENV}"
+
+      - name: Scan full Git history for secrets
+        run: "${GITLEAKS_BIN}" git --redact --no-banner .
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
