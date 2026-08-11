@@ -28,6 +28,7 @@ def test_retryable_job_can_be_claimed_without_promotion_race() -> None:
 @pytest.mark.parametrize(
     "status",
     [
+        JobStatus.PENDING,
         JobStatus.CLAIMED,
         JobStatus.PROCESSING_OCR,
         JobStatus.PROCESSING_LINGUISTICS,
@@ -35,5 +36,26 @@ def test_retryable_job_can_be_claimed_without_promotion_race() -> None:
         JobStatus.RETRYABLE_FAILURE,
     ],
 )
-def test_janitor_can_expire_every_nonterminal_job(status: JobStatus) -> None:
+def test_unfinished_job_can_be_cancelled(status: JobStatus) -> None:
+    assert transition_job(status, JobStatus.CANCELLED) is JobStatus.CANCELLED
+
+
+def test_terminal_jobs_cannot_be_rewritten_as_cancelled() -> None:
+    for status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.EXPIRED):
+        with pytest.raises(InvalidJobTransition):
+            transition_job(status, JobStatus.CANCELLED)
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        JobStatus.CLAIMED,
+        JobStatus.PROCESSING_OCR,
+        JobStatus.PROCESSING_LINGUISTICS,
+        JobStatus.PROCESSING_GEMINI,
+        JobStatus.RETRYABLE_FAILURE,
+        JobStatus.CANCELLED,
+    ],
+)
+def test_janitor_can_expire_every_nonterminal_or_cancelled_job(status: JobStatus) -> None:
     assert transition_job(status, JobStatus.EXPIRED) is JobStatus.EXPIRED
