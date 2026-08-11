@@ -79,6 +79,10 @@ class StaleLeaseError(RuntimeError):
     """The worker no longer owns the claimed job."""
 
 
+class CancellationAcknowledgedError(StaleLeaseError):
+    """The lease owner durably acknowledged a Document cancellation request."""
+
+
 class GeminiBudgetExceededError(RuntimeError):
     """A configured Gemini budget or per-page call bound blocked another call."""
 
@@ -209,8 +213,10 @@ class Worker:
         if claim is None:
             return False
         heartbeat = asyncio.create_task(self._heartbeat_loop(claim))
-        stage = "load_job_contract"
+        stage = "cancel_checkpoint"
         try:
+            await self._checkpoint_cancellation(claim, "claimed")
+            stage = "load_job_contract"
             job_kind, study_language = await self._load_job_contract(claim)
             if job_kind == "study_language_reprocess":
                 stage = "study_language_reprocess"
@@ -219,8 +225,10 @@ class Worker:
 
             stage = "claim_transition"
             await self._transition(claim, "claimed", "processing_ocr")
+            await self._checkpoint_cancellation(claim, "processing_ocr")
             stage = "load_image"
             page, blob, content = await self._load_image(claim)
+            await self._checkpoint_cancellation(claim, "processing_ocr")
             stage = "ocr"
             ocr_result = await self._ocr.analyze(
                 OcrImage(
@@ -230,13 +238,16 @@ class Worker:
                     dimensions=PageDimensions(width=blob.width, height=blob.height),
                 )
             )
+            await self._checkpoint_cancellation(claim, "processing_ocr")
             stage = "persist_ocr"
             region_ids = await self._persist_ocr(claim, blob, ocr_result)
+            await self._checkpoint_cancellation(claim, "processing_linguistics")
             stage = "linguistics"
             linguistic_by_region = {
                 region.id: self._linguistics.analyze(region.id, region.japanese_text)
                 for region in ocr_result.regions
             }
+            await self._checkpoint_cancellation(claim, "processing_linguistics")
             stage = "persist_linguistics"
             linguistic_run_id, lexical_match_ids = await self._persist_linguistics(
                 claim, ocr_result, region_ids, linguistic_by_region
@@ -252,10 +263,12 @@ class Worker:
                 vocabulary_by_region=vocabulary_by_region,
                 study_language=study_language,
             )
+            await self._checkpoint_cancellation(claim, "processing_gemini")
             stage = "reserve_gemini"
             call_id = await self._reserve_gemini_call(claim, page, prompt)
             stage = "mark_gemini_sent"
             await self._mark_call_sent(call_id)
+            await self._checkpoint_cancellation(claim, "processing_gemini")
             stage = "gemini"
             analysis = await GeminiAnalysisService(
                 self._gemini, prompt_version=PAGE_STUDY_PROMPT_VERSION
@@ -264,6 +277,7 @@ class Worker:
                 vocabulary_by_region=vocabulary_by_region,
                 study_language=study_language,
             )
+            await self._checkpoint_cancellation(claim, "processing_gemini")
             stage = "persist_gemini"
             await self._persist_gemini_and_complete(
                 claim,
@@ -315,11 +329,14 @@ class Worker:
         claim: ClaimedJob,
         study_language: StudyLanguage,
     ) -> None:
+        await self._checkpoint_cancellation(claim, "claimed")
         reusable = await self._load_reusable_analysis(claim)
         if self._gemini is None or not reusable.regions:
+            await self._checkpoint_cancellation(claim, "claimed")
             await self._complete_reused_without_gemini(claim, reusable.linguistic_run_id)
             return
         await self._transition(claim, "claimed", "processing_gemini")
+        await self._checkpoint_cancellation(claim, "processing_gemini")
         prompt = build_page_prompt(
             prompt_version=PAGE_STUDY_PROMPT_VERSION,
             regions=reusable.regions,
@@ -328,6 +345,7 @@ class Worker:
         )
         call_id = await self._reserve_gemini_call(claim, reusable.page, prompt)
         await self._mark_call_sent(call_id)
+        await self._checkpoint_cancellation(claim, "processing_gemini")
         analysis = await GeminiAnalysisService(
             self._gemini, prompt_version=PAGE_STUDY_PROMPT_VERSION
         ).analyze_page(
@@ -335,6 +353,7 @@ class Worker:
             vocabulary_by_region=reusable.vocabulary_by_region,
             study_language=study_language,
         )
+        await self._checkpoint_cancellation(claim, "processing_gemini")
         await self._persist_gemini_and_complete(
             claim,
             call_id,
@@ -463,6 +482,33 @@ class Worker:
             )
             if not renewed:
                 raise StaleLeaseError
+
+    async def _checkpoint_cancellation(self, claim: ClaimedJob, expected: str) -> None:
+        cancelled = False
+        async with self._sessions.begin() as session:
+            job = (
+                await session.execute(
+                    select(JobRecord)
+                    .where(*_owned_job_identity_predicates(claim, expected))
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if job is None:
+                raise StaleLeaseError
+            if job.cancel_requested_at is not None:
+                await reconcile_abandoned_gemini_calls(
+                    session,
+                    job_id=claim.job_id,
+                    fencing_token=claim.fencing_token,
+                )
+                job.status = "cancelled"
+                job.error_code = None
+                job.error_detail = None
+                _finish_job(job)
+                await _finish_attempt(session, claim, "cancelled")
+                cancelled = True
+        if cancelled:
+            raise CancellationAcknowledgedError
 
     async def _transition(self, claim: ClaimedJob, expected: str, target: str) -> None:
         async with self._sessions.begin() as session:
@@ -864,6 +910,13 @@ class Worker:
                 job_id=claim.job_id,
                 fencing_token=claim.fencing_token,
             )
+            if job.cancel_requested_at is not None:
+                job.status = "cancelled"
+                job.error_code = None
+                job.error_detail = None
+                _finish_job(job)
+                await _finish_attempt(session, claim, "cancelled")
+                return
             terminal = not retryable or job.attempt_count >= job.max_attempts
             job.status = "failed" if terminal else "retryable_failure"
             if not terminal:
@@ -885,7 +938,7 @@ class Worker:
             )
 
 
-def _owned_job_predicates(claim: ClaimedJob, expected: str) -> tuple[Any, ...]:
+def _owned_job_identity_predicates(claim: ClaimedJob, expected: str) -> tuple[Any, ...]:
     return (
         JobRecord.id == claim.job_id,
         JobRecord.worker_id == claim.worker_id,
@@ -893,6 +946,10 @@ def _owned_job_predicates(claim: ClaimedJob, expected: str) -> tuple[Any, ...]:
         JobRecord.status == expected,
         JobRecord.lease_expires_at > func.now(),
     )
+
+
+def _owned_job_predicates(claim: ClaimedJob, expected: str) -> tuple[Any, ...]:
+    return (*_owned_job_identity_predicates(claim, expected), JobRecord.cancel_requested_at.is_(None))
 
 
 async def _lock_owned_job(session: AsyncSession, claim: ClaimedJob, expected: str) -> JobRecord:

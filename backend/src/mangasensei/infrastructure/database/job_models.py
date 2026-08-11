@@ -26,9 +26,9 @@ from mangasensei.infrastructure.database.base import Base
 ACTIVE_STATUSES_SQL = "'claimed','processing_ocr','processing_linguistics','processing_gemini'"
 ALL_STATUSES_SQL = (
     "'pending','claimed','processing_ocr','processing_linguistics','processing_gemini',"
-    "'completed','retryable_failure','failed','expired'"
+    "'completed','retryable_failure','failed','cancelled','expired'"
 )
-TERMINAL_STATUSES_SQL = "'completed','failed','expired'"
+TERMINAL_STATUSES_SQL = "'completed','failed','cancelled','expired'"
 
 
 class JobRecord(Base):
@@ -55,6 +55,15 @@ class JobRecord(Base):
             f"((status IN ({TERMINAL_STATUSES_SQL}) AND finished_at IS NOT NULL) OR "
             f"(status NOT IN ({TERMINAL_STATUSES_SQL}) AND finished_at IS NULL))",
             name="terminal_timestamp",
+        ),
+        CheckConstraint(
+            "cancel_requested_at IS NULL OR status IN "
+            "('claimed','processing_ocr','processing_linguistics','processing_gemini','cancelled')",
+            name="cancel_request_state",
+        ),
+        CheckConstraint(
+            "status != 'cancelled' OR cancel_requested_at IS NOT NULL",
+            name="cancelled_requires_request",
         ),
         Index(
             "ix_jobs_claim",
@@ -90,6 +99,9 @@ class JobRecord(Base):
     page_id: Mapped[int] = mapped_column(
         ForeignKey("mangasensei.pages.id", ondelete="CASCADE"), nullable=False
     )
+    document_retry_request_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mangasensei.document_retry_requests.id", ondelete="SET NULL")
+    )
     job_kind: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default="page_analysis"
     )
@@ -107,6 +119,7 @@ class JobRecord(Base):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     pipeline_version: Mapped[str] = mapped_column(

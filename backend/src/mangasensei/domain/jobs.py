@@ -12,6 +12,7 @@ class JobStatus(StrEnum):
     COMPLETED = "completed"
     RETRYABLE_FAILURE = "retryable_failure"
     FAILED = "failed"
+    CANCELLED = "cancelled"
     EXPIRED = "expired"
 
 
@@ -20,12 +21,13 @@ class InvalidJobTransition(ValueError):
 
 
 _TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
-    JobStatus.PENDING: frozenset({JobStatus.CLAIMED, JobStatus.EXPIRED}),
+    JobStatus.PENDING: frozenset({JobStatus.CLAIMED, JobStatus.CANCELLED, JobStatus.EXPIRED}),
     JobStatus.CLAIMED: frozenset(
         {
             JobStatus.PROCESSING_OCR,
             JobStatus.RETRYABLE_FAILURE,
             JobStatus.FAILED,
+            JobStatus.CANCELLED,
             JobStatus.EXPIRED,
         }
     ),
@@ -34,6 +36,7 @@ _TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
             JobStatus.PROCESSING_LINGUISTICS,
             JobStatus.RETRYABLE_FAILURE,
             JobStatus.FAILED,
+            JobStatus.CANCELLED,
             JobStatus.EXPIRED,
         }
     ),
@@ -43,17 +46,25 @@ _TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
             JobStatus.COMPLETED,
             JobStatus.RETRYABLE_FAILURE,
             JobStatus.FAILED,
+            JobStatus.CANCELLED,
             JobStatus.EXPIRED,
         }
     ),
     JobStatus.PROCESSING_GEMINI: frozenset(
-        {JobStatus.COMPLETED, JobStatus.RETRYABLE_FAILURE, JobStatus.FAILED, JobStatus.EXPIRED}
+        {
+            JobStatus.COMPLETED,
+            JobStatus.RETRYABLE_FAILURE,
+            JobStatus.FAILED,
+            JobStatus.CANCELLED,
+            JobStatus.EXPIRED,
+        }
     ),
     JobStatus.RETRYABLE_FAILURE: frozenset(
-        {JobStatus.CLAIMED, JobStatus.FAILED, JobStatus.EXPIRED}
+        {JobStatus.CLAIMED, JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.EXPIRED}
     ),
     JobStatus.COMPLETED: frozenset({JobStatus.EXPIRED}),
     JobStatus.FAILED: frozenset({JobStatus.EXPIRED}),
+    JobStatus.CANCELLED: frozenset({JobStatus.EXPIRED}),
     JobStatus.EXPIRED: frozenset(),
 }
 

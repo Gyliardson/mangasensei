@@ -72,7 +72,7 @@ class DocumentCapabilityRecord(Base):
     __table_args__ = (
         UniqueConstraint("key_id", "digest"),
         CheckConstraint(
-            "scope IN ('read:document','read:document-image','reprocess:document')",
+            "scope IN ('read:document','read:document-image','reprocess:document','manage:document')",
             name="scope",
         ),
         CheckConstraint("octet_length(digest) = 32", name="digest_length"),
@@ -91,3 +91,21 @@ class DocumentCapabilityRecord(Base):
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DocumentRetryRequestRecord(Base):
+    __tablename__ = "document_retry_requests"
+    __table_args__ = (
+        UniqueConstraint("document_id", "idempotency_digest"),
+        CheckConstraint("octet_length(idempotency_digest) = 32", name="idempotency_length"),
+        Index("ix_document_retry_requests_document_id", "document_id", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("mangasensei.documents.id", ondelete="CASCADE"), nullable=False
+    )
+    idempotency_digest: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

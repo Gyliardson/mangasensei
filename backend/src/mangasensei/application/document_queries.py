@@ -26,14 +26,16 @@ class DocumentQueryService:
         self._sessions = sessions
 
     async def get(self, document_id: int) -> dict[str, Any]:
-        pages, progress = await self._project(document_id)
-        return {"pages": pages, "progress": progress}
+        pages, progress, aggregate_status = await self._project(document_id)
+        return {"status": aggregate_status, "pages": pages, "progress": progress}
 
-    async def get_progress(self, document_id: int) -> dict[str, int]:
-        _, progress = await self._project(document_id)
-        return progress
+    async def get_progress(self, document_id: int) -> dict[str, Any]:
+        _, progress, aggregate_status = await self._project(document_id)
+        return {"status": aggregate_status, **progress}
 
-    async def _project(self, document_id: int) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    async def _project(
+        self, document_id: int
+    ) -> tuple[list[dict[str, Any]], dict[str, int], str]:
         async with self._sessions() as session:
             page_rows = tuple(
                 (
@@ -45,7 +47,14 @@ class DocumentQueryService:
                 ).all()
             )
             if not page_rows:
-                return [], _progress(total=0, completed=0, processing=0, failed=0)
+                progress = _progress(
+                    total=0,
+                    completed=0,
+                    processing=0,
+                    failed=0,
+                    cancelled=0,
+                )
+                return [], progress, "completed"
 
             page_ids = tuple(row.id for row in page_rows)
             jobs = tuple(
@@ -79,18 +88,23 @@ class DocumentQueryService:
         completed = 0
         processing = 0
         failed = 0
+        cancelled = 0
+        active_work = False
         pages: list[dict[str, Any]] = []
         for row in page_rows:
             latest_job = latest_by_page.get(row.id)
             if latest_job is None:
                 raise RuntimeError("document page has no analysis job")
             result_available = row.id in completed_page_ids
+            active_work = active_work or latest_job.status in _PROCESSING_STATUSES
             if result_available:
                 completed += 1
             elif latest_job.status in _PROCESSING_STATUSES:
                 processing += 1
             elif latest_job.status == "failed":
                 failed += 1
+            elif latest_job.status == "cancelled":
+                cancelled += 1
             else:
                 raise RuntimeError(
                     f"document page has unclassifiable latest job status: {latest_job.status}"
@@ -105,20 +119,38 @@ class DocumentQueryService:
             )
 
         total = len(page_rows)
-        if completed + processing + failed != total:
+        if completed + processing + failed + cancelled != total:
             raise RuntimeError("document progress counters do not partition page membership")
-        return pages, _progress(
+        progress = _progress(
             total=total,
             completed=completed,
             processing=processing,
             failed=failed,
+            cancelled=cancelled,
         )
+        if active_work:
+            aggregate_status = "processing"
+        elif cancelled:
+            aggregate_status = "cancelled"
+        elif failed:
+            aggregate_status = "completed_with_errors"
+        else:
+            aggregate_status = "completed"
+        return pages, progress, aggregate_status
 
 
-def _progress(*, total: int, completed: int, processing: int, failed: int) -> dict[str, int]:
+def _progress(
+    *,
+    total: int,
+    completed: int,
+    processing: int,
+    failed: int,
+    cancelled: int,
+) -> dict[str, int]:
     return {
         "totalPages": total,
         "completedPages": completed,
         "processingPages": processing,
         "failedPages": failed,
+        "cancelledPages": cancelled,
     }
