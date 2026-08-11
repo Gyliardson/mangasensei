@@ -17,6 +17,7 @@ test("imports a PDF through the real local render boundary and normal page pipel
   await page.goto("/");
   await page.getByRole("combobox", { name: "Idioma da interface" }).selectOption("en");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.getByRole("combobox", { name: "Study language" })).toHaveValue("pt-BR");
 
   const pdfPath = join(process.cwd(), "tests", "fullstack", "fixtures", "blank-one-page.pdf");
   await page.getByLabel(/Page image/).setInputFiles(pdfPath);
@@ -31,7 +32,7 @@ test("imports a PDF through the real local render boundary and normal page pipel
   expect((await accepted).status()).toBe(202);
 
   await expect(page.getByText("Page 1 of 1")).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText("It is a cat.")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("É um gato.")).toBeVisible({ timeout: 20_000 });
   expect(importStatuses.some((status) => status === "queued" || status === "rendering")).toBe(true);
   expect(importStatuses.at(-1)).toBe("completed");
   expect(page.url()).not.toContain("token");
