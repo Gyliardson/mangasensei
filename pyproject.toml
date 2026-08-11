@@ -125,5 +125,12 @@ exclude = ["backend/src/mangasensei/ocr/vendor"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["google.genai.*", "numpy.*", "sudachipy.*"]
+module = [
+  "google.genai.*",
+  "numpy.*",
+  "pypdfium2",
+  "pypdfium2.*",
+  "pypdfium2_raw",
+  "sudachipy.*",
+]
 ignore_missing_imports = true
