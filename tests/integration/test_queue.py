@@ -139,6 +139,60 @@ async def test_expired_lease_is_closed_and_can_be_reclaimed(clean_postgres_url: 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+async def test_expired_cancel_requested_lease_terminalizes_instead_of_requeueing(
+    clean_postgres_url: str,
+) -> None:
+    engine = create_async_engine(async_url(clean_postgres_url))
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    job_id = await seed_job(sessions, seed=b"cancelled-recovery-job")
+    repository = QueueRepository(sessions)
+    claim = await repository.claim(worker_id="worker-a", lease_seconds=60)
+    assert claim is not None
+
+    async with sessions.begin() as session:
+        await session.execute(
+            update(JobRecord)
+            .where(JobRecord.id == job_id)
+            .values(
+                cancel_requested_at=func.now(),
+                lease_expires_at=func.now() - text("interval '1 second'"),
+            )
+        )
+
+    assert await repository.recover_expired_leases() == 1
+
+    async with sessions() as session:
+        job = await session.get_one(JobRecord, job_id)
+        attempt = (
+            await session.execute(
+                select(JobAttemptRecord).where(
+                    JobAttemptRecord.job_id == job_id,
+                    JobAttemptRecord.fencing_token == claim.fencing_token,
+                )
+            )
+        ).scalar_one()
+    assert job.status == "cancelled"
+    assert job.finished_at is not None
+    assert job.worker_id is None
+    assert job.heartbeat_at is None
+    assert job.lease_expires_at is None
+    assert job.error_code is None
+    assert job.error_detail is None
+    assert attempt.outcome == "cancelled"
+    assert attempt.error_code is None
+    assert attempt.error_detail is None
+    assert await repository.claim(worker_id="worker-b", lease_seconds=60) is None
+    assert not await repository.heartbeat(
+        job_id=job_id,
+        worker_id="worker-a",
+        fencing_token=claim.fencing_token,
+        lease_seconds=60,
+    )
+    await engine.dispose()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
 async def test_expired_lease_with_no_attempts_left_fails(clean_postgres_url: str) -> None:
     engine = create_async_engine(async_url(clean_postgres_url))
     sessions = async_sessionmaker(engine, expire_on_commit=False)
