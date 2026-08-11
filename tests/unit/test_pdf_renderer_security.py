@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import struct
 from pathlib import Path
 from uuid import uuid4
 
@@ -14,29 +13,10 @@ from mangasensei.pdf_imports.contracts import PdfRenderRequest
 from mangasensei.pdf_imports.renderer import PdfRenderer, PdfRenderRejected
 from mangasensei.pdf_imports.spool import PdfSpool, PdfSpoolError
 
-_PASSWORD_PADDING = bytes.fromhex(
-    "28bf4e5e4e758a4164004e56fffa01082e2e00b6d0683e802f0ca9fe6453697a"
+_ENCRYPTED_FIXTURE = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "password-protected-one-page.pdf"
 )
-
-
-def _rc4(key: bytes, data: bytes) -> bytes:
-    state = list(range(256))
-    j = 0
-    for i in range(256):
-        j = (j + state[i] + key[i % len(key)]) % 256
-        state[i], state[j] = state[j], state[i]
-    output = bytearray()
-    i = j = 0
-    for byte in data:
-        i = (i + 1) % 256
-        j = (j + state[i]) % 256
-        state[i], state[j] = state[j], state[i]
-        output.append(byte ^ state[(state[i] + state[j]) % 256])
-    return bytes(output)
-
-
-def _pad_password(password: bytes) -> bytes:
-    return (password + _PASSWORD_PADDING)[:32]
+_ENCRYPTED_FIXTURE_SHA256 = "c93872e9616c127dca30c59f4bd9aa5f80a1dc69ec79aa3376472f4c3a6a34ae"
 
 
 def _build_pdf(objects: list[bytes], trailer_extra: bytes = b"") -> bytes:
@@ -62,45 +42,6 @@ def _build_pdf(objects: list[bytes], trailer_extra: bytes = b"") -> bytes:
         + b"\n%%EOF\n"
     )
     return bytes(body)
-
-
-def _encrypted_pdf() -> bytes:
-    user_password = b"reader"
-    owner_password = b"owner"
-    permissions = -4
-    file_id = bytes.fromhex("00112233445566778899aabbccddeeff")
-    # PDF Standard Security Handler revision 2 explicitly requires MD5/RC4.
-    owner_key = hashlib.md5(_pad_password(owner_password)).digest()[:5]  # noqa: S324
-    owner_entry = _rc4(owner_key, _pad_password(user_password))
-    file_key = hashlib.md5(  # noqa: S324
-        _pad_password(user_password)
-        + owner_entry
-        + struct.pack("<i", permissions)
-        + file_id
-    ).digest()[:5]
-    user_entry = _rc4(file_key, _PASSWORD_PADDING)
-    encrypt = (
-        b"<< /Filter /Standard /V 1 /R 2 /Length 40 /O <"
-        + owner_entry.hex().encode()
-        + b"> /U <"
-        + user_entry.hex().encode()
-        + b"> /P "
-        + str(permissions).encode()
-        + b" >>"
-    )
-    return _build_pdf(
-        [
-            b"<< /Type /Catalog /Pages 2 0 R >>",
-            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> >>",
-            encrypt,
-        ],
-        b"/Encrypt 4 0 R /ID [<"
-        + file_id.hex().encode()
-        + b"><"
-        + file_id.hex().encode()
-        + b">] ",
-    )
 
 
 def _javascript_pdf() -> bytes:
@@ -133,9 +74,12 @@ def _request_for(settings: Settings, spool: PdfSpool, content: bytes) -> PdfRend
 
 
 def test_password_protected_pdf_is_rejected_without_password_prompt(tmp_path: Path) -> None:
+    # Project-authored frozen fixture: it exists only to prove encrypted PDFs fail closed.
+    content = _ENCRYPTED_FIXTURE.read_bytes()
+    assert hashlib.sha256(content).hexdigest() == _ENCRYPTED_FIXTURE_SHA256
     settings = Settings(environment="test", pdf_spool_root=tmp_path / "spool")
     spool = PdfSpool(settings.pdf_spool_root)
-    request = _request_for(settings, spool, _encrypted_pdf())
+    request = _request_for(settings, spool, content)
 
     with pytest.raises(PdfRenderRejected, match="pdf_encrypted_unsupported") as exc:
         PdfRenderer(settings)._render(request)
