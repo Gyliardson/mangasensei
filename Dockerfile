@@ -39,7 +39,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 mangasensei \
     && useradd --uid 10001 --gid mangasensei --no-create-home --shell /usr/sbin/nologin mangasensei \
-    && mkdir -p /app/var/storage /app/var/models /app/var/data \
+    && mkdir -p /app/var/storage /app/var/models /app/var/data /app/var/pdf-spool \
     && chown -R mangasensei:mangasensei /app/var
 
 COPY --from=python-build /app/.venv /app/.venv
