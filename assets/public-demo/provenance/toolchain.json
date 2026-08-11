@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "canonicalRenderer": "Playwright Chromium",
+  "playwrightPackage": "@playwright/test",
+  "playwrightVersion": "1.62.1",
+  "playwrightVersionSource": "frontend/package.json and package-lock.json",
+  "browserAcquisition": "npx playwright install chromium",
+  "browserRevisionContract": "the Chromium revision resolved by the exact locked Playwright 1.62.1 package",
+  "viewport": {
+    "width": 1440,
+    "height": 2048,
+    "deviceScaleFactor": 1
+  },
+  "pngPostprocess": {
+    "library": "Pillow",
+    "version": "12.3.0",
+    "mode": "RGB",
+    "optimize": false,
+    "compressLevel": 9
+  },
+  "sourceFormat": "SVG 1.1-compatible XML with deterministic Japanese text/vector layers",
+  "renderedChromiumVersion": "151.0.7922.34"
+}

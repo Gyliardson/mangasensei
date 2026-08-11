@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="2048" viewBox="0 0 1440 2048" data-page-id="msdemo-003-laboratory">
+  <defs>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <rect width="48" height="48" fill="#efefef"/>
+      <path d="M0 0H48V48H0Z" fill="none" stroke="#aaa" stroke-width="2"/>
+    </pattern>
+    <pattern id="hatch" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(32)">
+      <line x1="0" y1="0" x2="0" y2="14" stroke="#aaa" stroke-width="3"/>
+    </pattern>
+    <style>
+      .panel{fill:#fff;stroke:#111;stroke-width:10}
+      .ink{fill:none;stroke:#111;stroke-width:7;stroke-linecap:round;stroke-linejoin:round}
+      .thin{fill:none;stroke:#333;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+      .bubble{fill:#fff;stroke:#111;stroke-width:6}
+      .caption{fill:#fff;stroke:#111;stroke-width:5}
+      .serif{font-family:'MangaSensei Serif v1';fill:#111;font-weight:400}
+      .sans{font-family:'MangaSensei Sans v1';fill:#111;font-weight:400}
+      .v{writing-mode:vertical-rl;text-orientation:upright;letter-spacing:2px}
+    </style>
+  </defs>
+  <rect width="1440" height="2048" fill="#f5f5f3"/>
+
+  <!-- top lab establishing panel -->
+  <rect class="panel" x="54" y="54" width="1332" height="610"/>
+  <rect x="75" y="75" width="1288" height="568" fill="url(#grid)" opacity=".22"/>
+  <rect class="caption" x="88" y="88" width="490" height="94"/>
+  <g data-region-id="p3-r001"><text class="serif" x="112" y="150" font-size="40">週末の研究室は静かだった。</text></g>
+  <rect x="910" y="110" width="340" height="100" fill="#fff" stroke="#111" stroke-width="6"/>
+  <g data-region-id="p3-r002"><text class="sans" x="970" y="176" font-size="52">森博士</text></g>
+  <rect x="1040" y="245" width="268" height="84" fill="#111"/>
+  <g data-region-id="p3-r003"><text class="sans" x="1090" y="302" font-size="45" style="fill:#fff">研究室</text></g>
+  <path d="M120 560 H1320 M200 450 H1220" class="thin"/>
+  <path d="M230 360 h260 v150 h-260z M560 330 h270 v180 h-270z" class="ink"/>
+  <circle cx="370" cy="435" r="48" fill="#fff" stroke="#111" stroke-width="6"/>
+  <path d="M344 438 h52 M370 412 v52" class="thin"/>
+  <path d="M610 390 h170 M620 425 h150" class="thin"/>
+
+  <!-- middle left dialogue -->
+  <rect class="panel" x="54" y="700" width="650" height="710"/>
+  <rect x="76" y="722" width="606" height="666" fill="url(#hatch)" opacity=".12"/>
+  <circle cx="330" cy="1115" r="125" fill="#fff" stroke="#111" stroke-width="8"/>
+  <path d="M218 1090 q44-160 150-120 q82 20 88 118 q-74-48-150-40 q-48 8-88 42" fill="#111"/>
+  <path d="M292 1140 q18 12 36 0 M368 1140 q18 12 36 0" class="thin"/>
+  <ellipse class="bubble" cx="575" cy="900" rx="106" ry="225"/>
+  <g data-region-id="p3-r004"><text class="serif v" x="607" y="720" font-size="34">博士は土曜日も来るの？</text></g>
+  <ellipse class="bubble" cx="132" cy="1040" rx="82" ry="300"/>
+  <g data-region-id="p3-r005"><text class="serif v" x="158" y="800" font-size="36">ロボット室の入口はこっち。</text></g>
+
+  <!-- middle right equipment and negative controls -->
+  <rect class="panel" x="748" y="700" width="638" height="710"/>
+  <path d="M790 805 h510 v430 h-510z" class="ink"/>
+  <path d="M820 845 h220 v170 h-220z M1080 845 h180 v170 h-180z" class="thin"/>
+  <g data-negative-id="p3-n001-control-grid">
+    <rect x="825" y="1045" width="350" height="220" rx="14" fill="#e8e8e8" stroke="#111" stroke-width="6"/>
+    <circle cx="880" cy="1100" r="22" fill="none" stroke="#111" stroke-width="6"/>
+    <rect x="930" y="1078" width="44" height="44" fill="none" stroke="#111" stroke-width="6"/>
+    <rect x="1010" y="1078" width="44" height="44" fill="none" stroke="#111" stroke-width="6"/>
+    <rect x="1020" y="1088" width="24" height="24" fill="none" stroke="#111" stroke-width="4"/>
+    <path d="M1085 1080 h48 m-24-22 v44" class="thin"/>
+    <circle cx="880" cy="1180" r="22" fill="#111"/>
+    <path d="M930 1160 l46 40 M976 1160 l-46 40" class="thin"/>
+    <path d="M1030 1160 l42 0 0 42 -42 0z" class="thin"/>
+    <path d="M1100 1160 q35 20 0 42 q-35-20 0-42" class="thin"/>
+  </g>
+  <g data-negative-id="p3-n002-vent">
+    <rect x="1200" y="1045" width="110" height="220" fill="#f4f4f4" stroke="#111" stroke-width="5"/>
+    <path d="M1218 1070 v170 M1242 1070 v170 M1266 1070 v170 M1290 1070 v170" class="thin"/>
+  </g>
+  <rect x="990" y="1285" width="265" height="80" fill="#fff" stroke="#111" stroke-width="5"/>
+  <g data-region-id="p3-r010"><text class="sans" x="1010" y="1338" font-size="40">試作機B-07</text></g>
+  <g data-region-id="p3-r011" transform="rotate(-10 835 1290)"><text class="sans" x="790" y="1310" font-size="54">ピッ</text></g>
+
+  <!-- bottom panel: warning dialogue, ruby and boten -->
+  <rect class="panel" x="54" y="1448" width="1332" height="542"/>
+  <circle cx="1060" cy="1710" r="120" fill="#fff" stroke="#111" stroke-width="8"/>
+  <path d="M950 1690 q45-155 145-122 q82 17 90 110 q-68-38-132-36 q-56 8-103 48" fill="#111"/>
+  <path d="M1025 1740 q18 12 36 0 M1095 1740 q18 12 36 0" class="thin"/>
+  <ellipse class="bubble" cx="1320" cy="1652" rx="62" ry="125"/>
+  <g data-region-id="p3-r009"><text class="serif v" x="1338" y="1618" font-size="42">ん？</text></g>
+  <ellipse class="bubble" cx="760" cy="1690" rx="115" ry="245"/>
+  <g data-region-id="p3-r006"><text class="serif v" x="792" y="1490" font-size="35">古い装置がまだ動いている。</text></g>
+  <g data-region-id="p3-r007"><text class="serif v" x="830" y="1555" font-size="18" letter-spacing="1">そうち</text></g>
+  <ellipse class="bubble" cx="350" cy="1690" rx="120" ry="250"/>
+  <g data-region-id="p3-r008"><text class="serif v" x="382" y="1500" font-size="35">これは絶対に押さないで。</text></g>
+  <g data-presentation-id="p3-pm001">
+    <circle cx="421" cy="1615" r="8" fill="#111"/>
+    <circle cx="421" cy="1652" r="8" fill="#111"/>
+  </g>
+  <path d="M70 1930 H1370" class="thin" opacity=".5"/>
+</svg>

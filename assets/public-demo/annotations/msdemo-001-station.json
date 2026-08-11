@@ -1,0 +1,499 @@
+{
+  "schemaVersion": "1.0.0",
+  "page": {
+    "id": "msdemo-001-station",
+    "imageSha256": "9d047caee4817cc989980f72cc0ea46ba03f16ea4ebef1a7fa060173826a2cd7",
+    "width": 1440,
+    "height": 2048,
+    "split": "public-demo",
+    "license": "CC-BY-4.0",
+    "provenanceRef": "../manifest.json"
+  },
+  "regions": [
+    {
+      "id": "p1-r001",
+      "geometry": {
+        "bbox": {
+          "x": 102,
+          "y": 96,
+          "width": 552,
+          "height": 104
+        },
+        "polygon": [
+          [
+            102,
+            96
+          ],
+          [
+            654,
+            96
+          ],
+          [
+            654,
+            200
+          ],
+          [
+            102,
+            200
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "午後六時、駅前はまだ明るい。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "horizontal-ltr",
+      "textRole": "narration",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 0,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "mixed-script",
+        "digits-punctuation",
+        "sparse-layout"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p1-r002",
+      "geometry": {
+        "bbox": {
+          "x": 850,
+          "y": 155,
+          "width": 320,
+          "height": 118
+        },
+        "polygon": [
+          [
+            850,
+            155
+          ],
+          [
+            1170,
+            155
+          ],
+          [
+            1170,
+            273
+          ],
+          [
+            850,
+            273
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "中央口",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "horizontal-ltr",
+      "textRole": "environmental",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 1,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "environmental"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p1-r003",
+      "geometry": {
+        "bbox": {
+          "x": 1170,
+          "y": 300,
+          "width": 190,
+          "height": 82
+        },
+        "polygon": [
+          [
+            1170,
+            300
+          ],
+          [
+            1360,
+            300
+          ],
+          [
+            1360,
+            382
+          ],
+          [
+            1170,
+            382
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "７番線",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "horizontal-ltr",
+      "textRole": "environmental",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 2,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "environmental",
+        "digits-punctuation"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p1-r004",
+      "geometry": {
+        "bbox": {
+          "x": 1215,
+          "y": 990,
+          "width": 70,
+          "height": 360
+        },
+        "polygon": [
+          [
+            1215,
+            990
+          ],
+          [
+            1285,
+            990
+          ],
+          [
+            1285,
+            1350
+          ],
+          [
+            1215,
+            1350
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "レン、こっちだよ。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 3,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "mixed-script"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p1-r005",
+      "geometry": {
+        "bbox": {
+          "x": 824,
+          "y": 1010,
+          "width": 82,
+          "height": 110
+        },
+        "polygon": [
+          [
+            824,
+            1010
+          ],
+          [
+            906,
+            1010
+          ],
+          [
+            906,
+            1120
+          ],
+          [
+            824,
+            1120
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "あっ",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 4,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "small-text"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p1-r006",
+      "geometry": {
+        "bbox": {
+          "x": 1240,
+          "y": 1535,
+          "width": 80,
+          "height": 180
+        },
+        "polygon": [
+          [
+            1240,
+            1535
+          ],
+          [
+            1320,
+            1535
+          ],
+          [
+            1320,
+            1715
+          ],
+          [
+            1240,
+            1715
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "待った？",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 5,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "digits-punctuation"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p1-r007",
+      "geometry": {
+        "bbox": {
+          "x": 560,
+          "y": 980,
+          "width": 70,
+          "height": 390
+        },
+        "polygon": [
+          [
+            560,
+            980
+          ],
+          [
+            630,
+            980
+          ],
+          [
+            630,
+            1370
+          ],
+          [
+            560,
+            1370
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "ううん、今来たところ。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 6,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "mixed-script"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p1-r008",
+      "geometry": {
+        "bbox": {
+          "x": 115,
+          "y": 1000,
+          "width": 95,
+          "height": 390
+        },
+        "polygon": [
+          [
+            115,
+            1000
+          ],
+          [
+            210,
+            1000
+          ],
+          [
+            210,
+            1390
+          ],
+          [
+            115,
+            1390
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "約束、忘れてないよ。",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "base",
+      "readingOrder": {
+        "position": 7,
+        "scored": true
+      },
+      "difficultCaseTags": [
+        "furigana"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": true
+      }
+    },
+    {
+      "id": "p1-r009",
+      "geometry": {
+        "bbox": {
+          "x": 188,
+          "y": 1015,
+          "width": 32,
+          "height": 132
+        },
+        "polygon": [
+          [
+            188,
+            1015
+          ],
+          [
+            220,
+            1015
+          ],
+          [
+            220,
+            1147
+          ],
+          [
+            188,
+            1147
+          ]
+        ]
+      },
+      "transcription": {
+        "raw": "やくそく",
+        "normalization": "strict-nfc-v1"
+      },
+      "orientation": "vertical-rl",
+      "textRole": "dialogue",
+      "textForm": "ruby",
+      "readingOrder": {
+        "position": null,
+        "scored": false
+      },
+      "difficultCaseTags": [
+        "furigana",
+        "small-text"
+      ],
+      "scoring": {
+        "detection": true,
+        "recognition": true,
+        "readingOrder": false
+      }
+    }
+  ],
+  "furiganaRelations": [
+    {
+      "id": "p1-f001",
+      "rubyRegionId": "p1-r009",
+      "baseRegionId": "p1-r008",
+      "baseTextSpan": {
+        "start": 0,
+        "end": 2
+      },
+      "reading": "やくそく"
+    }
+  ],
+  "presentationMarks": [],
+  "negativeZones": [],
+  "readingOrderContract": {
+    "kind": "total",
+    "sequence": [
+      "p1-r001",
+      "p1-r002",
+      "p1-r003",
+      "p1-r004",
+      "p1-r005",
+      "p1-r006",
+      "p1-r007",
+      "p1-r008"
+    ]
+  },
+  "review": {
+    "status": "source-intent-reviewed",
+    "revision": 1,
+    "groundTruthSource": "project-authored-svg-source-intent",
+    "reviewers": [
+      {
+        "id": "assistant-source-review",
+        "kind": "automated"
+      }
+    ],
+    "adjudication": {
+      "status": "not-required",
+      "adjudicator": null,
+      "notes": "No annotation disagreement recorded in v1 authoring."
+    },
+    "languageReview": {
+      "status": "reviewed-no-uncertain-lines",
+      "reviewer": "assistant-source-review",
+      "humanNativeReviewClaimed": false
+    },
+    "ocrConsultedDuringAuthoring": false
+  }
+}
