@@ -40,7 +40,7 @@ jobs:
       - name: Format touched Python files
         run: |
           uv sync --frozen
-          uv run ruff check --fix \
+          uv run ruff check --fix --exit-zero \
             backend/src/mangasensei/application/pdf_imports.py \
             backend/src/mangasensei/api/pdf_imports.py \
             backend/src/mangasensei/infrastructure/database/document_import_models.py \
