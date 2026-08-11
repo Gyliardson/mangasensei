@@ -36,6 +36,12 @@ BEGIN
       NEW.job_kind = OLD.job_kind AND
       NEW.status IN ('processing_gemini','completed')
     ) OR
+    (
+      OLD.status = 'claimed' AND
+      OLD.job_kind = 'dictionary_language_reprocess' AND
+      NEW.job_kind = OLD.job_kind AND
+      NEW.status = 'completed'
+    ) OR
     (OLD.status = 'processing_ocr' AND NEW.status IN ('processing_linguistics','retryable_failure','failed','cancelled','expired')) OR
     (OLD.status = 'processing_linguistics' AND NEW.status IN ('processing_gemini','completed','retryable_failure','failed','cancelled','expired')) OR
     (OLD.status = 'processing_gemini' AND NEW.status IN ('completed','retryable_failure','failed','cancelled','expired')) OR
@@ -76,6 +82,12 @@ BEGIN
       OLD.job_kind = 'study_language_reprocess' AND
       NEW.job_kind = OLD.job_kind AND
       NEW.status IN ('processing_gemini','completed')
+    ) OR
+    (
+      OLD.status = 'claimed' AND
+      OLD.job_kind = 'dictionary_language_reprocess' AND
+      NEW.job_kind = OLD.job_kind AND
+      NEW.status = 'completed'
     ) OR
     (OLD.status = 'processing_ocr' AND NEW.status IN ('processing_linguistics','retryable_failure','failed','expired')) OR
     (OLD.status = 'processing_linguistics' AND NEW.status IN ('processing_gemini','completed','retryable_failure','failed','expired')) OR
@@ -198,7 +210,7 @@ def upgrade() -> None:
         op.f("ck_jobs_cancel_request_state"),
         "jobs",
         "cancel_requested_at IS NULL OR status IN "
-        "('claimed','processing_ocr','processing_linguistics','processing_gemini','cancelled')",
+        "('claimed','processing_ocr','processing_linguistics','processing_gemini','cancelled','expired')",
         schema="mangasensei",
     )
     op.create_check_constraint(
