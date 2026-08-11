@@ -11,7 +11,7 @@ import pytest
 
 from mangasensei.config import Settings
 from mangasensei.pdf_imports.contracts import PdfRenderRequest
-from mangasensei.pdf_imports.renderer import PdfRenderRejected, PdfRenderer
+from mangasensei.pdf_imports.renderer import PdfRenderer, PdfRenderRejected
 from mangasensei.pdf_imports.spool import PdfSpool, PdfSpoolError
 
 _PASSWORD_PADDING = bytes.fromhex(
@@ -69,9 +69,10 @@ def _encrypted_pdf() -> bytes:
     owner_password = b"owner"
     permissions = -4
     file_id = bytes.fromhex("00112233445566778899aabbccddeeff")
-    owner_key = hashlib.md5(_pad_password(owner_password)).digest()[:5]
+    # PDF Standard Security Handler revision 2 explicitly requires MD5/RC4.
+    owner_key = hashlib.md5(_pad_password(owner_password)).digest()[:5]  # noqa: S324
     owner_entry = _rc4(owner_key, _pad_password(user_password))
-    file_key = hashlib.md5(
+    file_key = hashlib.md5(  # noqa: S324
         _pad_password(user_password)
         + owner_entry
         + struct.pack("<i", permissions)
