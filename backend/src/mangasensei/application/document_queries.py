@@ -30,8 +30,8 @@ class DocumentQueryService:
         return {"status": aggregate_status, "pages": pages, "progress": progress}
 
     async def get_progress(self, document_id: int) -> dict[str, Any]:
-        _, progress, aggregate_status = await self._project(document_id)
-        return {"status": aggregate_status, **progress}
+        _, progress, _ = await self._project(document_id)
+        return progress
 
     async def _project(
         self, document_id: int
@@ -101,7 +101,7 @@ class DocumentQueryService:
                 completed += 1
             elif latest_job.status in _PROCESSING_STATUSES:
                 processing += 1
-            elif latest_job.status == "failed":
+            elif latest_job.status in {"failed", "expired"}:
                 failed += 1
             elif latest_job.status == "cancelled":
                 cancelled += 1
