@@ -92,7 +92,7 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Leia japonês no contexto" })).toBeVisible();
     expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("pt-BR");
     expect(screen.getByText(/o conteúdo analisado continua japonês/i)).toBeVisible();
-    const input = screen.getByLabelText("Imagem da página") as HTMLInputElement;
+    const input = screen.getByLabelText(/Imagem da página/) as HTMLInputElement;
     const file = new File(["image"], "pagina.png", { type: "image/png" });
     await user.upload(input, file);
 
@@ -114,7 +114,7 @@ describe("App", () => {
 
     expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("en");
     await user.upload(
-      screen.getByLabelText("Imagem da página"),
+      screen.getByLabelText(/Imagem da página/),
       new File(["image"], "page.png", { type: "image/png" }),
     );
     await user.click(screen.getByRole("button", { name: "Analisar página" }));
@@ -168,7 +168,7 @@ describe("App", () => {
     );
     render(<App />);
     const file = new File(["image"], "pagina.png", { type: "image/png" });
-    await user.upload(screen.getByLabelText("Imagem da página"), file);
+    await user.upload(screen.getByLabelText(/Imagem da página/), file);
 
     await user.click(screen.getByRole("button", { name: "Analisar página" }));
 
@@ -226,7 +226,7 @@ describe("App", () => {
     });
     render(<App />);
     await user.upload(
-      screen.getByLabelText("Imagem da página"),
+      screen.getByLabelText(/Imagem da página/),
       new File(["image"], "page.png", { type: "image/png" }),
     );
     await user.click(screen.getByRole("button", { name: "Analisar página" }));
@@ -279,7 +279,7 @@ describe("App", () => {
     );
     render(<App />);
     await user.upload(
-      screen.getByLabelText("Imagem da página"),
+      screen.getByLabelText(/Imagem da página/),
       new File(["image"], "page.png", { type: "image/png" }),
     );
     await user.click(screen.getByRole("button", { name: "Analisar página" }));
@@ -321,7 +321,7 @@ describe("App", () => {
     );
     render(<App />);
     await user.upload(
-      screen.getByLabelText("Imagem da página"),
+      screen.getByLabelText(/Imagem da página/),
       new File(["image"], "page.png", { type: "image/png" }),
     );
 
@@ -335,7 +335,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("network detail"))));
     render(<App />);
     await user.upload(
-      screen.getByLabelText("Imagem da página"),
+      screen.getByLabelText(/Imagem da página/),
       new File(["image"], "page.png", { type: "image/png" }),
     );
 
@@ -374,7 +374,7 @@ describe("App", () => {
     );
     render(<App />);
     await user.upload(
-      screen.getByLabelText("Imagem da página"),
+      screen.getByLabelText(/Imagem da página/),
       new File(["image"], "page.png", { type: "image/png" }),
     );
     await user.click(screen.getByRole("button", { name: "Analisar página" }));
