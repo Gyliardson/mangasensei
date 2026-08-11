@@ -202,13 +202,17 @@ test("creates, partially reads, navigates and reprojects a real multipage docume
       && snapshot.pages[0]?.resultAvailable === true
       && snapshot.pages[1]?.resultAvailable === false,
   );
-  expect(partial.progress.failedPages).toBe(0);
+  expect(partial.progress).toEqual({
+    totalPages: 2,
+    completedPages: 1,
+    processingPages: 1,
+    failedPages: 0,
+    cancelledPages: 0,
+  });
 
   const pageIndex = page.locator(".document-page-index button");
   await expect(pageIndex.nth(0)).toHaveAttribute("aria-current", "page");
   await expect(pageIndex.nth(0)).toHaveAttribute("data-page-status", "readable");
-  await expect(pageIndex.nth(1)).toHaveAttribute("data-page-status", "processing");
-  await expect(page.getByText("1 / 2 pages complete · 1 processing · 0 failed")).toBeVisible();
   await expect(page.getByRole("button", { name: "Region 1: 猫です" })).toBeVisible({
     timeout: 20_000,
   });
@@ -243,6 +247,9 @@ test("creates, partially reads, navigates and reprojects a real multipage docume
     document.capabilities.readDocument,
     (snapshot) => snapshot.progress.completedPages === 2 && snapshot.progress.processingPages === 0,
   );
+  await expect(page.getByText("2 / 2 pages readable · 0 processing · 0 failed · 0 cancelled")).toBeVisible({
+    timeout: 10_000,
+  });
   await expect(pageIndex.nth(1)).toHaveAttribute("data-page-status", "readable", { timeout: 10_000 });
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.getByText("Page 2 of 2")).toBeVisible();
