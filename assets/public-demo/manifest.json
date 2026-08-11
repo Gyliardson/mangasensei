@@ -47,7 +47,7 @@
         "jmdict",
         "language-switching"
       ],
-      "allowedContexts": [
+      "intendedUseCases": [
         "repository",
         "documentation",
         "social",
@@ -82,7 +82,7 @@
         "desktop-reader",
         "document-partial-processing"
       ],
-      "allowedContexts": [
+      "intendedUseCases": [
         "repository",
         "documentation",
         "social",
@@ -117,7 +117,7 @@
         "boten",
         "benchmark-card"
       ],
-      "allowedContexts": [
+      "intendedUseCases": [
         "repository",
         "documentation",
         "social",
@@ -152,7 +152,7 @@
         "sfx",
         "social-video"
       ],
-      "allowedContexts": [
+      "intendedUseCases": [
         "repository",
         "documentation",
         "social",

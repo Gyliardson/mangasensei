@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -181,6 +182,9 @@ def validate_annotation(
         if f'data-region-id="{region_id}"' not in source_svg:
             fail(f"{path}: source SVG is missing region marker {region_id}")
         geometry_in_bounds(region["geometry"], width, height, region_id)
+        raw_transcription = region["transcription"]["raw"]
+        if not unicodedata.is_normalized("NFC", raw_transcription):
+            fail(f"{path}: transcription.raw must be NFC-normalized for {region_id}")
         if region["orientation"] not in ALLOWED_ORIENTATIONS:
             fail(f"{path}: bad orientation {region_id}")
         if region["textRole"] not in ALLOWED_ROLES:

@@ -8,6 +8,8 @@ The public demo corpus is licensed under CC BY 4.0. MangaSensei source code rema
 
 The [current official Sato Manga Works secondary-use terms](https://densho810.com/free/) permit commercial and non-commercial reproduction/public transmission and secondary use subject to their conditions, including required title/author attribution and post-use reporting. That separate permission is not needed for these four project-owned pages.
 
+Each manifest page may list `intendedUseCases` for MangaSensei project planning. This field is non-normative metadata, is not a permissions whitelist, and does not narrow or otherwise restrict the CC BY 4.0 license grant.
+
 ## Page contract
 
 Every canonical page is exactly 1440×2048 RGB PNG and has a project-authored SVG source with the same page ID. The corpus intentionally includes easy and difficult content rather than optimizing only for OCR-friendly samples.
@@ -19,7 +21,7 @@ Every canonical page is exactly 1440×2048 RGB PNG and has a project-authored SV
 
 ## Ground-truth rules
 
-Ground truth is derived from source intent, not MangaSensei OCR output. `transcription.raw` preserves the authored string. No NFKC, kana folding, punctuation folding, width folding or spelling correction is applied. Furigana is a separate region related to a base text span. Bōten is presentation metadata and never mutates lexical transcription. Environmental text and SFX remain positive text when they are intentionally written language.
+Ground truth is derived from source intent, not MangaSensei OCR output. `transcription.raw` preserves the authored string and must already be Unicode NFC under the declared `strict-nfc-v1` contract. Validation fails on non-NFC text; validation and freezing do not silently normalize or rewrite ground truth. No NFKC, kana folding, punctuation folding, width folding or spelling correction is applied. Furigana is a separate region related to a base text span. Bōten is presentation metadata and never mutates lexical transcription. Environmental text and SFX remain positive text when they are intentionally written language.
 
 The v1 text-role enum is `dialogue`, `thought`, `narration`, `environmental`, `sfx`, `uncertain`. This aligns with current #101 research direction without making production role classification a prerequisite.
 
@@ -47,7 +49,7 @@ python scripts/public_demo/freeze.py
 python scripts/public_demo/validate.py
 ```
 
-`freeze.py` normalizes screenshots to single-frame RGB PNG with the project's pinned Pillow 12.3.0, writes the rendered Chromium version, updates annotation image hashes and freezes the complete manifest inventory.
+`freeze.py` normalizes screenshots to single-frame RGB PNG with the project's pinned Pillow 12.3.0, writes the rendered Chromium version, updates annotation image hashes and freezes the complete manifest inventory. It does not normalize annotation transcriptions.
 
 Render determinism means two runs from the same frozen SVG/font/Playwright/Pillow inputs must produce byte-identical canonical PNGs after normalization. Any toolchain change that alters bytes requires an explicit corpus revision and visual review rather than silently updating hashes.
 
@@ -60,6 +62,7 @@ Render determinism means two runs from the same frozen SVG/font/Playwright/Pillo
 - source/image/annotation hashes;
 - PNG format, RGB mode and 1440×2048 dimensions;
 - annotation image hashes;
+- every `transcription.raw` is already NFC-normalized under `strict-nfc-v1`;
 - unique region/negative-zone IDs;
 - in-bounds polygons and bboxes;
 - exact reading-order references;
