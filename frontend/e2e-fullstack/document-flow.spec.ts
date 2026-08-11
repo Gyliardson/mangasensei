@@ -1,7 +1,10 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const redPage = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAAnUlEQVR4nO3PgQ0AEADAMPz/M1+Q1HrBNvf4y3odcFvDuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6w707AHv8mafmgAAAABJRU5ErkJggg==",
+  "iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAAnUlEQVR4nO3PgQ0AEADAMPz/M1+Q1HrBNvf4y3odcFvDuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6w707AHv8mafmgAAAABJRU5ErkJggg==",
   "base64",
 );
 const bluePage = Buffer.from(
@@ -148,17 +151,19 @@ async function expectBlobImageRendered(page: Page): Promise<void> {
 test("creates, partially reads, navigates and reprojects a real multipage document", async ({
   page,
   request,
-}) => {
+}, testInfo) => {
   const protectedImages = collectDocumentImageResponses(page);
 
   await page.goto("/");
   await page.getByRole("combobox", { name: "Idioma da interface" }).selectOption("en");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
 
-  await page.getByLabel("Page image").setInputFiles([
-    { name: "z-red.png", mimeType: "image/png", buffer: redPage },
-    { name: "a-blue.png", mimeType: "image/png", buffer: bluePage },
-  ]);
+  const fixtureDirectory = testInfo.outputPath("input-pages");
+  await mkdir(fixtureDirectory, { recursive: true });
+  const redPath = join(fixtureDirectory, "z-red.png");
+  const bluePath = join(fixtureDirectory, "a-blue.png");
+  await Promise.all([writeFile(redPath, redPage), writeFile(bluePath, bluePage)]);
+  await page.getByLabel("Page image").setInputFiles([redPath, bluePath]);
   const selectedPages = page.locator(".selected-page-name");
   await expect(selectedPages).toHaveText(["1 z-red.png", "2 a-blue.png"]);
 
@@ -172,6 +177,13 @@ test("creates, partially reads, navigates and reprojects a real multipage docume
   );
   await page.getByRole("button", { name: "Analyze 2 pages" }).click();
   const uploadResponse = await uploadResponsePromise;
+  const uploadBody = uploadResponse.request().postDataBuffer();
+  expect(uploadBody).not.toBeNull();
+  const blueOffset = uploadBody!.indexOf(bluePage);
+  const redOffset = uploadBody!.indexOf(redPage);
+  expect(blueOffset).toBeGreaterThanOrEqual(0);
+  expect(redOffset).toBeGreaterThanOrEqual(0);
+  expect(blueOffset).toBeLessThan(redOffset);
   expect(uploadResponse.status()).toBe(202);
   const uploaded = (await uploadResponse.json()) as DocumentUploadEnvelope;
   const document = uploaded.data;
