@@ -77,6 +77,7 @@ services:
       MANGASENSEI_ENVIRONMENT: production
       MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/mangasensei
       MANGASENSEI_STORAGE_ROOT: /app/var/storage
+      MANGASENSEI_PDF_SPOOL_ROOT: /app/var/pdf-spool
       MANGASENSEI_FRONTEND_DIST: /app/frontend/dist
       MANGASENSEI_CAPABILITY_PEPPERS: ${MANGASENSEI_CAPABILITY_PEPPERS:?set MANGASENSEI_CAPABILITY_PEPPERS}
       MANGASENSEI_RETENTION_HOURS: "24"
@@ -87,6 +88,66 @@ services:
       - "127.0.0.1:${MANGASENSEI_PORT:-8000}:8000"
     volumes:
       - app_storage:/app/var/storage
+      - pdf_spool:/app/var/pdf-spool
+    restart: unless-stopped
+
+  pdf-renderer:
+    <<: *app-service
+    command: ["mangasensei", "pdf-renderer"]
+    environment:
+      MANGASENSEI_ENVIRONMENT: production
+      MANGASENSEI_PDF_SPOOL_ROOT: /app/var/pdf-spool
+    volumes:
+      - pdf_spool:/app/var/pdf-spool
+    network_mode: none
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 64
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import sys; cmd=open('/proc/1/cmdline','rb').read(); sys.exit(0 if b'mangasensei' in cmd and b'pdf-renderer' in cmd else 1)
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+  pdf-importer:
+    <<: *app-service
+    command: ["mangasensei", "pdf-importer"]
+    environment:
+      MANGASENSEI_ENVIRONMENT: production
+      MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/mangasensei
+      MANGASENSEI_STORAGE_ROOT: /app/var/storage
+      MANGASENSEI_PDF_SPOOL_ROOT: /app/var/pdf-spool
+      MANGASENSEI_CAPABILITY_PEPPERS: ${MANGASENSEI_CAPABILITY_PEPPERS:?set MANGASENSEI_CAPABILITY_PEPPERS}
+      MANGASENSEI_RETENTION_HOURS: "24"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      pdf-renderer:
+        condition: service_healthy
+    volumes:
+      - app_storage:/app/var/storage
+      - pdf_spool:/app/var/pdf-spool
+    mem_limit: 1536m
+    cpus: 1.0
+    pids_limit: 64
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import sys; cmd=open('/proc/1/cmdline','rb').read(); sys.exit(0 if b'mangasensei' in cmd and b'pdf-importer' in cmd else 1)
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     restart: unless-stopped
 
   worker:
@@ -158,4 +219,5 @@ volumes:
   app_storage:
   jmdict_data:
   ocr_models:
+  pdf_spool:
   postgres_data:
