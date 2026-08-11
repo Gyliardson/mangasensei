@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import hashlib
 import hmac
 import os
@@ -249,6 +250,14 @@ class PdfImportService:
                     handle.write(chunk)
                 handle.flush()
                 os.fsync(handle.fileno())
+        except OSError as exc:
+            path.unlink(missing_ok=True)
+            if exc.errno == errno.ENOSPC:
+                raise PdfAdmissionError(
+                    "pdf_temp_storage_exhausted",
+                    "temporary PDF storage is exhausted",
+                ) from exc
+            raise
         except Exception:
             path.unlink(missing_ok=True)
             raise
@@ -543,8 +552,11 @@ class PdfImportCoordinator:
             return
         try:
             images = self._validate_manifest(claim, outcome)
-        except (ImageValidationError, PdfSpoolError, ValidationError, ValueError):
+        except ImageValidationError:
             await self._terminal_failure(claim, "pdf_raster_validation_failed")
+            return
+        except (PdfSpoolError, ValidationError, ValueError):
+            await self._terminal_failure(claim, "pdf_manifest_invalid")
             return
         await self._commit_document(claim, outcome, images)
 
