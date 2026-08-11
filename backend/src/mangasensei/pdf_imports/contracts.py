@@ -73,9 +73,7 @@ class PdfRendererProvenance(_ProtocolModel):
 
 
 class PdfRasterManifest(_ProtocolModel):
-    protocol: Literal["mangasensei-pdf-raster-manifest-v1"] = (
-        "mangasensei-pdf-raster-manifest-v1"
-    )
+    protocol: Literal["mangasensei-pdf-raster-manifest-v1"] = "mangasensei-pdf-raster-manifest-v1"
     import_id: UUID
     fencing_token: int = Field(ge=1)
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -88,9 +86,7 @@ class PdfRasterManifest(_ProtocolModel):
 
 
 class PdfRenderFailure(_ProtocolModel):
-    protocol: Literal["mangasensei-pdf-render-failure-v1"] = (
-        "mangasensei-pdf-render-failure-v1"
-    )
+    protocol: Literal["mangasensei-pdf-render-failure-v1"] = "mangasensei-pdf-render-failure-v1"
     import_id: UUID
     fencing_token: int = Field(ge=1)
     error_code: PdfImportErrorCode

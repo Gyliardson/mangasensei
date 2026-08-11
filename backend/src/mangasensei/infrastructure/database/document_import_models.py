@@ -22,7 +22,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from mangasensei.infrastructure.database.base import Base
 
-
 PDF_IMPORT_ERROR_CODES = (
     "pdf_invalid",
     "pdf_encrypted_unsupported",
@@ -58,7 +57,9 @@ class DocumentImportRecord(Base):
         CheckConstraint("octet_length(upload_idempotency_digest) = 32", name="idempotency_length"),
         CheckConstraint("octet_length(request_digest) = 32", name="request_digest_length"),
         CheckConstraint("fencing_token >= 0", name="fencing_nonnegative"),
-        CheckConstraint("page_count IS NULL OR (page_count >= 1 AND page_count <= 200)", name="page_count"),
+        CheckConstraint(
+            "page_count IS NULL OR (page_count >= 1 AND page_count <= 200)", name="page_count"
+        ),
         CheckConstraint("expires_at = created_at + interval '24 hours'", name="retention_exact"),
         CheckConstraint(
             "source_expires_at = created_at + interval '1 hour'",

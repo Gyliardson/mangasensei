@@ -45,9 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     worker = subcommands.add_parser("worker", help="run the analysis worker")
     worker.add_argument("--once", action="store_true")
 
-    pdf_importer = subcommands.add_parser(
-        "pdf-importer", help="coordinate bounded PDF imports"
-    )
+    pdf_importer = subcommands.add_parser("pdf-importer", help="coordinate bounded PDF imports")
     pdf_importer.add_argument("--once", action="store_true")
 
     pdf_renderer = subcommands.add_parser(
@@ -69,9 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
         "download", help="download, normalize and verify a reviewed JMdict pack"
     )
     jmdict_download.add_argument("--language", default=DEFAULT_DICTIONARY_LANGUAGE)
-    jmdict_verify = jmdict_commands.add_parser(
-        "verify", help="verify a reviewed local JMdict pack"
-    )
+    jmdict_verify = jmdict_commands.add_parser("verify", help="verify a reviewed local JMdict pack")
     jmdict_verify.add_argument("--language", default=DEFAULT_DICTIONARY_LANGUAGE)
 
     migrate = subcommands.add_parser("migrate", help="upgrade the database schema")

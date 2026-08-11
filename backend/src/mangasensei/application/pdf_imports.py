@@ -22,7 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from mangasensei.application.authorization import ResourceNotFoundError
 from mangasensei.application.document_uploads import DocumentCapabilityTokens
 from mangasensei.application.idempotency import idempotency_digest
-from mangasensei.application.uploads import IdempotencyConflictError, safe_filename, stage_image_blob
+from mangasensei.application.uploads import (
+    IdempotencyConflictError,
+    safe_filename,
+    stage_image_blob,
+)
 from mangasensei.config import Settings
 from mangasensei.domain.capabilities import (
     DocumentCapabilityScope,
@@ -42,13 +46,13 @@ from mangasensei.infrastructure.database.job_models import JobRecord
 from mangasensei.infrastructure.database.storage_locks import acquire_image_blob_lock
 from mangasensei.infrastructure.database.storage_models import PageRecord
 from mangasensei.pdf_imports.contracts import (
-    PDFIUM_EXPECTED_BUILD,
     PDF_RASTER_CONTRACT_VERSION,
+    PDFIUM_EXPECTED_BUILD,
     PYPDFIUM2_EXPECTED_VERSION,
     PdfImportErrorCode,
     PdfRasterManifest,
-    PdfRenderFailure,
     PdfRendererHeartbeat,
+    PdfRenderFailure,
     PdfRenderRequest,
 )
 from mangasensei.pdf_imports.spool import PdfSpool, PdfSpoolError
@@ -143,7 +147,7 @@ class PdfImportService:
         new_public_id = uuid4()
         source_published = False
         try:
-            destination_dir = self._spool.prepare_import_dir(new_public_id)
+            self._spool.prepare_import_dir(new_public_id)
             destination = self._spool.source_path(new_public_id)
             if destination.exists() or destination.is_symlink():
                 raise PdfSpoolError("generated PDF source destination already exists")
@@ -412,19 +416,23 @@ class PdfImportCoordinator:
         now = datetime.now(UTC)
         async with self._sessions.begin() as session:
             expired_sources = (
-                await session.execute(
-                    select(DocumentImportRecord)
-                    .where(
-                        DocumentImportRecord.source_cleaned_at.is_(None),
-                        or_(
-                            DocumentImportRecord.status.in_(("completed", "failed")),
-                            DocumentImportRecord.source_expires_at <= now,
-                        ),
+                (
+                    await session.execute(
+                        select(DocumentImportRecord)
+                        .where(
+                            DocumentImportRecord.source_cleaned_at.is_(None),
+                            or_(
+                                DocumentImportRecord.status.in_(("completed", "failed")),
+                                DocumentImportRecord.source_expires_at <= now,
+                            ),
+                        )
+                        .with_for_update(skip_locked=True)
+                        .limit(100)
                     )
-                    .with_for_update(skip_locked=True)
-                    .limit(100)
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             for record in expired_sources:
                 if record.status in ("queued", "rendering") and record.source_expires_at <= now:
                     record.status = "failed"
@@ -611,7 +619,11 @@ class PdfImportCoordinator:
             if not hmac.compare_digest(hashlib.sha256(content).hexdigest(), page.sha256):
                 raise PdfSpoolError("raster hash mismatch")
             image = self._validator.validate(content, declared_media_type="image/png")
-            if image.sha256 != page.sha256 or image.width != page.width or image.height != page.height:
+            if (
+                image.sha256 != page.sha256
+                or image.width != page.width
+                or image.height != page.height
+            ):
                 raise PdfSpoolError("raster validation metadata mismatch")
             aggregate_bytes += len(content)
             aggregate_pixels += image.width * image.height
@@ -716,9 +728,7 @@ class PdfImportCoordinator:
                 await self._storage.confirm(pending)
         await self._cleanup_terminal_source(claim.public_id)
 
-    async def _terminal_failure(
-        self, claim: _ClaimedImport, code: PdfImportErrorCode
-    ) -> None:
+    async def _terminal_failure(self, claim: _ClaimedImport, code: PdfImportErrorCode) -> None:
         changed = False
         async with self._sessions.begin() as session:
             record = (
@@ -767,9 +777,7 @@ class PdfImportCoordinator:
         return hmac.new(self._idempotency_pepper, message, hashlib.sha256).digest()
 
 
-def pdf_import_request_digest(
-    *, source_sha256: str, study_language: StudyLanguage
-) -> bytes:
+def pdf_import_request_digest(*, source_sha256: str, study_language: StudyLanguage) -> bytes:
     digest = hashlib.sha256()
     digest.update(b"mangasensei:document-import-request:v1\0pdf\0")
     digest.update(PDF_RASTER_CONTRACT_VERSION.encode("ascii"))

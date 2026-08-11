@@ -11,12 +11,11 @@ import socket
 import time
 from io import BytesIO
 from pathlib import Path
-from uuid import UUID
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 import pypdfium2_raw
-from PIL import Image, __version__ as pillow_version
+from PIL import __version__ as pillow_version
 from pydantic import ValidationError
 from pypdfium2._helpers.misc import PdfiumError
 from pypdfium2.version import PDFIUM_INFO, PYPDFIUM_INFO
@@ -26,16 +25,16 @@ from mangasensei.pdf_imports.contracts import (
     PDF_OUTPUT_BACKGROUND_RGBA,
     PDF_PNG_COMPRESS_LEVEL,
     PDF_PNG_OPTIMIZE,
+    PDF_RASTER_CONTRACT_VERSION,
     PDF_RENDER_SCALE,
     PDFIUM_EXPECTED_BUILD,
-    PDF_RASTER_CONTRACT_VERSION,
     PYPDFIUM2_EXPECTED_VERSION,
     PdfImportErrorCode,
     PdfRasterManifest,
     PdfRasterPage,
-    PdfRenderFailure,
     PdfRendererHeartbeat,
     PdfRendererProvenance,
+    PdfRenderFailure,
     PdfRenderRequest,
 )
 from mangasensei.pdf_imports.spool import PdfSpool, PdfSpoolError
@@ -160,7 +159,9 @@ class PdfRenderer:
 
     def _render(self, request: PdfRenderRequest) -> PdfRasterManifest:
         source = self._spool.source_path(request.import_id)
-        source_meta = self._spool.require_regular_file(source, max_bytes=self._settings.max_pdf_bytes)
+        source_meta = self._spool.require_regular_file(
+            source, max_bytes=self._settings.max_pdf_bytes
+        )
         if source_meta.st_size <= 0:
             raise PdfRenderRejected("pdf_invalid")
         if self._sha256_file(source) != request.source_sha256:
@@ -193,7 +194,8 @@ class PdfRenderer:
                         raise PdfRenderRejected("pdf_geometry_limit")
                     width_points, height_points = page.get_size()
                     if not all(
-                        math.isfinite(value) and value > 0 for value in (width_points, height_points)
+                        math.isfinite(value) and value > 0
+                        for value in (width_points, height_points)
                     ):
                         raise PdfRenderRejected("pdf_geometry_limit")
                     width = math.ceil(width_points * PDF_RENDER_SCALE)
@@ -288,7 +290,9 @@ class PdfRenderer:
         )
 
     @staticmethod
-    def _validated_bbox(raw: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+    def _validated_bbox(
+        raw: tuple[float, float, float, float],
+    ) -> tuple[float, float, float, float]:
         left, bottom, right, top = (float(value) for value in raw)
         if not all(math.isfinite(value) for value in (left, bottom, right, top)):
             raise PdfRenderRejected("pdf_geometry_limit")
