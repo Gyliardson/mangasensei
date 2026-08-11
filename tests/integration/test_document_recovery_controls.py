@@ -244,7 +244,7 @@ async def test_retry_failed_never_duplicates_queue_owned_retryable_failure(
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_document_cancel_preserves_completed_page_and_cooperates_with_owner_and_recovery(
+async def test_document_cancel_preserves_completed_page_with_owner_and_recovery(
     clean_postgres_url: str,
     tmp_path: Path,
 ) -> None:
@@ -357,7 +357,11 @@ async def test_reorder_is_atomic_membership_exact_and_revisioned(
             rows = tuple(
                 (
                     await session.execute(
-                        select(PageRecord.id, PageRecord.public_id, PageRecord.expires_at)
+                        select(
+                            PageRecord.id,
+                            PageRecord.public_id,
+                            PageRecord.expires_at,
+                        )
                         .where(PageRecord.public_id.in_([UUID(value) for value in original]))
                         .order_by(PageRecord.id)
                     )
@@ -409,7 +413,12 @@ async def test_reorder_is_atomic_membership_exact_and_revisioned(
         after_rows = tuple(
             (
                 await session.execute(
-                    select(PageRecord.id, PageRecord.public_id, PageRecord.ordinal, PageRecord.expires_at)
+                    select(
+                        PageRecord.id,
+                        PageRecord.public_id,
+                        PageRecord.ordinal,
+                        PageRecord.expires_at,
+                    )
                     .where(PageRecord.public_id.in_([UUID(value) for value in original]))
                     .order_by(PageRecord.id)
                 )
