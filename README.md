@@ -132,22 +132,25 @@ The existing mobile reader is responsive as well:
 
 ## Multi-page workflow
 
-Merged Slice B of [#105](https://github.com/Gyliardson/mangasensei/issues/105) supports ordered multi-image Documents without turning a manga volume into one giant OCR job.
+Slices B and C of [#105](https://github.com/Gyliardson/mangasensei/issues/105) support ordered multi-image Documents, partial results, and recovery controls without turning a manga volume into one giant OCR job.
 
 **Available now:**
 
 - select multiple JPEG, PNG, or WebP images and inspect/reorder them before upload;
 - preserve that displayed pre-upload order as the Document's canonical initial order;
 - keep each Page as an independent OCR/study/job unit;
-- show aggregate completed / processing / failed page counts;
-- read a completed Page while sibling Pages are still processing;
+- show truthful aggregate processing, completed, completed-with-errors, and cancelled states with completed / processing / failed / cancelled page counts;
+- keep completed Pages readable while sibling or later work is still processing, fails, or is cancelled;
+- retry unreadable failed Pages through one bounded/idempotent Document operation without recomputing successful siblings;
+- cooperatively cancel active Document processing without rewriting already completed siblings;
+- persist post-create page order with optimistic concurrency;
 - navigate by direct page selection plus Previous / Next;
 - reprocess study language or dictionary language only for the current Page;
 - keep the Document and all child Pages on the same exact 24-hour retention boundary.
 
-**Still deferred under #105:** PDF import, Slice C retry/cancel recovery UX and bulk retry/cancel, persisted post-create reordering, thumbnails, a persistent manga library, and spread-aware/cross-page reading-order semantics.
+**Still deferred under #105:** hardened PDF import, thumbnails, a persistent manga library, spread-aware/cross-page reading-order semantics, and later large-document/performance hardening.
 
-See the [multi-image Document contract](docs/document-imports.md) for limits, capabilities, idempotency, retention, and failure semantics.
+See the [multi-image Document contract](docs/document-imports.md) for limits, capabilities, idempotency, retention, recovery, and failure semantics.
 
 ## Current validation
 
@@ -219,10 +222,9 @@ See the [language-axis contract](docs/study-languages.md) and [JMdict pack contr
 MangaSensei is still pre-release software. In addition to the OCR limitations listed under [Current validation](#current-validation):
 
 - PDF import is not implemented yet;
-- failed-page bulk retry/cancel and Slice C recovery UX remain deferred;
 - Documents are temporary rather than a persistent manga library;
-- post-create ordering is not persisted as an editing feature;
 - thumbnails and spread-aware/cross-page reading order are not implemented;
+- later large-document/performance hardening remains deferred under #105;
 - Document capability tokens are kept only in the active browser page session, so reloading loses access instead of persisting a sensitive token insecurely;
 - contextual Gemini output is optional enrichment, not required for local OCR/JMdict study functionality.
 
@@ -332,11 +334,14 @@ FastAPI serves interactive API documentation at `/api/docs` when MangaSensei is 
 | `GET` | `/api/v1/pages/{page_id}/image` | Stream the protected original standalone image |
 | `POST` | `/api/v1/pages/{page_id}/reprocess` | Reprocess one standalone study/dictionary language axis |
 | `POST` | `/api/v1/documents` | Create an ordered multi-image Document |
-| `GET` | `/api/v1/documents/{document_id}` | Read ordered child summaries and aggregate progress |
-| `GET` | `/api/v1/documents/{document_id}/progress` | Read completed/processing/failed counters |
+| `GET` | `/api/v1/documents/{document_id}` | Read ordered child summaries, aggregate status, and progress |
+| `GET` | `/api/v1/documents/{document_id}/progress` | Read completed/processing/failed/cancelled counters |
 | `GET` | `/api/v1/documents/{document_id}/pages/{page_id}` | Read a member StudyPage |
 | `GET` | `/api/v1/documents/{document_id}/pages/{page_id}/image` | Stream a protected member original image |
 | `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | Reprocess one language axis on one member Page |
+| `POST` | `/api/v1/documents/{document_id}/retry-failed` | Retry eligible unreadable failed member Pages idempotently |
+| `POST` | `/api/v1/documents/{document_id}/cancel` | Request cooperative cancellation of active Document work |
+| `PUT` | `/api/v1/documents/{document_id}/order` | Persist complete member order with optimistic concurrency |
 | `GET` | `/health` | Process health |
 | `GET` | `/ready` | Database, storage, and schema readiness |
 | `GET` | `/metrics` | Prometheus metrics |
