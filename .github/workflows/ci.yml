@@ -439,7 +439,8 @@ jobs:
           echo "GITLEAKS_BIN=${install_dir}/gitleaks" >> "${GITHUB_ENV}"
 
       - name: Scan full Git history for secrets
-        run: "${GITLEAKS_BIN}" git --redact --no-banner .
+        run: |
+          "${GITLEAKS_BIN}" git --redact --no-banner .
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
