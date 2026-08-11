@@ -1,0 +1,115 @@
+name: PDF frontend integration patch
+
+on:
+  push:
+    branches: [feat/105-hardened-pdf-import]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/105-hardened-pdf-import
+
+      - name: Apply focused frontend wiring
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          api_path = Path("frontend/src/lib/api.ts")
+          api = api_path.read_text()
+          old = '  readonly sourceKind: "images";'
+          new = '  readonly sourceKind: "images" | "pdf";'
+          if old in api:
+              api = api.replace(old, new, 1)
+          elif new not in api:
+              raise SystemExit("DocumentSnapshot sourceKind anchor missing")
+          api_path.write_text(api)
+
+          path = Path("frontend/src/App.tsx")
+          text = path.read_text()
+          replacements = [
+              (
+                  'import { documentMessagesFor, type DocumentUiMessages } from "./lib/documentUiMessages";\n',
+                  'import { documentMessagesFor, type DocumentUiMessages } from "./lib/documentUiMessages";\nimport {\n  type PdfImportStatus,\n  uploadPdfImport,\n  waitForPdfImport,\n} from "./lib/pdfImports";\n',
+              ),
+              (
+                  'const acceptedTypes = ".jpg,.jpeg,.png,.webp";\n\ntype LocalErrorCode = "select_image_first" | "unexpected_processing";\n',
+                  'const acceptedTypes = ".jpg,.jpeg,.png,.webp,.pdf";\n\ntype LocalErrorCode = "select_image_first" | "pdf_must_be_single" | "unexpected_processing";\n',
+              ),
+              (
+                  'type AppPhase = "idle" | "uploading" | "processing" | "complete" | "document" | "error";\n',
+                  'type AppPhase =\n  | "idle"\n  | "uploading"\n  | "importing"\n  | "processing"\n  | "complete"\n  | "document"\n  | "error";\n',
+              ),
+              (
+                  '  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);\n',
+                  '  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);\n  const [pdfImportStatus, setPdfImportStatus] = useState<PdfImportStatus | null>(null);\n',
+              ),
+              (
+                  '    setJobStatus(null);\n    setPage(null);\n',
+                  '    setJobStatus(null);\n    setPdfImportStatus(null);\n    setPage(null);\n',
+              ),
+              (
+                  '    const controller = new AbortController();\n    operation.current?.abort();\n    operation.current = controller;\n    setError(null);\n    setPhase("uploading");\n    try {\n      if (files.length > 1) {\n',
+                  '    const pdfFiles = files.filter(isPdfFile);\n    if (pdfFiles.length > 0 && (pdfFiles.length !== 1 || files.length !== 1)) {\n      setError({ kind: "local", code: "pdf_must_be_single" });\n      setPhase("error");\n      return;\n    }\n    const pdfFile = pdfFiles[0] ?? null;\n    const controller = new AbortController();\n    operation.current?.abort();\n    operation.current = controller;\n    setError(null);\n    setPhase(pdfFile ? "importing" : "uploading");\n    try {\n      if (pdfFile) {\n        const imported = await uploadPdfImport(pdfFile, preferredStudyLanguage, controller.signal);\n        setPdfImportStatus(imported.status);\n        const document = await waitForPdfImport(\n          imported,\n          controller.signal,\n          setPdfImportStatus,\n        );\n        setDocumentAccess(document);\n        setPhase("document");\n        operation.current = null;\n        return;\n      }\n\n      if (files.length > 1) {\n',
+              ),
+              (
+                  '            <p>{messages.uploadRequirements}</p>\n',
+                  '            <p>{messages.uploadRequirements}</p>\n            <p className="pdf-upload-note">{pdfUploadHint(uiLocale)}</p>\n',
+              ),
+              (
+                  '              {files.length > 0 ? documentMessages.selectedPages(files.length) : messages.fileDropHint}\n',
+                  '              {files.length > 0\n                ? files.length === 1 && files[0] && isPdfFile(files[0])\n                  ? pdfSelectedLabel(uiLocale)\n                  : documentMessages.selectedPages(files.length)\n                : messages.fileDropHint}\n',
+              ),
+              (
+                  '            aria-label={messages.pageImageAria}\n',
+                  '            aria-label={`${messages.pageImageAria} / PDF`}\n',
+              ),
+              (
+                  '            disabled={files.length === 0 || phase === "uploading" || phase === "processing"}\n',
+                  '            disabled={\n              files.length === 0 ||\n              phase === "uploading" ||\n              phase === "importing" ||\n              phase === "processing"\n            }\n',
+              ),
+              (
+                  '            {phase === "uploading" || phase === "processing"\n              ? <LoaderCircle className="spinner" aria-hidden="true" />\n              : <ScanText aria-hidden="true" />}\n            {phase === "uploading"\n              ? messages.uploadingImage\n              : phase === "processing"\n                ? messages.jobStatus(jobStatus)\n                : documentMessages.analyzePages(files.length)}\n',
+                  '            {phase === "uploading" || phase === "importing" || phase === "processing"\n              ? <LoaderCircle className="spinner" aria-hidden="true" />\n              : <ScanText aria-hidden="true" />}\n            {phase === "uploading"\n              ? messages.uploadingImage\n              : phase === "importing"\n                ? pdfImportStatusLabel(uiLocale, pdfImportStatus)\n                : phase === "processing"\n                  ? messages.jobStatus(jobStatus)\n                  : documentMessages.analyzePages(files.length)}\n',
+              ),
+              (
+                  '          {phase === "uploading" || phase === "processing" ? (\n',
+                  '          {phase === "uploading" || phase === "importing" || phase === "processing" ? (\n',
+              ),
+              (
+                  '  if (error.kind === "api") {\n',
+                  '  if (error.kind === "api") {\n    if (error.code.startsWith("pdf_")) return pdfErrorMessage(messages, error.code);\n',
+              ),
+              (
+                  '  if (error.code === "select_image_first") return messages.selectImageFirst;\n  return messages.unexpectedProcessingError;\n}\n',
+                  '  if (error.code === "select_image_first") return messages.selectImageFirst;\n  if (error.code === "pdf_must_be_single") {\n    return messages.apiError("pdf_must_be_single");\n  }\n  return messages.unexpectedProcessingError;\n}\n\nfunction isPdfFile(file: File): boolean {\n  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");\n}\n\nfunction pdfUploadHint(locale: UiLocale): string {\n  return locale === "pt-BR"\n    ? "PDF: envie um único arquivo de até 256 MiB e 200 páginas; a renderização local acontece antes do OCR."\n    : "PDF: upload one file up to 256 MiB and 200 pages; local rendering happens before OCR.";\n}\n\nfunction pdfSelectedLabel(locale: UiLocale): string {\n  return locale === "pt-BR" ? "1 PDF selecionado" : "1 PDF selected";\n}\n\nfunction pdfImportStatusLabel(locale: UiLocale, status: PdfImportStatus | null): string {\n  if (locale === "pt-BR") {\n    return status === "rendering"\n      ? "Renderizando PDF localmente"\n      : "Aguardando renderização local do PDF";\n  }\n  return status === "rendering" ? "Rendering PDF locally" : "Waiting for local PDF rendering";\n}\n\nfunction pdfErrorMessage(messages: UiMessages, code: string): string {\n  const portuguese = document.documentElement.lang === "pt-BR";\n  const labels: Readonly<Record<string, readonly [string, string]>> = {\n    pdf_invalid: ["The PDF is invalid or unsupported.", "O PDF é inválido ou não suportado."],\n    pdf_encrypted_unsupported: [\n      "Password-protected PDFs are not supported.",\n      "PDFs protegidos por senha não são suportados.",\n    ],\n    pdf_page_limit: ["The PDF exceeds the 200-page limit.", "O PDF excede o limite de 200 páginas."],\n    pdf_geometry_limit: ["A PDF page has unsupported geometry.", "Uma página do PDF possui geometria não suportada."],\n    pdf_pixel_limit: ["The rendered PDF exceeds the pixel limit.", "O PDF renderizado excede o limite de pixels."],\n    pdf_raster_bytes_limit: ["The rendered PDF exceeds the byte limit.", "O PDF renderizado excede o limite de bytes."],\n    pdf_renderer_timeout: ["Local PDF rendering timed out.", "A renderização local do PDF excedeu o tempo limite."],\n    pdf_renderer_crash: ["The local PDF renderer stopped unexpectedly.", "O renderizador local de PDF foi interrompido inesperadamente."],\n    pdf_temp_storage_exhausted: ["Temporary PDF storage is exhausted.", "O armazenamento temporário do PDF foi esgotado."],\n    pdf_raster_validation_failed: ["A rendered page failed image validation.", "Uma página renderizada falhou na validação de imagem."],\n    pdf_manifest_invalid: ["The PDF render manifest failed integrity checks.", "O manifesto de renderização do PDF falhou nas verificações de integridade."],\n    pdf_render_failed: ["Local PDF rendering failed.", "A renderização local do PDF falhou."],\n  };\n  const label = labels[code];\n  return label ? label[portuguese ? 1 : 0] : messages.apiError(code);\n}\n',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count == 0:
+                  if new in text:
+                      continue
+                  raise SystemExit(f"frontend patch anchor missing: {old[:100]!r}")
+              if count != 1:
+                  raise SystemExit(f"frontend patch anchor matched {count} times")
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+
+      - name: Commit focused frontend wiring
+        run: |
+          if git diff --quiet -- frontend/src/App.tsx frontend/src/lib/api.ts; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/App.tsx frontend/src/lib/api.ts
+          git commit -m "feat(pdf): add truthful PDF import UI"
+          git push origin HEAD:feat/105-hardened-pdf-import
