@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mangasensei.dev/schemas/research/command-v1.schema.json",
+  "title": "MangaSensei Research Command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["command_id", "experiment_id", "baseline_sha", "spec_version", "parameters"],
+  "properties": {
+    "command_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{7,63}$"},
+    "experiment_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{7,63}$"},
+    "baseline_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "spec_version": {"const": "mangasensei-research-experiment-spec-v1"},
+    "parameters": {"type": "object"}
+  }
+}

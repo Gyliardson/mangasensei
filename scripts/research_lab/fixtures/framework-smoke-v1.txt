@@ -1,0 +1,3 @@
+MangaSensei Research Lab deterministic framework smoke fixture v1
+alpha=日本語
+beta=12345

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mangasensei.dev/schemas/research/experiment-spec-v1.schema.json",
+  "title": "MangaSensei Research Experiment Spec v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "experiment_id", "spec_version", "implementation", "research_question", "decision",
+    "hypothesis", "controls", "input", "parameters", "scoring", "success_gate",
+    "stop_condition", "max_cases", "max_runtime_seconds"
+  ],
+  "properties": {
+    "experiment_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{7,63}$"},
+    "spec_version": {"const": "mangasensei-research-experiment-spec-v1"},
+    "implementation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{7,63}$"},
+    "research_question": {"type": "string", "minLength": 1},
+    "decision": {"type": "string", "minLength": 1},
+    "hypothesis": {"type": "string", "minLength": 1},
+    "controls": {"type": "object"},
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixture_id", "sha256"],
+      "properties": {
+        "fixture_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{7,63}$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_repeat_values"],
+      "properties": {
+        "allowed_repeat_values": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1, "maximum": 100}
+        }
+      }
+    },
+    "scoring": {"type": "string", "minLength": 1},
+    "success_gate": {"type": "string", "minLength": 1},
+    "stop_condition": {"type": "string", "minLength": 1},
+    "max_cases": {"type": "integer", "minimum": 1, "maximum": 100},
+    "max_runtime_seconds": {"type": "integer", "minimum": 1, "maximum": 300}
+  }
+}

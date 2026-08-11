@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mangasensei.dev/schemas/research/result-v1.schema.json",
+  "title": "MangaSensei Research Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "command_id", "experiment_id", "spec_version", "baseline_sha",
+    "state", "decision", "parameters", "spec_sha256", "input", "counts", "cases",
+    "success_gate", "stop_condition"
+  ],
+  "properties": {
+    "schema_version": {"const": "mangasensei-research-result-v1"},
+    "command_id": {"type": "string"},
+    "experiment_id": {"type": "string"},
+    "spec_version": {"const": "mangasensei-research-experiment-spec-v1"},
+    "baseline_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "state": {"const": "RESULT_AVAILABLE"},
+    "decision": {"enum": ["PASS", "FAIL"]},
+    "parameters": {"type": "object"},
+    "spec_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "input": {"type": "object"},
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested_cases", "completed_cases", "positive_matches", "negative_distinct", "invalid_cases"],
+      "properties": {
+        "requested_cases": {"type": "integer", "minimum": 0},
+        "completed_cases": {"type": "integer", "minimum": 0},
+        "positive_matches": {"type": "integer", "minimum": 0},
+        "negative_distinct": {"type": "integer", "minimum": 0},
+        "invalid_cases": {"type": "integer", "minimum": 0}
+      }
+    },
+    "cases": {"type": "array"},
+    "success_gate": {"type": "string"},
+    "stop_condition": {"type": "string"}
+  }
+}
