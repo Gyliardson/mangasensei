@@ -3,6 +3,7 @@ name: PDF Import
 on:
   pull_request:
     paths:
+      - ".github/workflows/ci.yml"
       - ".github/workflows/pdf-import.yml"
       - "Dockerfile"
       - "compose.yaml"
@@ -20,6 +21,7 @@ on:
       - "frontend/src/**"
       - "frontend/e2e-pdf-fullstack/**"
       - "frontend/playwright.pdf-fullstack.config.ts"
+      - "tests/fixtures/**"
       - "tests/fullstack/**"
       - "tests/integration/test_pdf_imports.py"
       - "tests/unit/test_pdf_*.py"
@@ -118,6 +120,7 @@ jobs:
           uv run pytest
           tests/unit/test_pdf_renderer.py
           tests/unit/test_pdf_renderer_process.py
+          tests/unit/test_pdf_renderer_security.py
           tests/unit/test_pdf_spool.py
           tests/integration/test_pdf_imports.py
           -q
@@ -137,22 +140,49 @@ jobs:
           docker compose config --format json > /tmp/compose.json
           python - <<'PY'
           import json
+          import re
           from pathlib import Path
 
+          def memory_bytes(value: object) -> int:
+              if isinstance(value, int):
+                  return value
+              if not isinstance(value, str):
+                  raise AssertionError(("unexpected mem_limit type", value))
+              normalized = value.strip().lower()
+              if normalized.isdecimal():
+                  return int(normalized)
+              match = re.fullmatch(r"([0-9]+)([kmgt])(?:i?b)?", normalized)
+              if match is None:
+                  raise AssertionError(("unexpected mem_limit value", value))
+              units = {"k": 1, "m": 2, "g": 3, "t": 4}
+              return int(match.group(1)) * 1024 ** units[match.group(2)]
+
           service = json.loads(Path("/tmp/compose.json").read_text())["services"]["pdf-renderer"]
+          print(json.dumps(service, indent=2, sort_keys=True))
           assert service["network_mode"] == "none"
           assert service["read_only"] is True
           assert service["cap_drop"] == ["ALL"]
           assert "no-new-privileges:true" in service["security_opt"]
-          assert service["mem_limit"] == "1g" or service["mem_limit"] == 1073741824
+          assert memory_bytes(service["mem_limit"]) == 1024 ** 3
           assert service["pids_limit"] == 64
           environment = service.get("environment", {})
           assert "MANGASENSEI_DATABASE_URL" not in environment
           assert "MANGASENSEI_CAPABILITY_PEPPERS" not in environment
           assert "GOOGLE_API_KEY" not in environment
-          mounts = json.dumps(service.get("volumes", []))
-          assert "docker.sock" not in mounts
+          volumes = service.get("volumes", [])
+          targets = {
+              mount.get("target") for mount in volumes
+              if isinstance(mount, dict)
+          }
+          assert "/app/var/pdf-spool" in targets
+          assert "docker.sock" not in json.dumps(volumes)
           PY
+      - name: Upload normalized Compose evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pdf-renderer-compose-config
+          path: /tmp/compose.json
+          if-no-files-found: error
       - name: Start isolated renderer and prove no network
         run: |
           docker compose up --no-deps -d pdf-renderer
@@ -184,6 +214,8 @@ jobs:
           PY
           test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "${container}")" = "true"
           test "$(docker inspect --format '{{.HostConfig.NetworkMode}}' "${container}")" = "none"
+          test "$(docker inspect --format '{{.HostConfig.Memory}}' "${container}")" = "1073741824"
+          test "$(docker inspect --format '{{.HostConfig.PidsLimit}}' "${container}")" = "64"
       - name: Stop renderer
         if: always()
         run: docker compose down --volumes --remove-orphans
@@ -234,13 +266,29 @@ jobs:
       - name: Start real PDF import and study runtime
         run: |
           rm -rf "${MANGASENSEI_STORAGE_ROOT}" "${MANGASENSEI_PDF_SPOOL_ROOT}"
+          mkdir -p "${MANGASENSEI_PDF_SPOOL_ROOT}"
+          chmod 0770 "${MANGASENSEI_PDF_SPOOL_ROOT}"
           uv run mangasensei migrate
+          docker build --build-arg MANGASENSEI_VERSION="$(cat VERSION)" -t mangasensei:pdf-fullstack .
+          docker rm -f mangasensei-pdf-renderer-e2e >/dev/null 2>&1 || true
+          docker run --detach --name mangasensei-pdf-renderer-e2e \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --memory 1g \
+            --cpus 1 \
+            --pids-limit 64 \
+            --tmpfs /tmp:rw,size=128m,mode=1777 \
+            --group-add "$(id -g)" \
+            --mount "type=bind,src=${MANGASENSEI_PDF_SPOOL_ROOT},dst=/app/var/pdf-spool" \
+            -e MANGASENSEI_ENVIRONMENT=test \
+            -e MANGASENSEI_PDF_SPOOL_ROOT=/app/var/pdf-spool \
+            mangasensei:pdf-fullstack mangasensei pdf-renderer >/dev/null
           uv run mangasensei api --host 127.0.0.1 --port 8000 > "${RUNNER_TEMP}/pdf-api.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/pdf-api.pid"
           uv run python tests/fullstack/worker.py > "${RUNNER_TEMP}/pdf-worker.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/pdf-worker.pid"
-          uv run mangasensei pdf-renderer > "${RUNNER_TEMP}/pdf-renderer.log" 2>&1 &
-          echo $! > "${RUNNER_TEMP}/pdf-renderer.pid"
           uv run mangasensei pdf-importer > "${RUNNER_TEMP}/pdf-importer.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/pdf-importer.pid"
           for attempt in $(seq 1 60); do
@@ -251,15 +299,23 @@ jobs:
             sleep 1
           done
           cat "${RUNNER_TEMP}/pdf-api.log" || true
-          cat "${RUNNER_TEMP}/pdf-renderer.log" || true
           cat "${RUNNER_TEMP}/pdf-importer.log" || true
+          docker logs mangasensei-pdf-renderer-e2e || true
           exit 1
+      - name: Prove browser-flow renderer isolation
+        run: |
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' mangasensei-pdf-renderer-e2e)" = "true"
+          test "$(docker inspect --format '{{.HostConfig.NetworkMode}}' mangasensei-pdf-renderer-e2e)" = "none"
+          test "$(docker inspect --format '{{.HostConfig.Memory}}' mangasensei-pdf-renderer-e2e)" = "1073741824"
+          test "$(docker inspect --format '{{.HostConfig.PidsLimit}}' mangasensei-pdf-renderer-e2e)" = "64"
       - name: Run real browser-to-PDFium-to-Page flow
         run: npx --no-install playwright test --config frontend/playwright.pdf-fullstack.config.ts
       - name: Stop PDF full-stack runtime
         if: always()
         run: |
-          for name in pdf-api pdf-worker pdf-renderer pdf-importer; do
+          docker logs mangasensei-pdf-renderer-e2e > "${RUNNER_TEMP}/pdf-renderer.log" 2>&1 || true
+          docker rm -f mangasensei-pdf-renderer-e2e >/dev/null 2>&1 || true
+          for name in pdf-api pdf-worker pdf-importer; do
             file="${RUNNER_TEMP}/${name}.pid"
             if test -f "${file}"; then kill "$(cat "${file}")" 2>/dev/null || true; fi
           done
