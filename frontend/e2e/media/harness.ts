@@ -130,6 +130,40 @@ export async function stabilizePage(page: Page): Promise<void> {
   });
 }
 
+export async function assertNoFixtureSecretInPage(page: Page): Promise<void> {
+  const browserVisibleSurface = await page.evaluate(() => {
+    const attributes: string[] = [];
+    const resolvedUrls = [window.location.href];
+    const urlAttributes = ["href", "src", "action", "formaction", "poster"] as const;
+
+    for (const element of Array.from(document.querySelectorAll("*"))) {
+      for (const attribute of Array.from(element.attributes)) {
+        attributes.push(`${attribute.name}=${attribute.value}`);
+      }
+      for (const attributeName of urlAttributes) {
+        const value = element.getAttribute(attributeName);
+        if (!value) continue;
+        try {
+          resolvedUrls.push(new URL(value, document.baseURI).href);
+        } catch {
+          resolvedUrls.push(value);
+        }
+      }
+    }
+
+    return [document.body?.innerText ?? "", attributes.join("\n"), resolvedUrls.join("\n")].join("\n");
+  });
+  assertNoFixtureSecret(
+    Buffer.from(browserVisibleSurface, "utf8"),
+    "browser-visible DOM/text/URLs/attributes",
+  );
+}
+
+export async function preparePageForCapture(page: Page): Promise<void> {
+  await stabilizePage(page);
+  await assertNoFixtureSecretInPage(page);
+}
+
 export async function captureScreenshot(
   page: Page,
   scenarioId: string,
@@ -138,7 +172,7 @@ export async function captureScreenshot(
   const directory = artifactDirectory(scenarioId, profile);
   await mkdir(directory, { recursive: true });
   const outputPath = path.join(directory, "master.png");
-  await stabilizePage(page);
+  await preparePageForCapture(page);
   const buffer = await page.screenshot({
     path: outputPath,
     fullPage: true,
@@ -166,11 +200,13 @@ export async function startScreencast(
   await mkdir(directory, { recursive: true });
   const outputPath = path.join(directory, "master.webm");
   const viewport = MEDIA_PROFILES[profile].viewport;
+  await preparePageForCapture(page);
   await page.screencast.start({ path: outputPath, size: viewport, quality: 90 });
   return outputPath;
 }
 
 export async function stopScreencast(page: Page, outputPath: string): Promise<CapturedArtifact> {
+  await assertNoFixtureSecretInPage(page);
   await page.screencast.stop();
   const buffer = await readFile(outputPath);
   assertNoFixtureSecret(buffer);
@@ -280,9 +316,9 @@ export async function writeAndVerifyProvenance(options: {
   return manifestPath;
 }
 
-export function assertNoFixtureSecret(buffer: Buffer): void {
+export function assertNoFixtureSecret(buffer: Buffer, context = "media output"): void {
   const asText = buffer.toString("utf8");
   for (const secret of MEDIA_FIXTURE_SECRETS) {
-    if (asText.includes(secret)) throw new Error("fixture capability token leaked into media output");
+    if (asText.includes(secret)) throw new Error(`fixture capability token leaked into ${context}`);
   }
 }
