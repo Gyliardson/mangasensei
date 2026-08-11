@@ -87,6 +87,7 @@ def _render(tmp_path: Path, content: bytes, *, max_pages: int = 200):
         max_aggregate_raster_bytes=settings.max_pdf_raster_bytes,
         max_spool_bytes=settings.max_pdf_spool_bytes,
     )
+    spool.prepare_attempt_dir(import_id, request.fencing_token)
     manifest = PdfRenderer(settings)._render(request)
     return spool, request, manifest
 
