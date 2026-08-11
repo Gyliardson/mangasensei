@@ -83,7 +83,7 @@ async def test_pdf_import_is_atomic_reuses_blob_and_enters_normal_page_jobs(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         accepted = await client.post(
             "/api/v1/document-imports",
-            headers={"Idempotency-Key": "pdf-two-pages"},
+            headers={"Idempotency-Key": "pdf-two-pages-001"},
             data={"studyLanguage": "en"},
             files={"pdf": ("volume.pdf", content, "application/pdf")},
         )
@@ -178,25 +178,25 @@ async def test_pdf_import_idempotency_replay_and_mismatch_are_explicit(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         first = await client.post(
             "/api/v1/document-imports",
-            headers={"Idempotency-Key": "stable-pdf-key"},
+            headers={"Idempotency-Key": "stable-pdf-key-001"},
             data={"studyLanguage": "pt-BR"},
             files={"pdf": ("first.pdf", first_pdf, "application/pdf")},
         )
         replay = await client.post(
             "/api/v1/document-imports",
-            headers={"Idempotency-Key": "stable-pdf-key"},
+            headers={"Idempotency-Key": "stable-pdf-key-001"},
             data={"studyLanguage": "pt-BR"},
             files={"pdf": ("renamed.pdf", first_pdf, "application/pdf")},
         )
         mismatch_content = await client.post(
             "/api/v1/document-imports",
-            headers={"Idempotency-Key": "stable-pdf-key"},
+            headers={"Idempotency-Key": "stable-pdf-key-001"},
             data={"studyLanguage": "pt-BR"},
             files={"pdf": ("different.pdf", different_pdf, "application/pdf")},
         )
         mismatch_language = await client.post(
             "/api/v1/document-imports",
-            headers={"Idempotency-Key": "stable-pdf-key"},
+            headers={"Idempotency-Key": "stable-pdf-key-001"},
             data={"studyLanguage": "en"},
             files={"pdf": ("first.pdf", first_pdf, "application/pdf")},
         )
@@ -223,7 +223,7 @@ async def test_failed_renderer_import_never_creates_partial_document(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         accepted = await client.post(
             "/api/v1/document-imports",
-            headers={"Idempotency-Key": "malformed-pdf"},
+            headers={"Idempotency-Key": "malformed-pdf-001"},
             files={"pdf": ("bad.pdf", malformed, "application/pdf")},
         )
         assert accepted.status_code == 202
