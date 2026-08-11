@@ -38,7 +38,27 @@ jobs:
         run: uv run ruff check scripts/public_benchmark tests/public_benchmark --output-format=github
 
       - name: Strict type check public benchmark evaluator
-        run: uv run mypy --strict --explicit-package-bases scripts/public_benchmark/*.py
+        shell: bash
+        run: |
+          set +e
+          uv run mypy --strict --explicit-package-bases --show-column-numbers scripts/public_benchmark/*.py 2>&1 | tee /tmp/public-benchmark-mypy.log
+          status=${PIPESTATUS[0]}
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          for line in Path("/tmp/public-benchmark-mypy.log").read_text(encoding="utf-8").splitlines():
+              match = re.match(r"^(.*?):(\d+):(\d+): error: (.*)$", line)
+              if match:
+                  path, line_no, column, message = match.groups()
+                  print(f"::error file={path},line={line_no},col={column}::{message}")
+                  continue
+              match = re.match(r"^(.*?):(\d+): error: (.*)$", line)
+              if match:
+                  path, line_no, message = match.groups()
+                  print(f"::error file={path},line={line_no}::{message}")
+          PY
+          exit "$status"
 
       - name: Run public benchmark regression suite
         run: uv run pytest tests/public_benchmark
