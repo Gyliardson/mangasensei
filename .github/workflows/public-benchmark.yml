@@ -34,14 +34,14 @@ jobs:
       - name: Install locked project dependencies without OCR extras
         run: uv sync --frozen
 
-      - name: Run public benchmark regression suite
-        run: uv run pytest tests/public_benchmark
-
       - name: Lint public benchmark evaluator
-        run: uv run ruff check scripts/public_benchmark tests/public_benchmark
+        run: uv run ruff check scripts/public_benchmark tests/public_benchmark --output-format=github
 
       - name: Strict type check public benchmark evaluator
         run: uv run mypy --strict scripts/public_benchmark
+
+      - name: Run public benchmark regression suite
+        run: uv run pytest tests/public_benchmark
 
       - name: Check repository Markdown links
         run: uv run python scripts/check_markdown_links.py
