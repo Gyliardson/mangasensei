@@ -139,6 +139,7 @@ Slices B, C and D of [#105](https://github.com/Gyliardson/mangasensei/issues/105
 - select multiple JPEG, PNG, or WebP images and inspect/reorder them before upload;
 - select one PDF for a bounded asynchronous local render/import stage; every raster is validated before the normal ordered Document is committed;
 - select one PDF for a bounded asynchronous local render/import stage; every raster is validated before the normal ordered Document is committed;
+- select one PDF for a bounded asynchronous local render/import stage; every raster is validated before the normal ordered Document is committed;
 - preserve that displayed pre-upload order as the Document's canonical initial order;
 - keep each Page as an independent OCR/study/job unit;
 - show truthful aggregate processing, completed, completed-with-errors, and cancelled states with completed / processing / failed / cancelled page counts;
