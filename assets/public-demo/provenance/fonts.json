@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "license": "OFL-1.1",
+  "upstream": "https://github.com/notofonts/noto-cjk",
+  "redistributedInRepository": false,
+  "fonts": [
+    {
+      "id": "noto-sans-cjk-regular",
+      "family": "Noto Sans CJK JP",
+      "renderAlias": "MangaSensei Sans v1",
+      "tag": "Sans2.004",
+      "path": "Sans/OTC/NotoSansCJK-Regular.ttc",
+      "gitBlobSha1": "a2033d0e4e53f568c3f418a7d5d8c951af3f76c1",
+      "sha256": "b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a",
+      "bytes": 19484784,
+      "cacheFile": "NotoSansCJK-Regular.ttc"
+    },
+    {
+      "id": "noto-sans-cjk-bold",
+      "family": "Noto Sans CJK JP",
+      "renderAlias": "MangaSensei Sans v1",
+      "tag": "Sans2.004",
+      "path": "Sans/OTC/NotoSansCJK-Bold.ttc",
+      "gitBlobSha1": "ce48b99a84eb3300774353f1f15ce686e53b6734",
+      "sha256": "faa5f3656a78b2e2d450d27fe8382c778bc2b6bb5ea29c986664a6a435056ceb",
+      "bytes": 20050760,
+      "cacheFile": "NotoSansCJK-Bold.ttc"
+    },
+    {
+      "id": "noto-serif-cjk-regular",
+      "family": "Noto Serif CJK JP",
+      "renderAlias": "MangaSensei Serif v1",
+      "tag": "Serif2.003",
+      "path": "Serif/OTC/NotoSerifCJK-Regular.ttc",
+      "gitBlobSha1": "e72653a3a41fc9a8930e0cb40af310c4472a753b",
+      "sha256": "5d9c31a059600193c9d7968a998bde886ccdc77e934006ad243b41794c496a7d",
+      "bytes": 26411360,
+      "cacheFile": "NotoSerifCJK-Regular.ttc"
+    },
+    {
+      "id": "noto-serif-cjk-bold",
+      "family": "Noto Serif CJK JP",
+      "renderAlias": "MangaSensei Serif v1",
+      "tag": "Serif2.003",
+      "path": "Serif/OTC/NotoSerifCJK-Bold.ttc",
+      "gitBlobSha1": "1a313a7e4f8dbb97c5bbb8b0f949dc48d55ec233",
+      "sha256": "1505ee3b9c0890fae6302ee0e9c6fd74d690f4a55a6ace1d9944f3f6352d622d",
+      "bytes": 27397052,
+      "cacheFile": "NotoSerifCJK-Bold.ttc"
+    }
+  ]
+}
