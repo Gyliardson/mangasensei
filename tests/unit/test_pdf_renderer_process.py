@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any
 from uuid import uuid4
 
 import pypdfium2 as pdfium
+import pytest
 
 import mangasensei.pdf_imports.renderer as renderer_module
 from mangasensei.config import Settings
@@ -94,11 +93,13 @@ class _FakeContext:
     def __init__(self, process: _FakeProcess) -> None:
         self._process = process
 
-    def Process(self, **_: Any) -> _FakeProcess:  # noqa: N802 - mirrors multiprocessing API
+    def Process(self, **_: object) -> _FakeProcess:  # noqa: N802 - mirrors multiprocessing API
         return self._process
 
 
-def test_supervisor_kills_child_at_wall_clock_deadline(tmp_path: Path, monkeypatch: Any) -> None:
+def test_supervisor_kills_child_at_wall_clock_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     settings = Settings(environment="test", pdf_spool_root=tmp_path / "spool")
     spool = PdfSpool(settings.pdf_spool_root)
     request = _request(spool, settings, b"%PDF-1.7\n")
@@ -120,7 +121,9 @@ def test_supervisor_kills_child_at_wall_clock_deadline(tmp_path: Path, monkeypat
     assert not request_path.exists()
 
 
-def test_supervisor_maps_abnormal_child_exit_to_crash(tmp_path: Path, monkeypatch: Any) -> None:
+def test_supervisor_maps_abnormal_child_exit_to_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     settings = Settings(environment="test", pdf_spool_root=tmp_path / "spool")
     spool = PdfSpool(settings.pdf_spool_root)
     request = _request(spool, settings, b"%PDF-1.7\n")
