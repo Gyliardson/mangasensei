@@ -54,11 +54,35 @@ notice file; consult each upstream package distribution for its license terms.
 
 ### pypdfium2 / bundled PDFium
 
-Hardened local PDF import uses `pypdfium2 5.12.1` and the binary distribution `pypdfium2_raw 152.0.7947.0`, which bundles PDFium build `7947`. The wrapper distribution declares `BSD-3-Clause OR Apache-2.0` and carries both license texts. The binary distribution declares `Apache-2.0 OR BSD-3-Clause` and carries its complete transitive native notice bundle as `pypdfium2_raw-152.0.7947.0.dist-info/licenses/BUILD_LICENSES` inside the selected wheel.
+Hardened local PDF import pins `pypdfium2 5.12.1`. The selected Linux x86_64 wheel contains the Python wrapper, the `pypdfium2_raw` module, and bundled `pypdfium2_raw/libpdfium.so` for PDFium `152.0.7947.0` (build `7947`). The pypdfium2 project is dual-licensed under Apache-2.0 or BSD-3-Clause terms; bundled native components retain their own licenses.
 
-The locked Linux x86_64 distribution was inspected directly during Slice D implementation. `BUILD_LICENSES` includes the PDFium/Chromium BSD-style notice and notices for bundled third-party components including FreeType 2 (FreeType Project License or GPL-2.0), Abseil (Apache-2.0), libpng (PNG Reference Library License 2.0 and historical notices), Little CMS 2 (MIT), libjpeg-turbo (its documented IJG/BSD/zlib and wxWindows terms), OpenJPEG (BSD-2-Clause), fast_float (MIT), Anti-Grain Geometry 2.3 (MIT), bigint (Apple Public Source License 1.1), Clipper (Boost Software License 1.0), FXdiv (BSD-2-Clause), Highway (Apache-2.0/BSD-3-Clause), libtiff (libtiff license), libwebp (BSD-3-Clause), PartitionAlloc (Chromium BSD-style), pthreadpool (BSD-2-Clause), and the remaining components/notices concatenated by that exact `BUILD_LICENSES` file. The packaged file is the authoritative complete notice set for the bundled native build; this summary does not replace it.
+The exact installed wheel was inspected in the Slice D CI gate. Its authoritative native notice bundle is:
 
-Runtime provenance validation requires the exact helper version, PDFium build and `pypdfium2_raw/libpdfium.so` from the installed binary wheel and rejects V8/XFA builds or a system/source PDFium substitution. Inspection of the selected x86_64 `libpdfium.so` showed only standard Linux/glibc runtime dependencies (`libdl`, `librt`, `libpthread`, `libm`, `libc` and the ELF loader), not a dynamically linked system PDFium.
+`pypdfium2-5.12.1.dist-info/licenses/data/linux_x64/BUILD_LICENSES/`
+
+That directory contains exactly these 16 notice files in the selected wheel:
+
+- `abseil.txt` — Apache License 2.0;
+- `agg23.txt` — Anti-Grain Geometry 2.3 permissive notice;
+- `fast_float.txt` — MIT License;
+- `freetype.txt` — FreeType Project License;
+- `icu.txt` — Unicode License v3;
+- `lcms.txt` — Little CMS permissive/MIT-style notice;
+- `libjpeg_turbo.ijg` and `libjpeg_turbo.md` — libjpeg-turbo/IJG and BSD-style terms documented by the project;
+- `libopenjpeg.txt` — BSD 2-Clause License;
+- `libpng.txt` — PNG Reference Library License version 2 and historical notices;
+- `libtiff.txt` — libtiff permissive notice;
+- `llvm-libc.txt` — Apache License 2.0 with LLVM Exceptions;
+- `pdfium-binaries.txt` — pdfium-binaries permissive notice;
+- `pdfium.txt` — PDFium BSD-style notice;
+- `simdutf.txt` — MIT License;
+- `zlib.txt` — zlib License.
+
+The complete files in the selected wheel are authoritative; this summary does not replace them. CI archives those exact files as the `pdfium-build-licenses` artifact when validating the PDF import boundary.
+
+Runtime provenance validation rejects a helper version other than `5.12.1`, a PDFium build other than `7947`, a V8/XFA build, a symlinked/missing native library, or a `libpdfium.so` resolved outside the installed `pypdfium2_raw` package directory. The selected x86_64 native library SHA-256 observed by CI is `61c9f745c6296a1050599a99a1ed985036411b591a11bd2a41bafe530ecb4f33`.
+
+`ldd` on that exact `libpdfium.so` resolved only the Linux runtime libraries `libpthread.so.0`, `libm.so.6`, `libgcc_s.so.1`, `libc.so.6`, and the ELF loader; no library was unresolved and no system PDFium was dynamically linked. These runtime libraries are supplied by the pinned Debian/Python base image rather than bundled inside the pypdfium2 wheel.
 
 References:
 
