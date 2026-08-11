@@ -8,6 +8,7 @@ import socket
 from decimal import Decimal
 from typing import Protocol
 
+from mangasensei.application.pdf_imports import PdfImportCoordinator
 from mangasensei.config import Settings
 from mangasensei.gemini.adapter import GoogleGenAiAdapter
 from mangasensei.infrastructure.database.session import create_database
@@ -18,6 +19,9 @@ from mangasensei.linguistics.service import LinguisticService
 from mangasensei.linguistics.sudachi import SudachiTokenizer
 from mangasensei.ocr.adapter.manga_image_translator import MangaImageTranslatorEngine
 from mangasensei.ocr.models.downloader import verify_models
+from mangasensei.pdf_imports.renderer import PdfRenderer
+from mangasensei.pdf_imports.spool import PdfSpool
+from mangasensei.storage.images import ImageValidator
 from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.dictionary_projection import DictionaryProjectionWorker
 from mangasensei.workers.retention import RetentionJanitor
@@ -83,6 +87,36 @@ async def run_worker_process(settings: Settings, *, once: bool = False) -> None:
         if gemini is not None:
             await gemini.close()
         await engine.dispose()
+
+
+async def run_pdf_import_process(settings: Settings, *, once: bool = False) -> None:
+    database_url, capability_peppers = settings.require_runtime_config()
+    engine, sessions = create_database(database_url)
+    coordinator = PdfImportCoordinator(
+        sessions=sessions,
+        storage=LocalFilesystemStorage(settings.storage_root),
+        spool=PdfSpool(settings.pdf_spool_root),
+        image_validator=ImageValidator(
+            max_bytes=settings.max_upload_bytes,
+            max_pixels=settings.max_image_pixels,
+            max_side=settings.max_image_side,
+        ),
+        settings=settings,
+        idempotency_pepper=capability_peppers[0],
+        worker_id=_worker_id(),
+    )
+    try:
+        await run_worker_loop(
+            coordinator,
+            poll_seconds=settings.pdf_import_poll_seconds,
+            once=once,
+        )
+    finally:
+        await engine.dispose()
+
+
+def run_pdf_renderer_process(settings: Settings, *, once: bool = False) -> None:
+    PdfRenderer(settings).run_forever(once=once)
 
 
 async def run_retention_process(settings: Settings, *, once: bool = False) -> None:
