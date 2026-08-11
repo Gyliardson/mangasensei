@@ -84,7 +84,9 @@ def renderer_provenance() -> PdfRendererProvenance:
     )
 
 
-def _render_request_child(settings_payload: dict[str, Any], request_payload: dict[str, Any]) -> None:
+def _render_request_child(
+    settings_payload: dict[str, Any], request_payload: dict[str, Any]
+) -> None:
     """Render one request in a disposable process so native hangs/crashes are containable."""
     settings = Settings.model_validate(settings_payload)
     request = PdfRenderRequest.model_validate(request_payload)
