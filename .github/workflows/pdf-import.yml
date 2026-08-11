@@ -241,7 +241,7 @@ jobs:
       MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55432/mangasensei
       MANGASENSEI_STORAGE_ROOT: /tmp/mangasensei-pdf-fullstack-storage
       MANGASENSEI_PDF_SPOOL_ROOT: /tmp/mangasensei-pdf-fullstack-spool
-      MANGASENSEI_FRONTEND_DIST: frontend/dist
+      MANGASENSEI_FRONTEND_DIST: /opt/mangasensei-pdf-ci/harness/frontend
       MANGASENSEI_CAPABILITY_PEPPERS: '["pdf-fullstack-capability-pepper-000000000001"]'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -261,23 +261,35 @@ jobs:
           version: 0.12.3
           python-version: "3.11"
           prune-cache: true
-      - name: Install locked backend for cross-UID full-stack harness
+      - name: Install self-contained cross-UID PDF harness
         run: |
-          sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 /opt/mangasensei-ci-python
-          UV_PYTHON_INSTALL_DIR=/opt/mangasensei-ci-python uv python install 3.11
-          python_bin="$(UV_PYTHON_INSTALL_DIR=/opt/mangasensei-ci-python uv python find 3.11)"
-          UV_PYTHON_INSTALL_DIR=/opt/mangasensei-ci-python uv sync --frozen --python "${python_bin}"
-          sudo chmod -R a+rX /opt/mangasensei-ci-python
-          sudo chmod -R a+rX "${GITHUB_WORKSPACE}"
-          grep -q "/opt/mangasensei-ci-python" .venv/pyvenv.cfg
+          sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 \
+            /opt/mangasensei-pdf-ci \
+            /opt/mangasensei-pdf-ci/harness \
+            /opt/mangasensei-pdf-ci/harness/fullstack \
+            /opt/mangasensei-pdf-ci/harness/fullstack/fixtures \
+            /opt/mangasensei-pdf-ci/harness/frontend
+          UV_PYTHON_INSTALL_DIR=/opt/mangasensei-pdf-ci/python uv python install 3.11
+          python_bin="$(UV_PYTHON_INSTALL_DIR=/opt/mangasensei-pdf-ci/python uv python find 3.11)"
+          UV_PROJECT_ENVIRONMENT=/opt/mangasensei-pdf-ci/venv \
+            UV_PYTHON_INSTALL_DIR=/opt/mangasensei-pdf-ci/python \
+            uv sync --frozen --python "${python_bin}" --no-editable
+          install -m 0644 tests/fullstack/worker.py /opt/mangasensei-pdf-ci/harness/fullstack/worker.py
+          cp -a tests/fullstack/fixtures/. /opt/mangasensei-pdf-ci/harness/fullstack/fixtures/
+          cp -a frontend/dist/. /opt/mangasensei-pdf-ci/harness/frontend/
+          sudo chmod -R a+rX /opt/mangasensei-pdf-ci
+          grep -q "/opt/mangasensei-pdf-ci/python" /opt/mangasensei-pdf-ci/venv/pyvenv.cfg
           sudo setpriv --reuid=10001 --regid=10001 --clear-groups \
-            .venv/bin/python -c 'import encodings; import mangasensei; print("cross-uid Python ready")'
+            /opt/mangasensei-pdf-ci/venv/bin/python -c \
+            'from pathlib import Path; import encodings, mangasensei; assert Path("/opt/mangasensei-pdf-ci/harness/fullstack/worker.py").is_file(); assert Path("/opt/mangasensei-pdf-ci/harness/fullstack/fixtures/jmdict.json").is_file(); assert Path("/opt/mangasensei-pdf-ci/harness/frontend/index.html").is_file(); print("cross-uid PDF runtime ready")'
       - name: Start real PDF import and study runtime
         run: |
           rm -rf "${MANGASENSEI_STORAGE_ROOT}" "${MANGASENSEI_PDF_SPOOL_ROOT}"
           sudo install -d -o 10001 -g 10001 -m 0700 \
             "${MANGASENSEI_STORAGE_ROOT}" "${MANGASENSEI_PDF_SPOOL_ROOT}"
-          uv run mangasensei migrate
+          harness_python=/opt/mangasensei-pdf-ci/venv/bin/python
+          "${harness_python}" -c \
+            'from mangasensei.cli import main; raise SystemExit(main(["migrate"]))'
           docker build --build-arg MANGASENSEI_VERSION="$(cat VERSION)" -t mangasensei:pdf-fullstack .
           docker rm -f mangasensei-pdf-renderer-e2e >/dev/null 2>&1 || true
           docker run --detach --name mangasensei-pdf-renderer-e2e \
@@ -295,18 +307,18 @@ jobs:
             mangasensei:pdf-fullstack mangasensei pdf-renderer >/dev/null
           sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
             setpriv --reuid=10001 --regid=10001 --clear-groups \
-            "${PWD}/.venv/bin/python" -c \
+            "${harness_python}" -c \
             'from mangasensei.cli import main; raise SystemExit(main(["api", "--host", "127.0.0.1", "--port", "8000"]))' \
             > "${RUNNER_TEMP}/pdf-api.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/pdf-api.pid"
           sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
             setpriv --reuid=10001 --regid=10001 --clear-groups \
-            "${PWD}/.venv/bin/python" tests/fullstack/worker.py \
+            "${harness_python}" /opt/mangasensei-pdf-ci/harness/fullstack/worker.py \
             > "${RUNNER_TEMP}/pdf-worker.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/pdf-worker.pid"
           sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
             setpriv --reuid=10001 --regid=10001 --clear-groups \
-            "${PWD}/.venv/bin/python" -c \
+            "${harness_python}" -c \
             'from mangasensei.cli import main; raise SystemExit(main(["pdf-importer"]))' \
             > "${RUNNER_TEMP}/pdf-importer.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/pdf-importer.pid"
