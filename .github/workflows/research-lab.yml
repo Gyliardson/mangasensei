@@ -1,0 +1,122 @@
+name: Research Lab
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  command:
+    name: Research Lab command
+    if: >-
+      github.repository == 'Gyliardson/mangasensei' &&
+      github.event.issue.number == 132 &&
+      github.event.issue.pull_request == null &&
+      github.event.comment.user.login == 'Gyliardson' &&
+      startsWith(github.event.comment.body, 'MANGASENSEI_RESEARCH_COMMAND_V1')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: mangasensei-research-control-132
+      cancel-in-progress: false
+    steps:
+      - name: Checkout trusted default-branch revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate command and enforce idempotency
+        id: validate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          python3 -m scripts.research_lab.validate_event
+          --event "$GITHUB_EVENT_PATH"
+          --expected-repository "Gyliardson/mangasensei"
+          --expected-issue 132
+          --allowed-actor "Gyliardson"
+          --expected-baseline "$GITHUB_SHA"
+          --command-out "$RUNNER_TEMP/research-command.json"
+          --protocol-out "$RUNNER_TEMP/research-protocol.json"
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Post rejected or duplicate protocol status
+        if: steps.validate.outputs.protocol_status != 'accepted'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          python3 -m scripts.research_lab.post_comment
+          --kind protocol
+          --repository "Gyliardson/mangasensei"
+          --issue 132
+          --protocol "$RUNNER_TEMP/research-protocol.json"
+
+      - name: Post running checkpoint
+        if: steps.validate.outputs.protocol_status == 'accepted'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          python3 -m scripts.research_lab.post_comment
+          --kind running
+          --repository "Gyliardson/mangasensei"
+          --issue 132
+          --command "$RUNNER_TEMP/research-command.json"
+
+      - name: Run allowlisted deterministic experiment
+        id: experiment
+        if: steps.validate.outputs.protocol_status == 'accepted'
+        run: >-
+          python3 -m scripts.research_lab.run_experiment
+          --command "$RUNNER_TEMP/research-command.json"
+          --expected-baseline "$GITHUB_SHA"
+          --output-dir "$RUNNER_TEMP/research-evidence"
+
+      - name: Upload immutable evidence bundle
+        if: steps.validate.outputs.protocol_status == 'accepted'
+        id: artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: research-${{ steps.validate.outputs.command_id }}
+          path: ${{ runner.temp }}/research-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Post result checkpoint
+        id: result
+        if: >-
+          steps.validate.outputs.protocol_status == 'accepted' &&
+          steps.experiment.outcome == 'success' &&
+          steps.artifact.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          python3 -m scripts.research_lab.post_comment
+          --kind result
+          --repository "Gyliardson/mangasensei"
+          --issue 132
+          --command "$RUNNER_TEMP/research-command.json"
+          --output-dir "$RUNNER_TEMP/research-evidence"
+          --artifact-id "${{ steps.artifact.outputs.artifact-id }}"
+          --artifact-name "research-${{ steps.validate.outputs.command_id }}"
+          --artifact-digest "${{ steps.artifact.outputs.artifact-digest }}"
+          --artifact-url "${{ steps.artifact.outputs.artifact-url }}"
+
+      - name: Close failed accepted command
+        if: >-
+          always() &&
+          steps.validate.outputs.protocol_status == 'accepted' &&
+          (steps.experiment.outcome != 'success' ||
+          steps.artifact.outcome != 'success' ||
+          steps.result.outcome != 'success')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          python3 -m scripts.research_lab.post_comment
+          --kind failure
+          --repository "Gyliardson/mangasensei"
+          --issue 132
+          --command "$RUNNER_TEMP/research-command.json"

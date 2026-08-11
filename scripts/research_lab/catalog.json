@@ -1,0 +1,29 @@
+{
+  "schema_version": "mangasensei-research-catalog-v1",
+  "experiments": [
+    {
+      "experiment_id": "framework-smoke-v1",
+      "spec_version": "mangasensei-research-experiment-spec-v1",
+      "implementation": "framework-smoke-v1",
+      "research_question": "Can the Research Lab execute a bounded allowlisted deterministic experiment and preserve auditable evidence?",
+      "decision": "Whether the GitHub command-bus plumbing is safe enough to proceed to a post-merge end-to-end proof.",
+      "hypothesis": "A tracked synthetic fixture produces identical deterministic digests across bounded repeats while a deliberate negative control produces a different digest.",
+      "controls": {
+        "positive": "Repeated hashing of the exact frozen fixture must remain identical.",
+        "negative": "Hashing the fixture with a fixed mutation marker must differ from the frozen fixture digest."
+      },
+      "input": {
+        "fixture_id": "framework-smoke-v1",
+        "sha256": "de70ad075ad06d38cdb1cf99b331caeb64ec615c65f98df19467795e1c389019"
+      },
+      "parameters": {
+        "allowed_repeat_values": [1, 2, 3]
+      },
+      "scoring": "All repeats must equal the frozen fixture SHA-256 and every fixed negative-control digest must differ.",
+      "success_gate": "positive_matches == repeat AND negative_distinct == repeat AND invalid_cases == 0",
+      "stop_condition": "Stop after the requested bounded repeat count; never retry or tune.",
+      "max_cases": 3,
+      "max_runtime_seconds": 10
+    }
+  ]
+}

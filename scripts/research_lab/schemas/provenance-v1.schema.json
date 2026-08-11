@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mangasensei.dev/schemas/research/provenance-v1.schema.json",
+  "title": "MangaSensei Research Provenance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "command_id", "experiment_id", "baseline_sha", "catalog_sha256",
+    "spec_sha256", "result_sha256", "generated_at_utc", "elapsed_ns", "python_version",
+    "platform", "repository", "workflow", "run_id", "run_attempt", "runner_os",
+    "runner_arch", "event_comment_id"
+  ],
+  "properties": {
+    "schema_version": {"const": "mangasensei-research-provenance-v1"},
+    "command_id": {"type": "string"},
+    "experiment_id": {"type": "string"},
+    "baseline_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "catalog_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "spec_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "result_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "generated_at_utc": {"type": "string"},
+    "elapsed_ns": {"type": "integer", "minimum": 0},
+    "python_version": {"type": "string"},
+    "platform": {"type": "string"},
+    "repository": {"type": "string"},
+    "workflow": {"type": "string"},
+    "run_id": {"type": "string"},
+    "run_attempt": {"type": "string"},
+    "runner_os": {"type": "string"},
+    "runner_arch": {"type": "string"},
+    "event_comment_id": {"type": "string"}
+  }
+}
