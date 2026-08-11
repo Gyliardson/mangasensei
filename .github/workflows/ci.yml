@@ -323,7 +323,8 @@ jobs:
             mangasensei:pdf-fullstack mangasensei pdf-renderer >/dev/null
           sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
             setpriv --reuid=10001 --regid=10001 --clear-groups \
-            "${PWD}/.venv/bin/mangasensei" api --host 127.0.0.1 --port 8000 \
+            "${PWD}/.venv/bin/python" -c \
+            'from mangasensei.cli import main; raise SystemExit(main(["api", "--host", "127.0.0.1", "--port", "8000"]))' \
             > "${RUNNER_TEMP}/mangasensei-api.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/mangasensei-api.pid"
           sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
@@ -333,7 +334,8 @@ jobs:
           echo $! > "${RUNNER_TEMP}/mangasensei-worker.pid"
           sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
             setpriv --reuid=10001 --regid=10001 --clear-groups \
-            "${PWD}/.venv/bin/mangasensei" pdf-importer \
+            "${PWD}/.venv/bin/python" -c \
+            'from mangasensei.cli import main; raise SystemExit(main(["pdf-importer"]))' \
             > "${RUNNER_TEMP}/mangasensei-pdf-importer.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/mangasensei-pdf-importer.pid"
           for attempt in $(seq 1 60); do
