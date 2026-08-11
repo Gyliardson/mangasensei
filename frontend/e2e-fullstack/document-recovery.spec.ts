@@ -90,23 +90,6 @@ async function readDocument(
   return ((await response.json()) as DocumentSnapshotEnvelope).data;
 }
 
-async function waitForDocument(
-  request: APIRequestContext,
-  documentId: string,
-  readDocumentToken: string,
-  predicate: (snapshot: DocumentSnapshot) => boolean,
-  timeoutMs = 30_000,
-): Promise<DocumentSnapshot> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const snapshot = await readDocument(request, documentId, readDocumentToken);
-    if (predicate(snapshot)) return snapshot;
-    // Keep test polling below the production request-rate envelope while the UI polls independently.
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
-  }
-  throw new Error("document state did not satisfy the expected predicate");
-}
-
 test("recovers one terminally failed page without recomputing its readable sibling and persists reorder", async ({
   page,
   request,
@@ -122,12 +105,15 @@ test("recovers one terminally failed page without recomputing its readable sibli
   expect(readablePageId).toBeTruthy();
   expect(failedPageId).toBeTruthy();
 
-  const terminal = await waitForDocument(
+  // The reader already performs real aggregate polling. Wait on that UI state and use
+  // one server read for the durable assertion instead of running a second polling loop.
+  await expect(page.getByText("Document complete with errors")).toBeVisible({ timeout: 30_000 });
+  const terminal = await readDocument(
     request,
     document.documentId,
     document.capabilities.readDocument,
-    (snapshot) => snapshot.status === "completed_with_errors",
   );
+  expect(terminal.status).toBe("completed_with_errors");
   expect(terminal.progress).toEqual({
     totalPages: 2,
     completedPages: 1,
@@ -145,7 +131,6 @@ test("recovers one terminally failed page without recomputing its readable sibli
     status: "failed",
     resultAvailable: false,
   });
-  await expect(page.getByText("Document complete with errors")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "Page 1: readable" })).toHaveAttribute(
     "data-page-status",
     "readable",
@@ -167,12 +152,18 @@ test("recovers one terminally failed page without recomputing its readable sibli
     document.capabilities.manageDocument,
   );
 
-  const retrying = await waitForDocument(
+  await expect(page.getByRole("button", { name: "Page 2: processing" })).toHaveAttribute(
+    "data-page-status",
+    "processing",
+    { timeout: 10_000 },
+  );
+  const retrying = await readDocument(
     request,
     document.documentId,
     document.capabilities.readDocument,
-    (snapshot) => snapshot.status === "processing" && snapshot.progress.processingPages === 1,
   );
+  expect(retrying.status).toBe("processing");
+  expect(retrying.progress.processingPages).toBe(1);
   expect(retrying.pages[0]).toMatchObject({
     pageId: readablePageId,
     resultAvailable: true,
@@ -183,12 +174,17 @@ test("recovers one terminally failed page without recomputing its readable sibli
   );
   await expect(page.getByRole("button", { name: "Region 1: 猫です" })).toBeVisible();
 
-  const recovered = await waitForDocument(
+  await expect(page.getByText("Document complete", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "Page 2: readable" })).toHaveAttribute(
+    "data-page-status",
+    "readable",
+  );
+  const recovered = await readDocument(
     request,
     document.documentId,
     document.capabilities.readDocument,
-    (snapshot) => snapshot.status === "completed" && snapshot.progress.completedPages === 2,
   );
+  expect(recovered.status).toBe("completed");
   expect(recovered.progress).toEqual({
     totalPages: 2,
     completedPages: 2,
@@ -196,11 +192,6 @@ test("recovers one terminally failed page without recomputing its readable sibli
     failedPages: 0,
     cancelledPages: 0,
   });
-  await expect(page.getByRole("button", { name: "Page 2: readable" })).toHaveAttribute(
-    "data-page-status",
-    "readable",
-    { timeout: 15_000 },
-  );
 
   const reorderResponsePromise = page.waitForResponse((response) =>
     response.request().method() === "PUT"
@@ -239,8 +230,6 @@ test("server cancellation leaves a completed sibling readable and persists termi
   expect(completedPageId).toBeTruthy();
   expect(unfinishedPageId).toBeTruthy();
 
-  // The reader already polls the aggregate. Wait for the completed sibling through the real UI,
-  // then cancel immediately instead of duplicating that polling through APIRequestContext.
   await expect(page.getByRole("button", { name: "Page 1: readable" })).toHaveAttribute(
     "data-page-status",
     "readable",
@@ -250,7 +239,6 @@ test("server cancellation leaves a completed sibling readable and persists termi
     "data-page-status",
     "processing",
   );
-  await expect(page.getByRole("button", { name: "Region 1: 猫です" })).toBeVisible();
 
   const cancelResponsePromise = page.waitForResponse((response) =>
     response.request().method() === "POST"
@@ -282,6 +270,7 @@ test("server cancellation leaves a completed sibling readable and persists termi
   });
 
   await expect(page.getByText("Document processing cancelled")).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Page 1: readable" }).click();
   await expect(page.getByRole("button", { name: "Page 1: readable" })).toHaveAttribute(
     "data-page-status",
     "readable",
