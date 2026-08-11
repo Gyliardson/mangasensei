@@ -138,6 +138,7 @@ Os Slices B, C e D de [#105](https://github.com/Gyliardson/mangasensei/issues/10
 
 - selecionar várias imagens JPEG, PNG ou WebP e inspecionar/reordenar antes do upload;
 - selecionar um PDF para uma etapa assíncrona, local e limitada de renderização/importação; todos os rasters são validados antes do commit do Document normal;
+- selecionar um PDF para uma etapa assíncrona, local e limitada de renderização/importação; todos os rasters são validados antes do commit do Document normal;
 - preservar a ordem exibida antes do envio como ordem inicial canônica do Document;
 - manter cada Page como unidade independente de OCR/estudo/job;
 - mostrar estados agregados verdadeiros de processando, concluído, concluído com erros e cancelado, com contagens de Pages concluídas / processando / com falha / canceladas;

@@ -138,6 +138,7 @@ mobile reader も responsive です。
 
 - 複数 JPEG・PNG・WebP を選択し、upload 前に確認・並べ替えする。
 - 1 つの PDF を bounded asynchronous local render/import に送り、全 raster 検証後だけ通常の Document を commit する。
+- 1 つの PDF を bounded asynchronous local render/import に送り、全 raster 検証後だけ通常の Document を commit する。
 - 画面上の upload 前の順序を Document の canonical initial order として保持する。
 - 各 Page を独立した OCR / study / job 単位のままにする。
 - processing / completed / completed-with-errors / cancelled の正確な aggregate state と、completed / processing / failed / cancelled Page 件数を表示する。
