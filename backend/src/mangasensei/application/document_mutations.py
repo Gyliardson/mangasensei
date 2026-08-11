@@ -112,7 +112,7 @@ class DocumentMutationService:
                 ).all()
                 return RetryFailedResult(
                     created=False,
-                    page_ids=tuple(row.public_id for _, row in rows),
+                    page_ids=tuple(public_id for _, public_id in rows),
                     job_ids=tuple(job.public_id for job, _ in rows),
                 )
 
