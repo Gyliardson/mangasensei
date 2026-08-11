@@ -1,0 +1,278 @@
+name: PDF Import
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pdf-import.yml"
+      - "Dockerfile"
+      - "compose.yaml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "backend/migrations/**"
+      - "backend/src/mangasensei/api/**"
+      - "backend/src/mangasensei/application/pdf_imports.py"
+      - "backend/src/mangasensei/config.py"
+      - "backend/src/mangasensei/domain/capabilities.py"
+      - "backend/src/mangasensei/infrastructure/database/**"
+      - "backend/src/mangasensei/pdf_imports/**"
+      - "backend/src/mangasensei/runtime.py"
+      - "backend/src/mangasensei/cli.py"
+      - "frontend/src/**"
+      - "frontend/e2e-pdf-fullstack/**"
+      - "frontend/playwright.pdf-fullstack.config.ts"
+      - "tests/fullstack/**"
+      - "tests/integration/test_pdf_imports.py"
+      - "tests/unit/test_pdf_*.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pdf-import-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: PDF contract and focused tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+        env:
+          POSTGRES_DB: mangasensei
+          POSTGRES_USER: mangasensei
+          POSTGRES_PASSWORD: mangasensei
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U mangasensei -d mangasensei"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      MANGASENSEI_TEST_DATABASE_URL: postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55432/mangasensei
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - name: Install exact locked runtime
+        run: uv sync --frozen
+      - name: Verify bundled PDFium identity and collect licenses
+        run: |
+          uv run python - <<'PY'
+          import hashlib
+          import shutil
+          import sys
+          from pathlib import Path
+
+          import pypdfium2_raw
+          from pypdfium2.version import PDFIUM_INFO, PYPDFIUM_INFO
+
+          assert sys.version_info[:2] == (3, 11)
+          assert PYPDFIUM_INFO.tag == "5.12.1"
+          assert PDFIUM_INFO.build == 7947
+          assert "V8" not in PDFIUM_INFO.flags
+          assert "XFA" not in PDFIUM_INFO.flags
+          raw_root = Path(pypdfium2_raw.__file__).resolve().parent
+          native = raw_root / "libpdfium.so"
+          assert native.is_file() and not native.is_symlink()
+          assert native.resolve().is_relative_to(raw_root)
+          site_packages = raw_root.parent
+          license_candidates = sorted(
+              path for path in site_packages.rglob("*")
+              if path.name.startswith("BUILD_LICENSES")
+          )
+          assert license_candidates, "installed binary wheel did not expose BUILD_LICENSES"
+          target = Path("/tmp/pdfium-licenses")
+          target.mkdir()
+          for index, candidate in enumerate(license_candidates):
+              destination = target / f"{index:02d}-{candidate.name}"
+              if candidate.is_dir():
+                  shutil.copytree(candidate, destination)
+              else:
+                  shutil.copy2(candidate, destination)
+              print(candidate.relative_to(site_packages))
+          print("pypdfium2", PYPDFIUM_INFO.tag)
+          print("pdfium", PDFIUM_INFO.tag, "build", PDFIUM_INFO.build, "flags", PDFIUM_INFO.flags)
+          print("native_sha256", hashlib.sha256(native.read_bytes()).hexdigest())
+          print("native", native)
+          PY
+          native="$(uv run python -c 'from pathlib import Path; import pypdfium2_raw; print(Path(pypdfium2_raw.__file__).resolve().parent / "libpdfium.so")')"
+          ldd "${native}" | tee /tmp/pdfium-ldd.txt
+          ! grep -q "not found" /tmp/pdfium-ldd.txt
+          grep -q "e10cbf41b21233ec5e20adfc170cf60edd77abead86a97dc708fff55a8a886c7" uv.lock
+          grep -q "6eabf028ad8e7bc7811c9acf3a72718c180569b624b844d2c6cc974609784275" uv.lock
+      - name: Upload exact bundled license evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pdfium-build-licenses
+          path: /tmp/pdfium-licenses
+          if-no-files-found: error
+      - name: Run focused PDF tests
+        run: >-
+          uv run pytest
+          tests/unit/test_pdf_renderer.py
+          tests/unit/test_pdf_renderer_process.py
+          tests/unit/test_pdf_spool.py
+          tests/integration/test_pdf_imports.py
+          -q
+
+  container:
+    name: Hardened renderer container
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: pdf-container-ci
+      MANGASENSEI_CAPABILITY_PEPPERS: '["pdf-container-ci-capability-pepper-000000001"]'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build production image
+        run: docker build --build-arg MANGASENSEI_VERSION="$(cat VERSION)" -t mangasensei:dev .
+      - name: Verify renderer Compose hardening
+        run: |
+          docker compose config --format json > /tmp/compose.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          service = json.loads(Path("/tmp/compose.json").read_text())["services"]["pdf-renderer"]
+          assert service["network_mode"] == "none"
+          assert service["read_only"] is True
+          assert service["cap_drop"] == ["ALL"]
+          assert "no-new-privileges:true" in service["security_opt"]
+          assert service["mem_limit"] == "1g" or service["mem_limit"] == 1073741824
+          assert service["pids_limit"] == 64
+          environment = service.get("environment", {})
+          assert "MANGASENSEI_DATABASE_URL" not in environment
+          assert "MANGASENSEI_CAPABILITY_PEPPERS" not in environment
+          assert "GOOGLE_API_KEY" not in environment
+          mounts = json.dumps(service.get("volumes", []))
+          assert "docker.sock" not in mounts
+          PY
+      - name: Start isolated renderer and prove no network
+        run: |
+          docker compose up --no-deps -d pdf-renderer
+          for attempt in $(seq 1 30); do
+            if test "$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q pdf-renderer)")" = healthy; then
+              break
+            fi
+            sleep 1
+          done
+          container="$(docker compose ps -q pdf-renderer)"
+          test -n "${container}"
+          test "$(docker exec "${container}" id -u)" = "10001"
+          docker exec "${container}" python - <<'PY'
+          import socket
+
+          socket.setdefaulttimeout(1)
+          try:
+              socket.getaddrinfo("pypi.org", 443)
+          except OSError:
+              pass
+          else:
+              raise SystemExit("renderer unexpectedly resolved outbound DNS")
+          try:
+              socket.create_connection(("1.1.1.1", 443), timeout=1)
+          except OSError:
+              pass
+          else:
+              raise SystemExit("renderer unexpectedly opened outbound TCP")
+          PY
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "${container}")" = "true"
+          test "$(docker inspect --format '{{.HostConfig.NetworkMode}}' "${container}")" = "none"
+      - name: Stop renderer
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+
+  fullstack:
+    name: PDF full-stack browser flow
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+        env:
+          POSTGRES_DB: mangasensei
+          POSTGRES_USER: mangasensei
+          POSTGRES_PASSWORD: mangasensei
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U mangasensei -d mangasensei"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55432/mangasensei
+      MANGASENSEI_STORAGE_ROOT: /tmp/mangasensei-pdf-fullstack-storage
+      MANGASENSEI_PDF_SPOOL_ROOT: /tmp/mangasensei-pdf-fullstack-spool
+      MANGASENSEI_FRONTEND_DIST: frontend/dist
+      MANGASENSEI_CAPABILITY_PEPPERS: '["pdf-fullstack-capability-pepper-000000000001"]'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install frontend and build
+        run: npm ci && npm run build
+      - name: Install Chromium
+        run: npx --no-install playwright install --with-deps chromium
+        working-directory: frontend
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+      - name: Install locked backend
+        run: uv sync --frozen
+      - name: Start real PDF import and study runtime
+        run: |
+          rm -rf "${MANGASENSEI_STORAGE_ROOT}" "${MANGASENSEI_PDF_SPOOL_ROOT}"
+          uv run mangasensei migrate
+          uv run mangasensei api --host 127.0.0.1 --port 8000 > "${RUNNER_TEMP}/pdf-api.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/pdf-api.pid"
+          uv run python tests/fullstack/worker.py > "${RUNNER_TEMP}/pdf-worker.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/pdf-worker.pid"
+          uv run mangasensei pdf-renderer > "${RUNNER_TEMP}/pdf-renderer.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/pdf-renderer.pid"
+          uv run mangasensei pdf-importer > "${RUNNER_TEMP}/pdf-importer.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/pdf-importer.pid"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/ready >/dev/null \
+              && test -f "${MANGASENSEI_PDF_SPOOL_ROOT}/renderer/heartbeat.json"; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "${RUNNER_TEMP}/pdf-api.log" || true
+          cat "${RUNNER_TEMP}/pdf-renderer.log" || true
+          cat "${RUNNER_TEMP}/pdf-importer.log" || true
+          exit 1
+      - name: Run real browser-to-PDFium-to-Page flow
+        run: npx --no-install playwright test --config frontend/playwright.pdf-fullstack.config.ts
+      - name: Stop PDF full-stack runtime
+        if: always()
+        run: |
+          for name in pdf-api pdf-worker pdf-renderer pdf-importer; do
+            file="${RUNNER_TEMP}/${name}.pid"
+            if test -f "${file}"; then kill "$(cat "${file}")" 2>/dev/null || true; fi
+          done
+      - name: Upload PDF full-stack diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pdf-fullstack-diagnostics
+          path: |
+            playwright-report-pdf-fullstack
+            test-results-pdf-fullstack
+            ${{ runner.temp }}/pdf-api.log
+            ${{ runner.temp }}/pdf-worker.log
+            ${{ runner.temp }}/pdf-renderer.log
+            ${{ runner.temp }}/pdf-importer.log
+          if-no-files-found: ignore
