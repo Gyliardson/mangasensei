@@ -21,7 +21,7 @@ def _request_json(
     if not url.startswith(f"{_API_ROOT}/repos/"):
         raise GitHubApiError("refusing non-GitHub API URL")
     data = None if payload is None else json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(
+    request = urllib.request.Request(  # noqa: S310
         url,
         data=data,
         method=method,

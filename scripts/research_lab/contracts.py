@@ -47,7 +47,7 @@ def canonical_json_bytes(value: Any) -> bytes:
     serialized = json.dumps(
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     )
-    return f"{serialized}\n".encode("utf-8")
+    return f"{serialized}\n".encode()
 
 
 def sha256_bytes(data: bytes) -> str:

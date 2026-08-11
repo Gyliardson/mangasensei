@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from scripts.research_lab.contracts import (
     COMMAND_SENTINEL,
     EXPERIMENT_SPEC_VERSION,

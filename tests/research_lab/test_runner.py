@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from scripts.research_lab import runner as research_runner
 from scripts.research_lab.contracts import (
     EXPERIMENT_SPEC_VERSION,
