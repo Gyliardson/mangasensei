@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from decimal import Decimal
 from pathlib import Path
 
 from mangasensei.config import Settings
@@ -173,6 +174,10 @@ async def main() -> None:
         linguistics=LinguisticService(SudachiTokenizer(), dictionary),
         gemini=DeterministicFullStackGemini(),
         gemini_model="fullstack-deterministic-provider",
+        # The full-stack suite shares one worker and intentionally exercises several
+        # paid-boundary accounting paths. Keep accounting enabled but provision enough
+        # test-only budget so suite order does not create false product failures.
+        gemini_daily_budget=Decimal("100.00"),
         worker_id="fullstack-e2e-worker",
         lease_seconds=60,
         gloss_resolver=LocalizedJmdictGlossResolver(FullStackGlossPackProvider(fixtures)),
