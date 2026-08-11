@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import text
 
 import mangasensei
+from mangasensei.api.pdf_imports import register_pdf_import_routes
 from mangasensei.application.authorization import PageAuthorizer, ResourceNotFoundError
 from mangasensei.application.document_authorization import DocumentAuthorizer
 from mangasensei.application.document_mutations import (
@@ -29,6 +30,7 @@ from mangasensei.application.document_queries import DocumentQueryService
 from mangasensei.application.document_uploads import DocumentCreateResult, DocumentUploadService
 from mangasensei.application.idempotency import InvalidIdempotencyKeyError
 from mangasensei.application.page_queries import PageQueryService
+from mangasensei.application.pdf_imports import PdfImportQueryService, PdfImportService
 from mangasensei.application.reprocessing import (
     AnalysisInProgressError,
     DictionaryProjectionUnavailableError,
@@ -46,10 +48,11 @@ from mangasensei.domain.languages import (
 from mangasensei.infrastructure.capabilities import CapabilityService
 from mangasensei.infrastructure.database.session import create_database
 from mangasensei.infrastructure.rate_limits import PostgreSQLRateLimiter
+from mangasensei.pdf_imports.spool import PdfSpool
 from mangasensei.storage.images import ImageValidationError, ImageValidator, ValidatedImage
 from mangasensei.storage.local import LocalFilesystemStorage
 
-_EXPECTED_DATABASE_REVISION = "f6a3c2d91b47"
+_EXPECTED_DATABASE_REVISION = "a3f9d712c640"
 _HTTP_REQUESTS = Counter(
     "http_requests",
     "HTTP requests completed by method and status code.",
@@ -176,6 +179,18 @@ def create_app(settings: Settings) -> FastAPI:
         sessions,
         idempotency_pepper=capability_peppers[0],
     )
+    pdf_spool = PdfSpool(settings.pdf_spool_root)
+    pdf_import_service = PdfImportService(
+        sessions=sessions,
+        spool=pdf_spool,
+        capabilities=capability_service,
+        idempotency_pepper=capability_peppers[0],
+        max_pdf_bytes=settings.max_pdf_bytes,
+    )
+    pdf_import_queries = PdfImportQueryService(
+        sessions=sessions,
+        capabilities=capability_service,
+    )
     rate_limiter = PostgreSQLRateLimiter(
         sessions,
         pepper=capability_peppers[0],
@@ -197,6 +212,11 @@ def create_app(settings: Settings) -> FastAPI:
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
         lifespan=lifespan,
+    )
+    register_pdf_import_routes(
+        app,
+        imports=pdf_import_service,
+        queries=pdf_import_queries,
     )
 
     @app.middleware("http")
@@ -686,7 +706,11 @@ async def _read_limited(upload: UploadFile, maximum: int) -> bytes:
 def _rate_limit_policy(request: Request, settings: Settings) -> tuple[str, int] | None:
     if not request.url.path.startswith("/api/v1/"):
         return None
-    if request.method == "POST" and request.url.path in {"/api/v1/pages", "/api/v1/documents"}:
+    if request.method == "POST" and request.url.path in {
+        "/api/v1/pages",
+        "/api/v1/documents",
+        "/api/v1/document-imports",
+    }:
         return "upload", settings.upload_rate_limit_per_minute
     if request.method == "POST" and (
         request.url.path.endswith("/reprocess") or request.url.path.endswith("/retry-failed")
