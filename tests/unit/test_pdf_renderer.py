@@ -10,7 +10,7 @@ import pytest
 
 from mangasensei.config import Settings
 from mangasensei.pdf_imports.contracts import PDF_RENDER_SCALE, PdfRenderRequest
-from mangasensei.pdf_imports.renderer import PdfRenderRejected, PdfRenderer, renderer_provenance
+from mangasensei.pdf_imports.renderer import PdfRenderer, PdfRenderRejected, renderer_provenance
 from mangasensei.pdf_imports.spool import PdfSpool
 
 
@@ -111,9 +111,13 @@ def test_blank_page_raster_is_deterministic(tmp_path: Path) -> None:
     assert first.page_count == second.page_count == 1
     assert first.aggregate_pixels == second.aggregate_pixels
     assert first.pages[0].sha256 == second.pages[0].sha256
-    assert first_spool.page_path(first_request.import_id, 1, first.pages[0].filename).read_bytes() == (
-        second_spool.page_path(second_request.import_id, 1, second.pages[0].filename).read_bytes()
-    )
+    first_bytes = first_spool.page_path(
+        first_request.import_id, 1, first.pages[0].filename
+    ).read_bytes()
+    second_bytes = second_spool.page_path(
+        second_request.import_id, 1, second.pages[0].filename
+    ).read_bytes()
+    assert first_bytes == second_bytes
 
 
 def test_cropbox_policy_uses_intersection_bbox(tmp_path: Path) -> None:
@@ -153,7 +157,9 @@ def test_duplicate_pages_keep_duplicate_membership_and_identical_hashes(tmp_path
     assert manifest.pages[0].sha256 == manifest.pages[1].sha256
 
 
-def test_unusual_userunit_is_bounded_and_deterministic_in_pdfium_canvas_units(tmp_path: Path) -> None:
+def test_unusual_userunit_is_bounded_and_deterministic_in_pdfium_canvas_units(
+    tmp_path: Path,
+) -> None:
     content = _write_userunit_pdf(tmp_path / "user-unit.pdf", user_unit=2)
 
     _, _, first = _render(tmp_path / "first", content)
