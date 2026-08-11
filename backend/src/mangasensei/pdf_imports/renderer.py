@@ -5,12 +5,14 @@ from __future__ import annotations
 import errno
 import hashlib
 import math
+import multiprocessing
 import os
 import re
 import socket
 import time
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
@@ -43,6 +45,8 @@ _REQUEST_RE = re.compile(
     r"^(?P<import>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\."
     r"(?P<fence>[1-9][0-9]*)\.request\.json$"
 )
+_PROCESS_HEARTBEAT_SECONDS = 1.0
+_PROCESS_TERMINATE_GRACE_SECONDS = 2.0
 
 
 class PdfRenderRejected(RuntimeError):
@@ -80,6 +84,31 @@ def renderer_provenance() -> PdfRendererProvenance:
     )
 
 
+def _render_request_child(settings_payload: dict[str, Any], request_payload: dict[str, Any]) -> None:
+    """Render one request in a disposable process so native hangs/crashes are containable."""
+    settings = Settings.model_validate(settings_payload)
+    request = PdfRenderRequest.model_validate(request_payload)
+    renderer = PdfRenderer(settings)
+    manifest_path = renderer._spool.manifest_path(request.import_id, request.fencing_token)
+    failure_path = renderer._spool.failure_path(request.import_id, request.fencing_token)
+    try:
+        manifest = renderer._render(request)
+        renderer._spool.write_model_atomic(manifest_path, manifest)
+    except PdfRenderRejected as exc:
+        renderer._write_failure_if_absent(request, exc.code)
+    except OSError as exc:
+        code: PdfImportErrorCode = (
+            "pdf_temp_storage_exhausted" if exc.errno == errno.ENOSPC else "pdf_render_failed"
+        )
+        renderer._write_failure_if_absent(request, code)
+    except Exception:
+        renderer._write_failure_if_absent(request, "pdf_render_failed")
+    finally:
+        # A successfully persisted terminal record is the child/parent hand-off boundary.
+        if not manifest_path.exists() and not failure_path.exists():
+            raise RuntimeError("renderer child exited without a terminal record")
+
+
 class PdfRenderer:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -114,48 +143,60 @@ class PdfRenderer:
         return False
 
     def _process(self, request_path: Path, request: PdfRenderRequest) -> None:
-        attempt = self._spool.prepare_attempt_dir(request.import_id, request.fencing_token)
+        self._spool.prepare_attempt_dir(request.import_id, request.fencing_token)
         manifest_path = self._spool.manifest_path(request.import_id, request.fencing_token)
         failure_path = self._spool.failure_path(request.import_id, request.fencing_token)
         if manifest_path.exists() or failure_path.exists():
             request_path.unlink(missing_ok=True)
             return
+
+        context = multiprocessing.get_context("spawn")
+        process = context.Process(
+            target=_render_request_child,
+            args=(self._settings.model_dump(), request.model_dump()),
+            name=f"mangasensei-pdf-{request.import_id}",
+            daemon=False,
+        )
         try:
-            manifest = self._render(request)
-            self._spool.write_model_atomic(manifest_path, manifest)
-        except PdfRenderRejected as exc:
-            failure = PdfRenderFailure(
-                import_id=request.import_id,
-                fencing_token=request.fencing_token,
-                error_code=exc.code,
-            )
-            self._spool.write_model_atomic(failure_path, failure)
-        except OSError as exc:
-            code: PdfImportErrorCode = (
-                "pdf_temp_storage_exhausted" if exc.errno == errno.ENOSPC else "pdf_render_failed"
-            )
-            self._spool.write_model_atomic(
-                failure_path,
-                PdfRenderFailure(
-                    import_id=request.import_id,
-                    fencing_token=request.fencing_token,
-                    error_code=code,
-                ),
-            )
-        except Exception:
-            self._spool.write_model_atomic(
-                failure_path,
-                PdfRenderFailure(
-                    import_id=request.import_id,
-                    fencing_token=request.fencing_token,
-                    error_code="pdf_render_failed",
-                ),
-            )
+            process.start()
+        except (OSError, RuntimeError):
+            self._write_failure_if_absent(request, "pdf_renderer_crash")
+        else:
+            deadline = time.monotonic() + self._settings.pdf_renderer_timeout_seconds
+            while process.is_alive() and time.monotonic() < deadline:
+                remaining = max(0.0, deadline - time.monotonic())
+                process.join(timeout=min(_PROCESS_HEARTBEAT_SECONDS, remaining))
+                self._write_heartbeat()
+
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=_PROCESS_TERMINATE_GRACE_SECONDS)
+                if process.is_alive():
+                    process.kill()
+                    process.join()
+                self._write_failure_if_absent(request, "pdf_renderer_timeout")
+            elif process.exitcode != 0 and not manifest_path.exists() and not failure_path.exists():
+                self._write_failure_if_absent(request, "pdf_renderer_crash")
+            process.close()
         finally:
             request_path.unlink(missing_ok=True)
             self._write_heartbeat()
-            if not attempt.exists():
-                attempt.mkdir(parents=True, exist_ok=True)
+
+    def _write_failure_if_absent(
+        self, request: PdfRenderRequest, code: PdfImportErrorCode
+    ) -> None:
+        manifest_path = self._spool.manifest_path(request.import_id, request.fencing_token)
+        failure_path = self._spool.failure_path(request.import_id, request.fencing_token)
+        if manifest_path.exists() or failure_path.exists():
+            return
+        self._spool.write_model_atomic(
+            failure_path,
+            PdfRenderFailure(
+                import_id=request.import_id,
+                fencing_token=request.fencing_token,
+                error_code=code,
+            ),
+        )
 
     def _render(self, request: PdfRenderRequest) -> PdfRasterManifest:
         source = self._spool.source_path(request.import_id)
