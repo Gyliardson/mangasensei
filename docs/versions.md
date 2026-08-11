@@ -1,6 +1,6 @@
 # Version Matrix
 
-Verified on 2026-08-09 using official documentation, package registries and reviewed artifact manifests.
+Verified on 2026-08-11 using official documentation, package registries, selected locked distributions and reviewed artifact manifests.
 
 | Area | Component | Version | Notes |
 | --- | --- | --- | --- |
@@ -11,6 +11,8 @@ Verified on 2026-08-09 using official documentation, package registries and revi
 | ORM | SQLAlchemy | 2.0.51 | Async PostgreSQL dialect |
 | Migrations | Alembic | 1.19.0 | Reversible initial schema |
 | Database | PostgreSQL | 18.4 | Official container image |
+| PDF wrapper | pypdfium2 | 5.12.1 | Pinned Python wrapper; production startup rejects a different helper/runtime identity |
+| PDF renderer | PDFium | 152.0.7947.0 (build 7947) | Bundled by the locked `pypdfium2_raw` wheel; standard build with no V8/XFA flags; no system-PDFium fallback is accepted |
 | Gemini | google-genai | 2.17.0 | Structured JSON output through current SDK |
 | UI | React | 19.2.8 | SPA |
 | Language | TypeScript | 7.0.2 | CLI type checking only |
@@ -26,6 +28,8 @@ Verified on 2026-08-09 using official documentation, package registries and revi
 Python packages are locked by `uv.lock`. JavaScript packages are locked by
 `package-lock.json`. Model artifacts use a separate checksum manifest because
 they cannot be redistributed with the application.
+
+The supported PDF renderer is deliberately narrower than the wrapper's generic installation options. The application requires the locked binary distribution to resolve `pypdfium2_raw/libpdfium.so` from the installed wheel, requires PDFium build `7947`, and rejects V8/XFA-enabled builds. This prevents an unnoticed system-PDFium or source-build substitution from changing the persisted `pdfium-raster-v1` contract. The selected Linux x86_64 wheel's native dependencies were inspected in CI and resolve only to the platform's standard glibc/POSIX libraries; bundled PDFium third-party notices are recorded in [Third-Party Notices](../THIRD_PARTY_NOTICES.md).
 
 Reviewed JMdict language packs are registered in
 [`backend/src/mangasensei/linguistics/jmdict_packs.json`](../backend/src/mangasensei/linguistics/jmdict_packs.json), with independent source and normalized integrity metadata in each pack manifest. All packs in the registry must declare the same reviewed source snapshot. English remains the configured worker/runtime dictionary in this infrastructure slice; German is selected explicitly only through the bootstrap/verification CLI and is not eagerly loaded.
