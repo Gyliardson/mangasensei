@@ -1,0 +1,256 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "mangasensei-public-demo-v1",
+  "title": "MangaSensei Public Demo Corpus v1",
+  "language": "ja",
+  "license": {
+    "spdx": "CC-BY-4.0",
+    "file": "LICENSE",
+    "notice": "NOTICE.md",
+    "copyright": "Copyright (C) 2026 Gyliardson Keitison"
+  },
+  "provenance": {
+    "creator": "Gyliardson Keitison / MangaSensei project",
+    "sourceKind": "project-authored-vector",
+    "imageGenerationModelUsed": false,
+    "authorshipMethod": "Project-directed original SVG composition with OpenAI ChatGPT code assistance; no image-generation model; Japanese text is explicit deterministic SVG text.",
+    "derivedFromCommercialManga": false,
+    "canonicalRenderContract": "provenance/toolchain.json",
+    "fontContract": "provenance/fonts.json"
+  },
+  "pages": [
+    {
+      "id": "msdemo-001-station",
+      "title": "駅前の約束",
+      "split": "public-demo",
+      "source": {
+        "file": "source/msdemo-001-station.svg",
+        "sha256": "9dccc9fb17cdf345bec5f653c258a92ce3fca8558c8090ea4ae790ef161d845e"
+      },
+      "image": {
+        "file": "images/msdemo-001-station.png",
+        "sha256": "9d047caee4817cc989980f72cc0ea46ba03f16ea4ebef1a7fa060173826a2cd7",
+        "width": 1440,
+        "height": 2048,
+        "mediaType": "image/png",
+        "mode": "RGB"
+      },
+      "annotation": {
+        "file": "annotations/msdemo-001-station.json",
+        "sha256": "f057d70dab0143b1b5fcad58631ed10064e510badb30711fa8f98efba89f5053",
+        "schema": "annotations/schema-v1.json"
+      },
+      "purposes": [
+        "hero",
+        "desktop-reader",
+        "furigana",
+        "jmdict",
+        "language-switching"
+      ],
+      "allowedContexts": [
+        "repository",
+        "documentation",
+        "social",
+        "video",
+        "benchmark"
+      ]
+    },
+    {
+      "id": "msdemo-002-library",
+      "title": "図書室の手がかり",
+      "split": "public-validation",
+      "source": {
+        "file": "source/msdemo-002-library.svg",
+        "sha256": "f6b39e70f3dfcf3206e17b674757852267d82e6d0534d79283bd3baee6443ce1"
+      },
+      "image": {
+        "file": "images/msdemo-002-library.png",
+        "sha256": "402f9530fabdcb5848bbca22db931b3702183d63d4286b0836fac0575a080e90",
+        "width": 1440,
+        "height": 2048,
+        "mediaType": "image/png",
+        "mode": "RGB"
+      },
+      "annotation": {
+        "file": "annotations/msdemo-002-library.json",
+        "sha256": "c6d339c175a3dbdc1c2afa7f965f1a2cb95c6abcd1ea61e1befd35e56599aee2",
+        "schema": "annotations/schema-v1.json"
+      },
+      "purposes": [
+        "reading-order",
+        "dense-layout",
+        "desktop-reader",
+        "document-partial-processing"
+      ],
+      "allowedContexts": [
+        "repository",
+        "documentation",
+        "social",
+        "video",
+        "benchmark"
+      ]
+    },
+    {
+      "id": "msdemo-003-laboratory",
+      "title": "研究室の誤読",
+      "split": "public-validation",
+      "source": {
+        "file": "source/msdemo-003-laboratory.svg",
+        "sha256": "5c46899b5b03bfd9db08b0a668914bd849d829bd6887f8ecc2447e4035e34b7e"
+      },
+      "image": {
+        "file": "images/msdemo-003-laboratory.png",
+        "sha256": "8585c8dbf102ae6bb2677c6d79426c696987e22c49331e6cad74805bbb5e8358",
+        "width": 1440,
+        "height": 2048,
+        "mediaType": "image/png",
+        "mode": "RGB"
+      },
+      "annotation": {
+        "file": "annotations/msdemo-003-laboratory.json",
+        "sha256": "a264d8cdc62a9a15cf85b5e0f8555c47e6ba72dcab2a7bb083a238d0789eccb5",
+        "schema": "annotations/schema-v1.json"
+      },
+      "purposes": [
+        "similar-glyph",
+        "graphic-negative",
+        "boten",
+        "benchmark-card"
+      ],
+      "allowedContexts": [
+        "repository",
+        "documentation",
+        "social",
+        "video",
+        "benchmark"
+      ]
+    },
+    {
+      "id": "msdemo-004-rain",
+      "title": "雨の商店街",
+      "split": "public-demo",
+      "source": {
+        "file": "source/msdemo-004-rain.svg",
+        "sha256": "6bb76d5df31f172f2f812286358bb4bc1804fd83a50b39e4c069eb29af7efd7f"
+      },
+      "image": {
+        "file": "images/msdemo-004-rain.png",
+        "sha256": "08644a11e532ed3b7bcd92de842665c7e83a1a0f14a11438fd08c7dd54446127",
+        "width": 1440,
+        "height": 2048,
+        "mediaType": "image/png",
+        "mode": "RGB"
+      },
+      "annotation": {
+        "file": "annotations/msdemo-004-rain.json",
+        "sha256": "dc8c693a3e91dadce285a40f9083856f5ab26318025243e84b932f42908755c4",
+        "schema": "annotations/schema-v1.json"
+      },
+      "purposes": [
+        "mobile-reader",
+        "hero-alternate",
+        "sfx",
+        "social-video"
+      ],
+      "allowedContexts": [
+        "repository",
+        "documentation",
+        "social",
+        "video",
+        "benchmark"
+      ]
+    }
+  ],
+  "inventory": [
+    {
+      "file": "LICENSE",
+      "sha256": "55424d13092bd44b68f8f942e4b7d46c7bb341916a8fc7fd9aa8fabfc08f406f",
+      "bytes": 1231
+    },
+    {
+      "file": "NOTICE.md",
+      "sha256": "4ace27be04b96a0c31ec23ff2c8363134f056aa2b011310c8464e8b7fa7ca563",
+      "bytes": 1366
+    },
+    {
+      "file": "README.md",
+      "sha256": "808d5ce17d5b023f89d46a9d5fd55ae2318b6f23ed9c77746f325204bba6d6a4",
+      "bytes": 1578
+    },
+    {
+      "file": "annotations/msdemo-001-station.json",
+      "sha256": "f057d70dab0143b1b5fcad58631ed10064e510badb30711fa8f98efba89f5053",
+      "bytes": 9710
+    },
+    {
+      "file": "annotations/msdemo-002-library.json",
+      "sha256": "c6d339c175a3dbdc1c2afa7f965f1a2cb95c6abcd1ea61e1befd35e56599aee2",
+      "bytes": 13357
+    },
+    {
+      "file": "annotations/msdemo-003-laboratory.json",
+      "sha256": "a264d8cdc62a9a15cf85b5e0f8555c47e6ba72dcab2a7bb083a238d0789eccb5",
+      "bytes": 13616
+    },
+    {
+      "file": "annotations/msdemo-004-rain.json",
+      "sha256": "dc8c693a3e91dadce285a40f9083856f5ab26318025243e84b932f42908755c4",
+      "bytes": 14159
+    },
+    {
+      "file": "annotations/schema-v1.json",
+      "sha256": "42548cbb3bbe798fefd491504029df61910fc134f70eb2d4cd686e30e374bb10",
+      "bytes": 8708
+    },
+    {
+      "file": "images/msdemo-001-station.png",
+      "sha256": "9d047caee4817cc989980f72cc0ea46ba03f16ea4ebef1a7fa060173826a2cd7",
+      "bytes": 265984
+    },
+    {
+      "file": "images/msdemo-002-library.png",
+      "sha256": "402f9530fabdcb5848bbca22db931b3702183d63d4286b0836fac0575a080e90",
+      "bytes": 237915
+    },
+    {
+      "file": "images/msdemo-003-laboratory.png",
+      "sha256": "8585c8dbf102ae6bb2677c6d79426c696987e22c49331e6cad74805bbb5e8358",
+      "bytes": 196095
+    },
+    {
+      "file": "images/msdemo-004-rain.png",
+      "sha256": "08644a11e532ed3b7bcd92de842665c7e83a1a0f14a11438fd08c7dd54446127",
+      "bytes": 395919
+    },
+    {
+      "file": "provenance/fonts.json",
+      "sha256": "9cabe7d7d36edee0db025a5cd4b34bc48d0115830fe5e8e1393ea2c6bb927926",
+      "bytes": 1855
+    },
+    {
+      "file": "provenance/toolchain.json",
+      "sha256": "82c563b585ec13628812702edbd933e5d8e0b31467314d239c7ce6e0a48f760e",
+      "bytes": 757
+    },
+    {
+      "file": "source/msdemo-001-station.svg",
+      "sha256": "9dccc9fb17cdf345bec5f653c258a92ce3fca8558c8090ea4ae790ef161d845e",
+      "bytes": 5237
+    },
+    {
+      "file": "source/msdemo-002-library.svg",
+      "sha256": "f6b39e70f3dfcf3206e17b674757852267d82e6d0534d79283bd3baee6443ce1",
+      "bytes": 5773
+    },
+    {
+      "file": "source/msdemo-003-laboratory.svg",
+      "sha256": "5c46899b5b03bfd9db08b0a668914bd849d829bd6887f8ecc2447e4035e34b7e",
+      "bytes": 6035
+    },
+    {
+      "file": "source/msdemo-004-rain.svg",
+      "sha256": "6bb76d5df31f172f2f812286358bb4bc1804fd83a50b39e4c069eb29af7efd7f",
+      "bytes": 5757
+    }
+  ]
+}
