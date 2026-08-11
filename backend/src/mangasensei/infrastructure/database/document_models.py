@@ -72,7 +72,9 @@ class DocumentCapabilityRecord(Base):
     __table_args__ = (
         UniqueConstraint("key_id", "digest"),
         CheckConstraint(
-            "scope IN ('read:document','read:document-image','reprocess:document','manage:document')",
+            "scope IN ("
+            "'read:document','read:document-image','reprocess:document','manage:document'"
+            ")",
             name="scope",
         ),
         CheckConstraint("octet_length(digest) = 32", name="digest_length"),
