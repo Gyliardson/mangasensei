@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Final, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-PDF_RASTER_CONTRACT_VERSION = "pdfium-raster-v1"
+PDF_RASTER_CONTRACT_VERSION: Final[Literal["pdfium-raster-v1"]] = "pdfium-raster-v1"
 PDF_RENDER_DPI = 200
 PDF_RENDER_SCALE = PDF_RENDER_DPI / 72.0
 PDF_OUTPUT_MEDIA_TYPE = "image/png"
