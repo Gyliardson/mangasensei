@@ -295,8 +295,8 @@ jobs:
       - name: Start real API, isolated PDF renderer, importer and deterministic worker
         run: |
           rm -rf "${MANGASENSEI_STORAGE_ROOT}" "${MANGASENSEI_PDF_SPOOL_ROOT}"
-          mkdir -p "${MANGASENSEI_PDF_SPOOL_ROOT}"
-          chmod 0770 "${MANGASENSEI_PDF_SPOOL_ROOT}"
+          sudo install -d -o 10001 -g 10001 -m 0700 \
+            "${MANGASENSEI_STORAGE_ROOT}" "${MANGASENSEI_PDF_SPOOL_ROOT}"
           uv run mangasensei migrate
           docker build --build-arg MANGASENSEI_VERSION="$(cat VERSION)" -t mangasensei:pdf-fullstack .
           docker rm -f mangasensei-pdf-renderer-e2e >/dev/null 2>&1 || true
@@ -309,16 +309,24 @@ jobs:
             --cpus 1 \
             --pids-limit 64 \
             --tmpfs /tmp:rw,size=128m,mode=1777 \
-            --group-add "$(id -g)" \
             --mount "type=bind,src=${MANGASENSEI_PDF_SPOOL_ROOT},dst=/app/var/pdf-spool" \
             -e MANGASENSEI_ENVIRONMENT=test \
             -e MANGASENSEI_PDF_SPOOL_ROOT=/app/var/pdf-spool \
             mangasensei:pdf-fullstack mangasensei pdf-renderer >/dev/null
-          uv run mangasensei api --host 127.0.0.1 --port 8000 > "${RUNNER_TEMP}/mangasensei-api.log" 2>&1 &
+          sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
+            setpriv --reuid=10001 --regid=10001 --clear-groups \
+            "${PWD}/.venv/bin/mangasensei" api --host 127.0.0.1 --port 8000 \
+            > "${RUNNER_TEMP}/mangasensei-api.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/mangasensei-api.pid"
-          uv run python tests/fullstack/worker.py > "${RUNNER_TEMP}/mangasensei-worker.log" 2>&1 &
+          sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
+            setpriv --reuid=10001 --regid=10001 --clear-groups \
+            "${PWD}/.venv/bin/python" tests/fullstack/worker.py \
+            > "${RUNNER_TEMP}/mangasensei-worker.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/mangasensei-worker.pid"
-          uv run mangasensei pdf-importer > "${RUNNER_TEMP}/mangasensei-pdf-importer.log" 2>&1 &
+          sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
+            setpriv --reuid=10001 --regid=10001 --clear-groups \
+            "${PWD}/.venv/bin/mangasensei" pdf-importer \
+            > "${RUNNER_TEMP}/mangasensei-pdf-importer.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/mangasensei-pdf-importer.pid"
           for attempt in $(seq 1 60); do
             if curl --fail --silent --show-error http://127.0.0.1:8000/ready > /dev/null \
@@ -332,6 +340,21 @@ jobs:
           cat "${RUNNER_TEMP}/mangasensei-pdf-importer.log" || true
           docker logs mangasensei-pdf-renderer-e2e || true
           exit 1
+
+      - name: Prove full-stack renderer isolation
+        run: |
+          test "$(docker exec mangasensei-pdf-renderer-e2e id -u)" = "10001"
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' mangasensei-pdf-renderer-e2e)" = "true"
+          test "$(docker inspect --format '{{.HostConfig.NetworkMode}}' mangasensei-pdf-renderer-e2e)" = "none"
+          test "$(docker inspect --format '{{.HostConfig.Memory}}' mangasensei-pdf-renderer-e2e)" = "1073741824"
+          test "$(docker inspect --format '{{.HostConfig.PidsLimit}}' mangasensei-pdf-renderer-e2e)" = "64"
+          docker exec mangasensei-pdf-renderer-e2e python - <<'PY'
+          from pathlib import Path
+
+          status = Path("/proc/self/status").read_text()
+          assert "NoNewPrivs:\t1" in status
+          assert "CapEff:\t0000000000000000" in status
+          PY
 
       - name: Full-stack critical-flow E2E
         run: npm run e2e:fullstack
@@ -349,7 +372,7 @@ jobs:
             "${RUNNER_TEMP}/mangasensei-worker.pid" \
             "${RUNNER_TEMP}/mangasensei-pdf-importer.pid"; do
             if test -f "${pid_file}"; then
-              kill "$(cat "${pid_file}")" 2>/dev/null || true
+              sudo kill "$(cat "${pid_file}")" 2>/dev/null || true
             fi
           done
 
