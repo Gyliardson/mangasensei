@@ -26,6 +26,7 @@ from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.dictionary_projection import DictionaryProjectionWorker
 
 REGION_ID = "5ca22b32-6834-59db-a183-428a557a22e8"
+RETRY_FIXTURE_SHA256 = "b2fac47244f4d8d2dd2ea903558a642954d47a0cb1bf675ce752e6029b43fa23"
 FULLSTACK_PROVENANCE = OcrProvenance(
     detector="fullstack-fixture",
     recognizer="fullstack-fixture",
@@ -37,10 +38,19 @@ FULLSTACK_PROVENANCE = OcrProvenance(
 
 
 class DeterministicFullStackOcr:
+    def __init__(self) -> None:
+        self._attempts_by_image: dict[str, int] = {}
+
     async def analyze(self, image: OcrImage) -> OcrResult:
         # Keep the job non-terminal long enough for the browser's first status poll
         # to observe a real processing state rather than racing straight to completed.
         await asyncio.sleep(1.0)
+        attempts = self._attempts_by_image.get(image.sha256, 0) + 1
+        self._attempts_by_image[image.sha256] = attempts
+        if image.sha256 == RETRY_FIXTURE_SHA256 and attempts <= 3:
+            # The normal job exhausts all three retryable attempts. A later explicit
+            # Document retry creates a new Page job and succeeds on the fourth OCR call.
+            raise RuntimeError("deterministic full-stack retry fixture failure")
         dimensions = PageDimensions(width=80, height=120)
         bbox = BoundingBox(x=10, y=20, width=40, height=60)
         return OcrResult(
