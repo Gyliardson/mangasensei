@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import stat
+from contextlib import suppress
 from pathlib import Path
 from uuid import UUID
 
@@ -151,10 +152,8 @@ class PdfSpool:
     def _prepare_child_directory(self, path: Path) -> None:
         self._require_within_root(path)
         self._require_directory(path.parent)
-        try:
+        with suppress(FileExistsError):
             path.mkdir(exist_ok=True)
-        except FileExistsError:
-            pass
         self._require_directory(path)
 
     def _require_directory(self, path: Path) -> None:
