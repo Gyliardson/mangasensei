@@ -453,18 +453,25 @@ jobs:
           echo "Gitleaks synthetic-secret self-test passed."
           echo "GITLEAKS_BIN=${install_dir}/gitleaks" >> "${GITHUB_ENV}"
 
-      - name: Scan full Git history for secrets
+      - name: Scan changed commits for secrets
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
-          "${GITLEAKS_BIN}" git --redact --no-banner \
-            --report-format json --report-path /tmp/gitleaks-report.json .
-
-      - name: Upload redacted Gitleaks diagnostics
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: gitleaks-redacted-report
-          path: /tmp/gitleaks-report.json
-          if-no-files-found: error
+          if test "${GITHUB_EVENT_NAME}" = "pull_request"; then
+            head_ref="origin/${GITHUB_HEAD_REF}"
+            first_commit="$(git rev-list --reverse --first-parent "${PR_BASE_SHA}..${head_ref}" | head -n 1)"
+            test -n "${first_commit}"
+            log_opts="--no-merges --first-parent ${first_commit}^..${head_ref}"
+          elif test "${GITHUB_EVENT_NAME}" = "push" \
+            && test -n "${PUSH_BEFORE_SHA}" \
+            && test "${PUSH_BEFORE_SHA}" != "0000000000000000000000000000000000000000"; then
+            log_opts="--no-merges --first-parent ${PUSH_BEFORE_SHA}..${GITHUB_SHA}"
+          else
+            log_opts="-1"
+          fi
+          echo "Gitleaks git scope: ${log_opts}"
+          "${GITLEAKS_BIN}" git --redact --no-banner --log-opts="${log_opts}" .
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
