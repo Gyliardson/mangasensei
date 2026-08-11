@@ -204,6 +204,7 @@ async def test_document_reads_are_capability_scoped_and_membership_protected(
         "completedPages": 0,
         "processingPages": 1,
         "failedPages": 0,
+        "cancelledPages": 0,
     }
     assert progress.status_code == 200
     assert progress.json()["data"] == document.json()["data"]["progress"]
@@ -398,10 +399,14 @@ async def test_document_progress_partitions_pages_without_double_counting_readab
         "completedPages": 2,
         "processingPages": 1,
         "failedPages": 1,
+        "cancelledPages": 0,
     }
     progress = projection["progress"]
     assert (
-        progress["completedPages"] + progress["processingPages"] + progress["failedPages"]
+        progress["completedPages"]
+        + progress["processingPages"]
+        + progress["failedPages"]
+        + progress["cancelledPages"]
         == progress["totalPages"]
     )
     assert [page["ordinal"] for page in projection["pages"]] == [0, 1, 2, 3]
