@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Gyliardson/mangasensei/blob/main/scripts/public_benchmark/schemas/report-v1.json",
+  "title": "MangaSensei Public OCR Benchmark Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "metricSpecVersion",
+    "evaluator",
+    "sourceObservation",
+    "corpus",
+    "matching",
+    "recognitionNormalization",
+    "negativeZoneConfiguration",
+    "pages",
+    "aggregate",
+    "unsupportedMetricFamilies",
+    "warnings",
+    "publicSummary"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "metricSpecVersion": {"const": "public-ocr-benchmark-v1"},
+    "evaluator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "repositorySha"],
+      "properties": {
+        "version": {"type": "string", "minLength": 1},
+        "repositorySha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "sourceObservation": {"type": "object"},
+    "corpus": {"type": "object"},
+    "matching": {"type": "object"},
+    "recognitionNormalization": {"type": "object"},
+    "negativeZoneConfiguration": {"type": "object"},
+    "pages": {"type": "array", "items": {"$ref": "#/$defs/page"}},
+    "aggregate": {"$ref": "#/$defs/aggregate"},
+    "unsupportedMetricFamilies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["family", "status", "reason"],
+        "properties": {
+          "family": {"type": "string", "minLength": 1},
+          "status": {"const": "unsupported"},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "warnings": {"type": "array"},
+    "publicSummary": {"type": "object"}
+  },
+  "$defs": {
+    "status": {
+      "enum": ["measured", "unsupported", "not-measured", "not-applicable", "insufficient-data"]
+    },
+    "ratio": {
+      "type": "object",
+      "required": ["status", "numerator", "denominator", "decimal"],
+      "properties": {
+        "status": {"$ref": "#/$defs/status"},
+        "numerator": {"type": "integer", "minimum": 0},
+        "denominator": {"type": "integer", "minimum": 0},
+        "decimal": {"type": ["string", "null"]},
+        "components": {"type": "integer", "minimum": 0}
+      }
+    },
+    "detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["counts", "precision", "recall", "f1"],
+      "properties": {
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["truePositive", "falsePositive", "falseNegative"],
+          "properties": {
+            "truePositive": {"type": "integer", "minimum": 0},
+            "falsePositive": {"type": "integer", "minimum": 0},
+            "falseNegative": {"type": "integer", "minimum": 0}
+          }
+        },
+        "precision": {"$ref": "#/$defs/ratio"},
+        "recall": {"$ref": "#/$defs/ratio"},
+        "f1": {"$ref": "#/$defs/ratio"}
+      }
+    },
+    "recognition": {"type": "object"},
+    "readingOrder": {"type": "object"},
+    "negativeZones": {"type": "object"},
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pageId",
+        "detection",
+        "recognition",
+        "readingOrder",
+        "negativeZones",
+        "matches",
+        "unmatchedGroundTruth",
+        "unmatchedObservations",
+        "ignoredObservations"
+      ],
+      "properties": {
+        "pageId": {"type": "string", "minLength": 1},
+        "detection": {"$ref": "#/$defs/detection"},
+        "recognition": {"$ref": "#/$defs/recognition"},
+        "readingOrder": {"$ref": "#/$defs/readingOrder"},
+        "negativeZones": {"$ref": "#/$defs/negativeZones"},
+        "matches": {"type": "array"},
+        "unmatchedGroundTruth": {"type": "array"},
+        "unmatchedObservations": {"type": "array"},
+        "ignoredObservations": {"type": "array"}
+      }
+    },
+    "aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detection", "recognition", "readingOrder", "negativeZones"],
+      "properties": {
+        "detection": {"$ref": "#/$defs/detection"},
+        "recognition": {"$ref": "#/$defs/recognition"},
+        "readingOrder": {"$ref": "#/$defs/readingOrder"},
+        "negativeZones": {"$ref": "#/$defs/negativeZones"}
+      }
+    }
+  }
+}

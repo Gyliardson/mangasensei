@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Gyliardson/mangasensei/blob/main/scripts/public_benchmark/schemas/observation-v1.json",
+  "title": "MangaSensei Public OCR Observation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "corpus", "producer", "features", "ocr", "runtime", "pages"],
+  "properties": {
+    "schemaVersion": {"const": "1.0.0"},
+    "kind": {"const": "mangasensei-public-ocr-observation"},
+    "corpus": {"$ref": "#/$defs/corpus"},
+    "producer": {"$ref": "#/$defs/producer"},
+    "features": {"$ref": "#/$defs/features"},
+    "ocr": {"$ref": "#/$defs/ocr"},
+    "runtime": {"$ref": "#/$defs/runtime"},
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/page"}
+    }
+  },
+  "$defs": {
+    "sha40": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "schemaVersion", "manifestSha256", "annotationSchemaSha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "schemaVersion": {"type": "integer", "minimum": 1},
+        "manifestSha256": {"$ref": "#/$defs/sha256"},
+        "annotationSchemaSha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repositorySha", "mangaSenseiVersion", "sourceOcrContract", "capturedAt"],
+      "properties": {
+        "repositorySha": {"$ref": "#/$defs/sha40"},
+        "mangaSenseiVersion": {"type": "string", "minLength": 1},
+        "sourceOcrContract": {"type": "string", "minLength": 1},
+        "capturedAt": {"type": "string", "minLength": 1}
+      }
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rawPolygon",
+        "angle",
+        "confidence",
+        "readingOrder",
+        "presentationMarks",
+        "furiganaRelationships",
+        "textRole",
+        "linguistics"
+      ],
+      "properties": {
+        "rawPolygon": {"const": true},
+        "angle": {"const": true},
+        "confidence": {"const": true},
+        "readingOrder": {"const": true},
+        "presentationMarks": {"const": false},
+        "furiganaRelationships": {"const": false},
+        "textRole": {"const": false},
+        "linguistics": {"const": false}
+      }
+    },
+    "modelArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "sha256"],
+      "properties": {
+        "filename": {"type": "string", "minLength": 1, "pattern": "^[^/\\\\]+$"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "sizeBytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "ocr": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "detector",
+        "recognizer",
+        "modelManifestVersion",
+        "modelManifestSha256",
+        "configDigestSha256",
+        "upstreamRepository",
+        "upstreamCommit",
+        "modelArtifacts"
+      ],
+      "properties": {
+        "detector": {"type": "string", "minLength": 1},
+        "recognizer": {"type": "string", "minLength": 1},
+        "modelManifestVersion": {"type": "string", "minLength": 1},
+        "modelManifestSha256": {"$ref": "#/$defs/sha256"},
+        "configDigestSha256": {"$ref": "#/$defs/sha256"},
+        "upstreamRepository": {"type": "string", "minLength": 1},
+        "upstreamCommit": {"$ref": "#/$defs/sha40"},
+        "modelArtifacts": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/modelArtifact"}
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "python": {"type": "string", "minLength": 1},
+        "opencv": {"type": "string", "minLength": 1},
+        "numpy": {"type": "string", "minLength": 1},
+        "torch": {"type": "string", "minLength": 1},
+        "device": {"type": "string", "minLength": 1},
+        "platform": {"type": "string", "minLength": 1},
+        "architecture": {"type": "string", "minLength": 1}
+      }
+    },
+    "bbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {"type": "integer", "minimum": 0},
+        "y": {"type": "integer", "minimum": 0},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1}
+      }
+    },
+    "point": {
+      "type": "array",
+      "prefixItems": [{"type": "integer"}, {"type": "integer"}],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "bbox", "polygon", "angle", "confidence", "text", "readingOrder"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "bbox": {"$ref": "#/$defs/bbox"},
+        "polygon": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/point"}}
+          ]
+        },
+        "angle": {"type": "number", "minimum": -180, "maximum": 180},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "text": {"type": "string", "minLength": 1},
+        "readingOrder": {"type": "integer", "minimum": 0}
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "imageSha256", "annotationSha256", "width", "height", "regions"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "imageSha256": {"$ref": "#/$defs/sha256"},
+        "annotationSha256": {"$ref": "#/$defs/sha256"},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1},
+        "regions": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/region"}}
+      }
+    }
+  }
+}
