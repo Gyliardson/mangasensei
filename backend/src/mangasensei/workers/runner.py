@@ -949,7 +949,10 @@ def _owned_job_identity_predicates(claim: ClaimedJob, expected: str) -> tuple[An
 
 
 def _owned_job_predicates(claim: ClaimedJob, expected: str) -> tuple[Any, ...]:
-    return (*_owned_job_identity_predicates(claim, expected), JobRecord.cancel_requested_at.is_(None))
+    return (
+        *_owned_job_identity_predicates(claim, expected),
+        JobRecord.cancel_requested_at.is_(None),
+    )
 
 
 async def _lock_owned_job(session: AsyncSession, claim: ClaimedJob, expected: str) -> JobRecord:
