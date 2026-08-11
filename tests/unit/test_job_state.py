@@ -1,6 +1,11 @@
 import pytest
 
-from mangasensei.domain.jobs import InvalidJobTransition, JobStatus, transition_job
+from mangasensei.domain.jobs import (
+    InvalidJobTransition,
+    JobStatus,
+    transition_dictionary_projection_job,
+    transition_job,
+)
 
 
 def test_job_happy_path_is_explicit() -> None:
@@ -19,6 +24,18 @@ def test_job_happy_path_is_explicit() -> None:
 def test_completed_job_cannot_return_to_processing() -> None:
     with pytest.raises(InvalidJobTransition):
         transition_job(JobStatus.COMPLETED, JobStatus.PROCESSING_OCR)
+
+
+def test_generic_claimed_job_cannot_complete_directly() -> None:
+    with pytest.raises(InvalidJobTransition):
+        transition_job(JobStatus.CLAIMED, JobStatus.COMPLETED)
+
+
+def test_dictionary_projection_can_complete_directly_from_claimed() -> None:
+    assert (
+        transition_dictionary_projection_job(JobStatus.CLAIMED, JobStatus.COMPLETED)
+        is JobStatus.COMPLETED
+    )
 
 
 def test_retryable_job_can_be_claimed_without_promotion_race() -> None:
