@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     )
     pdf_renderer_timeout_seconds: int = Field(default=180, ge=30, le=180)
     pdf_import_lease_seconds: int = Field(default=240, ge=210, le=600)
-    pdf_source_ttl_seconds: int = Field(default=3600, ge=60, le=3600)
+    pdf_source_ttl_seconds: int = Field(default=3600, frozen=True)
     pdf_import_poll_seconds: float = Field(default=0.25, gt=0, le=5)
     api_rate_limit_per_minute: int = Field(default=120, ge=1, le=10_000)
     upload_rate_limit_per_minute: int = Field(default=10, ge=1, le=1_000)
