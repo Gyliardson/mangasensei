@@ -99,7 +99,7 @@ function successfulBaseFetch(current: () => "en" | "de" | "pt-BR") {
 async function uploadAndOpen() {
   const user = userEvent.setup();
   await user.upload(
-    screen.getByLabelText("Imagem da página"),
+    screen.getByLabelText(/Imagem da página/),
     new File(["image"], "page.png", { type: "image/png" }),
   );
   await user.click(screen.getByRole("button", { name: "Analisar página" }));
@@ -183,7 +183,7 @@ describe("App dictionary language", () => {
     render(<App />);
 
     const user = userEvent.setup();
-    await user.upload(screen.getByLabelText("Imagem da página"), new File(["image"], "page.png", { type: "image/png" }));
+    await user.upload(screen.getByLabelText(/Imagem da página/), new File(["image"], "page.png", { type: "image/png" }));
     await user.click(screen.getByRole("button", { name: "Analisar página" }));
 
     expect(await screen.findByText("cat")).toHaveAttribute("lang", "en");
