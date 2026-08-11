@@ -113,7 +113,7 @@ def _recognition_metrics_for_page(
         records[gt.text_form].append(record)
         per_region.append({"status": "measured", "reason": None, **record})
 
-    metrics = {
+    metrics: dict[str, object] = {
         "normalization": "strict-nfc-v1",
         "slices": {
             "all": recognition_slice(records["all"], gt_totals["all"]),
@@ -419,7 +419,7 @@ def _page_report(
     reading_order = _reading_metrics_for_page(page, observations_by_id, match_by_gt)
     negative_zones, negative_observation_ids = _negative_zone_metrics(page, observations)
 
-    page_report = {
+    page_report: dict[str, object] = {
         "pageId": page.id,
         "detection": detection_metrics(true_positive, false_positive, false_negative),
         "recognition": recognition,
