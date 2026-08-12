@@ -116,8 +116,8 @@ test("multipage-navigation", async ({ page, browser }, testInfo) => {
   await finishCapture({ browser, page, testInfo, scenario: item, artifacts: [screenshot, video] });
 });
 
-test("dictionary-language-switch", async ({ page, browser }, testInfo) => {
-  const item = scenario("dictionary-language-switch");
+test("study-language-switch", async ({ page, browser }, testInfo) => {
+  const item = scenario("study-language-switch");
   test.skip(profileForProject(testInfo.project.name) !== "desktop", "desktop-only capture story");
   await installSinglePageFixture(page);
   await openEnglishUi(page);
@@ -125,10 +125,12 @@ test("dictionary-language-switch", async ({ page, browser }, testInfo) => {
   await page.getByRole("button", { name: "Region 1: 猫です" }).click();
   const videoPath = await startScreencast(page, item.id, "desktop");
   await page.waitForTimeout(300);
-  await page.getByRole("group", { name: "Study preferences" })
-    .getByRole("combobox", { name: "Dictionary language" })
-    .selectOption("de");
-  await expect(page.getByText("Katze", { exact: true })).toHaveAttribute("lang", "de");
+  const studyControls = page.getByRole("group", { name: "Study preferences" });
+  await expect(studyControls.getByRole("combobox", { name: "Dictionary language" })).toHaveCount(0);
+  await studyControls.getByRole("combobox", { name: "Study language" }).selectOption("pt-BR");
+  await expect(page.getByText("É um gato.", { exact: true })).toHaveAttribute("lang", "pt-BR");
+  await expect(page.getByText("cat", { exact: true })).toHaveAttribute("lang", "en");
+  await expect(page.getByText("Requested dictionary: English")).toBeVisible();
   await page.waitForTimeout(500);
   const video = await stopScreencast(page, videoPath);
   const screenshot = await captureScreenshot(page, item.id, "desktop");
