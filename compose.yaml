@@ -76,9 +76,11 @@ services:
       - python
       - -c
       - >-
+        import time;
         from pathlib import Path;
         from mangasensei.pdf_imports.spool import PdfSpool;
-        PdfSpool(Path("/app/var/pdf-spool"), Path("/app/var/pdf-renderer-output"))
+        PdfSpool(Path("/app/var/pdf-spool"), Path("/app/var/pdf-renderer-output"));
+        time.sleep(2147483647)
     environment:
       MANGASENSEI_ENVIRONMENT: production
       MANGASENSEI_PDF_SPOOL_ROOT: /app/var/pdf-spool
@@ -88,8 +90,17 @@ services:
       - pdf_renderer_output:/app/var/pdf-renderer-output
     network_mode: none
     healthcheck:
-      disable: true
-    restart: "no"
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os,sys; from pathlib import Path; required=(Path('/app/var/pdf-spool/staging'),Path('/app/var/pdf-spool/requests'),Path('/app/var/pdf-spool/imports'),Path('/app/var/pdf-renderer-output/imports'),Path('/app/var/pdf-renderer-output/renderer')); sys.exit(0 if os.geteuid() == 10001 and all(path.is_dir() for path in required) else 1)
+      interval: 2s
+      timeout: 2s
+      start_period: 1s
+      retries: 10
+    restart: unless-stopped
 
   api:
     <<: *app-service
@@ -106,7 +117,7 @@ services:
       migrate:
         condition: service_completed_successfully
       pdf-spool-init:
-        condition: service_completed_successfully
+        condition: service_healthy
     ports:
       - "127.0.0.1:${MANGASENSEI_PORT:-8000}:8000"
     volumes:
@@ -126,7 +137,7 @@ services:
       MANGASENSEI_PDF_RENDERER_OUTPUT_ROOT: /app/var/pdf-renderer-output
     depends_on:
       pdf-spool-init:
-        condition: service_completed_successfully
+        condition: service_healthy
     volumes:
       - pdf_spool_input:/app/var/pdf-spool:ro
       - pdf_renderer_output:/app/var/pdf-renderer-output
@@ -162,7 +173,7 @@ services:
       migrate:
         condition: service_completed_successfully
       pdf-spool-init:
-        condition: service_completed_successfully
+        condition: service_healthy
       pdf-renderer:
         condition: service_healthy
     volumes:
