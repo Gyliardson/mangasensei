@@ -106,15 +106,25 @@ def _render_request_child(
     except Exception:
         renderer._write_failure_if_absent(request, "pdf_render_failed")
     finally:
-        # A successfully persisted terminal record is the child/parent hand-off boundary.
-        if not manifest_path.exists() and not failure_path.exists():
+        if not renderer._spool.output_file_exists(
+            manifest_path
+        ) and not renderer._spool.output_file_exists(failure_path):
             raise RuntimeError("renderer child exited without a terminal record")
 
 
 class PdfRenderer:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._spool = PdfSpool(settings.pdf_spool_root)
+        output_value = os.environ.get("MANGASENSEI_PDF_RENDERER_OUTPUT_ROOT")
+        if settings.environment == "production" and not output_value:
+            raise RuntimeError("production PDF renderer requires a split output channel")
+        output_root = Path(output_value) if output_value else None
+        self._spool = PdfSpool(settings.pdf_spool_root, output_root)
+        if output_root is not None:
+            if not self._spool.split_output:
+                raise RuntimeError("PDF renderer input and output roots must be distinct")
+            if os.geteuid() == self._spool.trusted_uid:
+                raise RuntimeError("PDF renderer must not share the coordinator Unix identity")
         self._provenance = renderer_provenance()
         self._instance_id = f"{socket.gethostname()}-{os.getpid()}"[:128]
 
@@ -140,7 +150,8 @@ class PdfRenderer:
                     raise PdfSpoolError("request fencing identity mismatch")
                 self._process(path, request)
             except (PdfSpoolError, ValidationError, ValueError):
-                path.unlink(missing_ok=True)
+                if not self._spool.split_output:
+                    path.unlink(missing_ok=True)
             return True
         return False
 
@@ -148,8 +159,11 @@ class PdfRenderer:
         self._spool.prepare_attempt_dir(request.import_id, request.fencing_token)
         manifest_path = self._spool.manifest_path(request.import_id, request.fencing_token)
         failure_path = self._spool.failure_path(request.import_id, request.fencing_token)
-        if manifest_path.exists() or failure_path.exists():
-            request_path.unlink(missing_ok=True)
+        if self._spool.output_file_exists(manifest_path) or self._spool.output_file_exists(
+            failure_path
+        ):
+            if not self._spool.split_output:
+                request_path.unlink(missing_ok=True)
             return
 
         context = multiprocessing.get_context("spawn")
@@ -177,11 +191,16 @@ class PdfRenderer:
                     process.kill()
                     process.join()
                 self._write_failure_if_absent(request, "pdf_renderer_timeout")
-            elif process.exitcode != 0 and not manifest_path.exists() and not failure_path.exists():
+            elif (
+                process.exitcode != 0
+                and not self._spool.output_file_exists(manifest_path)
+                and not self._spool.output_file_exists(failure_path)
+            ):
                 self._write_failure_if_absent(request, "pdf_renderer_crash")
             process.close()
         finally:
-            request_path.unlink(missing_ok=True)
+            if not self._spool.split_output:
+                request_path.unlink(missing_ok=True)
             self._write_heartbeat()
 
     def _write_failure_if_absent(
@@ -189,7 +208,9 @@ class PdfRenderer:
     ) -> None:
         manifest_path = self._spool.manifest_path(request.import_id, request.fencing_token)
         failure_path = self._spool.failure_path(request.import_id, request.fencing_token)
-        if manifest_path.exists() or failure_path.exists():
+        if self._spool.output_file_exists(manifest_path) or self._spool.output_file_exists(
+            failure_path
+        ):
             return
         self._spool.write_model_atomic(
             failure_path,
@@ -298,7 +319,7 @@ class PdfRenderer:
                     output_path = self._spool.page_path(
                         request.import_id, request.fencing_token, filename
                     )
-                    self._write_bytes_exclusive(output_path, content)
+                    self._spool.write_bytes_exclusive(output_path, content)
                     pages.append(
                         PdfRasterPage(
                             ordinal=ordinal,
@@ -350,20 +371,6 @@ class PdfRenderer:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
         return digest.hexdigest()
-
-    @staticmethod
-    def _write_bytes_exclusive(path: Path, content: bytes) -> None:
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        if hasattr(os, "O_NOFOLLOW"):
-            flags |= os.O_NOFOLLOW
-        descriptor = os.open(path, flags, 0o600)
-        try:
-            with os.fdopen(descriptor, "wb", closefd=False) as handle:
-                handle.write(content)
-                handle.flush()
-                os.fsync(handle.fileno())
-        finally:
-            os.close(descriptor)
 
     def _write_heartbeat(self) -> None:
         self._spool.write_model_atomic(

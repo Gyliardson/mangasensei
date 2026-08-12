@@ -70,6 +70,27 @@ services:
     healthcheck:
       disable: true
 
+  pdf-spool-init:
+    <<: *app-service
+    command:
+      - python
+      - -c
+      - >-
+        from pathlib import Path;
+        from mangasensei.pdf_imports.spool import PdfSpool;
+        PdfSpool(Path("/app/var/pdf-spool"))
+    environment:
+      MANGASENSEI_ENVIRONMENT: production
+      MANGASENSEI_PDF_SPOOL_ROOT: /app/var/pdf-spool
+      MANGASENSEI_PDF_RENDERER_OUTPUT_ROOT: /app/var/pdf-renderer-output
+    volumes:
+      - pdf_spool_input:/app/var/pdf-spool
+      - pdf_renderer_output:/app/var/pdf-renderer-output
+    network_mode: none
+    healthcheck:
+      disable: true
+    restart: "no"
+
   api:
     <<: *app-service
     command: ["mangasensei", "api", "--host", "0.0.0.0", "--port", "8000"]
@@ -84,21 +105,31 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      pdf-spool-init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:${MANGASENSEI_PORT:-8000}:8000"
     volumes:
       - app_storage:/app/var/storage
-      - pdf_spool:/app/var/pdf-spool
+      - pdf_spool_input:/app/var/pdf-spool
     restart: unless-stopped
 
   pdf-renderer:
     <<: *app-service
     command: ["mangasensei", "pdf-renderer"]
+    user: "10002:10002"
+    group_add:
+      - "10001"
     environment:
       MANGASENSEI_ENVIRONMENT: production
       MANGASENSEI_PDF_SPOOL_ROOT: /app/var/pdf-spool
+      MANGASENSEI_PDF_RENDERER_OUTPUT_ROOT: /app/var/pdf-renderer-output
+    depends_on:
+      pdf-spool-init:
+        condition: service_completed_successfully
     volumes:
-      - pdf_spool:/app/var/pdf-spool
+      - pdf_spool_input:/app/var/pdf-spool:ro
+      - pdf_renderer_output:/app/var/pdf-renderer-output
     network_mode: none
     mem_limit: 1g
     cpus: 1.0
@@ -109,7 +140,7 @@ services:
         - python
         - -c
         - >-
-          import sys; cmd=open('/proc/1/cmdline','rb').read(); sys.exit(0 if b'mangasensei' in cmd and b'pdf-renderer' in cmd else 1)
+          import os,sys; cmd=open('/proc/1/cmdline','rb').read(); sys.exit(0 if os.geteuid() == 10002 and b'mangasensei' in cmd and b'pdf-renderer' in cmd else 1)
       interval: 30s
       timeout: 5s
       start_period: 10s
@@ -124,16 +155,20 @@ services:
       MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/mangasensei
       MANGASENSEI_STORAGE_ROOT: /app/var/storage
       MANGASENSEI_PDF_SPOOL_ROOT: /app/var/pdf-spool
+      MANGASENSEI_PDF_RENDERER_OUTPUT_ROOT: /app/var/pdf-renderer-output
       MANGASENSEI_CAPABILITY_PEPPERS: ${MANGASENSEI_CAPABILITY_PEPPERS:?set MANGASENSEI_CAPABILITY_PEPPERS}
       MANGASENSEI_RETENTION_HOURS: "24"
     depends_on:
       migrate:
         condition: service_completed_successfully
+      pdf-spool-init:
+        condition: service_completed_successfully
       pdf-renderer:
         condition: service_healthy
     volumes:
       - app_storage:/app/var/storage
-      - pdf_spool:/app/var/pdf-spool
+      - pdf_spool_input:/app/var/pdf-spool
+      - pdf_renderer_output:/app/var/pdf-renderer-output
     mem_limit: 1536m
     cpus: 1.0
     pids_limit: 64
@@ -219,10 +254,16 @@ volumes:
   app_storage:
   jmdict_data:
   ocr_models:
-  pdf_spool:
+  pdf_spool_input:
     driver: local
     driver_opts:
       type: tmpfs
       device: tmpfs
-      o: size=1g,uid=10001,gid=10001,mode=0700
+      o: size=272m,uid=10001,gid=10001,mode=0750
+  pdf_renderer_output:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=544m,uid=10001,gid=10001,mode=0710
   postgres_data:
