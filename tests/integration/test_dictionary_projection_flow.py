@@ -273,7 +273,9 @@ async def test_english_dictionary_reprojection_is_local_durable_idempotent_and_a
         )
         assert english_request.status_code == 202
         english_job_id = english_request.json()["data"]["jobId"]
-        assert english_request.json()["data"]["requestedDictionaryLanguage"] == "en"
+        assert (
+            english_request.json()["data"]["requestedDictionaryLanguage"] == "en"
+        )
 
         duplicate = await client.post(
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",

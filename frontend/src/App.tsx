@@ -20,7 +20,6 @@ import {
   type StudyPage,
   type UploadData,
   fetchProtectedImage,
-  reprocessDictionaryLanguage,
   reprocessStudyLanguage,
   uploadDocument,
   uploadPage,
@@ -54,12 +53,8 @@ type LocalErrorCode = "select_image_first" | "unexpected_processing";
 type DisplayError =
   | { readonly kind: "local"; readonly code: LocalErrorCode }
   | { readonly kind: "api"; readonly code: string };
-type LanguageMutation = "study" | "dictionary" | null;
+type LanguageMutation = "study" | null;
 type AppPhase = "idle" | "uploading" | "processing" | "complete" | "document" | "error";
-
-function requestedDictionaryLanguageOf(page: StudyPage): DictionaryLanguage {
-  return page.requestedDictionaryLanguage ?? "en";
-}
 
 export function App() {
   const [files, setFiles] = useState<File[]>([]);
@@ -74,12 +69,13 @@ export function App() {
   const [preferredStudyLanguage, setPreferredStudyLanguage] = useState<StudyLanguage>(() =>
     loadStudyLanguagePreference(),
   );
-  const [preferredDictionaryLanguage, setPreferredDictionaryLanguage] = useState<DictionaryLanguage>(() =>
-    loadDictionaryLanguagePreference(),
-  );
+  const [preferredDictionaryLanguage] = useState<DictionaryLanguage>(() => {
+    const normalized = loadDictionaryLanguagePreference();
+    saveDictionaryLanguagePreference(normalized);
+    return normalized;
+  });
   const [languageMutation, setLanguageMutation] = useState<LanguageMutation>(null);
   const [studyLanguageErrorCode, setStudyLanguageErrorCode] = useState<string | null>(null);
-  const [dictionaryLanguageErrorCode, setDictionaryLanguageErrorCode] = useState<string | null>(null);
   const operation = useRef<AbortController | null>(null);
   const messages = messagesFor(uiLocale);
   const documentMessages = documentMessagesFor(uiLocale);
@@ -112,7 +108,6 @@ export function App() {
     setError(null);
     setLanguageMutation(null);
     setStudyLanguageErrorCode(null);
-    setDictionaryLanguageErrorCode(null);
   };
 
   const changeUiLocale = (value: string) => {
@@ -154,42 +149,6 @@ export function App() {
     setFiles((current) => current.filter((_, candidateIndex) => candidateIndex !== index));
   };
 
-  const runDictionaryReprojection = async (
-    currentPage: StudyPage,
-    access: UploadData,
-    target: DictionaryLanguage,
-    controller: AbortController,
-  ) => {
-    const previousLanguage = requestedDictionaryLanguageOf(currentPage);
-    setPreferredDictionaryLanguage(target);
-    saveDictionaryLanguagePreference(target);
-    setDictionaryLanguageErrorCode(null);
-    if (target === previousLanguage) {
-      if (operation.current === controller) operation.current = null;
-      return;
-    }
-
-    setLanguageMutation("dictionary");
-    try {
-      await reprocessDictionaryLanguage(access, target, controller.signal);
-      const result = await waitForPage(access, controller.signal, setJobStatus);
-      setPage(result);
-      const persistedLanguage = requestedDictionaryLanguageOf(result);
-      setPreferredDictionaryLanguage(persistedLanguage);
-      saveDictionaryLanguagePreference(persistedLanguage);
-    } catch (caught) {
-      if (caught instanceof DOMException && caught.name === "AbortError") return;
-      setPreferredDictionaryLanguage(previousLanguage);
-      saveDictionaryLanguagePreference(previousLanguage);
-      setDictionaryLanguageErrorCode(
-        caught instanceof ApiError ? caught.code : "dictionary_language_update_failed",
-      );
-    } finally {
-      if (operation.current === controller) operation.current = null;
-      setLanguageMutation(null);
-    }
-  };
-
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (files.length === 0) {
@@ -227,15 +186,9 @@ export function App() {
       setPage(result);
       setPreferredStudyLanguage(result.studyLanguage);
       saveStudyLanguagePreference(result.studyLanguage);
+      saveDictionaryLanguagePreference("en");
       setPhase("complete");
-
-      const persistedDictionaryLanguage = requestedDictionaryLanguageOf(result);
-      if (preferredDictionaryLanguage === persistedDictionaryLanguage) {
-        saveDictionaryLanguagePreference(persistedDictionaryLanguage);
-        operation.current = null;
-        return;
-      }
-      await runDictionaryReprojection(result, upload, preferredDictionaryLanguage, controller);
+      operation.current = null;
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setPageAccess(null);
@@ -277,28 +230,10 @@ export function App() {
     }
   };
 
-  const changeDictionaryLanguage = async (target: DictionaryLanguage) => {
-    if (!page || !pageAccess || languageMutation) return;
-    if (target === requestedDictionaryLanguageOf(page)) {
-      setPreferredDictionaryLanguage(target);
-      saveDictionaryLanguagePreference(target);
-      setDictionaryLanguageErrorCode(null);
-      return;
-    }
-    const controller = new AbortController();
-    operation.current = controller;
-    await runDictionaryReprojection(page, pageAccess, target, controller);
-  };
-
   const studyLanguageError = studyLanguageErrorCode
     ? studyLanguageErrorCode === "study_language_update_failed"
       ? messages.studyLanguageUpdateFailed
       : messages.apiError(studyLanguageErrorCode)
-    : null;
-  const dictionaryLanguageError = dictionaryLanguageErrorCode
-    ? dictionaryLanguageErrorCode === "dictionary_language_update_failed"
-      ? messages.dictionaryLanguageUpdateFailed
-      : messages.apiError(dictionaryLanguageErrorCode)
     : null;
 
   if (phase === "document" && documentAccess) {
@@ -311,7 +246,7 @@ export function App() {
           preferredStudyLanguage={preferredStudyLanguage}
           preferredDictionaryLanguage={preferredDictionaryLanguage}
           onPreferredStudyLanguageChange={setPreferredStudyLanguage}
-          onPreferredDictionaryLanguageChange={setPreferredDictionaryLanguage}
+          onPreferredDictionaryLanguageChange={() => undefined}
           onReset={reset}
         />
         <Footer />
@@ -331,9 +266,9 @@ export function App() {
           preferredDictionaryLanguage={preferredDictionaryLanguage}
           languageMutation={languageMutation}
           studyLanguageError={studyLanguageError}
-          dictionaryLanguageError={dictionaryLanguageError}
+          dictionaryLanguageError={null}
           onStudyLanguageChange={changeStudyLanguage}
-          onDictionaryLanguageChange={changeDictionaryLanguage}
+          onDictionaryLanguageChange={() => undefined}
           onReset={reset}
         />
         <Footer />

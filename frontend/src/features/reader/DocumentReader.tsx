@@ -12,14 +12,10 @@ import {
   fetchDocumentProtectedImage,
   fetchDocumentSnapshot,
   reorderDocument,
-  reprocessDocumentDictionaryLanguage,
   reprocessDocumentStudyLanguage,
   retryFailedDocumentPages,
 } from "../../lib/api";
-import {
-  type DictionaryLanguage,
-  saveDictionaryLanguagePreference,
-} from "../../lib/dictionaryLanguage";
+import type { DictionaryLanguage } from "../../lib/dictionaryLanguage";
 import {
   documentNeedsPolling,
   waitForDocumentPageResult,
@@ -44,12 +40,8 @@ interface DocumentReaderProps {
   readonly onReset: () => void;
 }
 
-type LanguageMutation = "study" | "dictionary" | null;
+type LanguageMutation = "study" | null;
 type DocumentMutation = "retry" | "cancel" | "reorder" | null;
-
-function requestedDictionaryLanguageOf(page: StudyPage): DictionaryLanguage {
-  return page.requestedDictionaryLanguage ?? "en";
-}
 
 function isFailedStatus(status: JobStatus | undefined): boolean {
   return status === "failed" || status === "expired";
@@ -65,7 +57,6 @@ export function DocumentReader({
   preferredStudyLanguage,
   preferredDictionaryLanguage,
   onPreferredStudyLanguageChange,
-  onPreferredDictionaryLanguageChange,
   onReset,
 }: DocumentReaderProps) {
   const [snapshot, setSnapshot] = useState<DocumentSnapshot>(access);
@@ -76,20 +67,16 @@ export function DocumentReader({
   const [documentMutation, setDocumentMutation] = useState<DocumentMutation>(null);
   const [documentActionErrorCode, setDocumentActionErrorCode] = useState<string | null>(null);
   const [studyLanguageErrorCode, setStudyLanguageErrorCode] = useState<string | null>(null);
-  const [dictionaryLanguageErrorCode, setDictionaryLanguageErrorCode] = useState<string | null>(null);
   const pageRequest = useRef<AbortController | null>(null);
   const mutationRequest = useRef<AbortController | null>(null);
   const documentActionRequest = useRef<AbortController | null>(null);
   const requestGeneration = useRef(0);
-  const autoDictionaryAttempt = useRef<string | null>(null);
   const currentPageIdRef = useRef(currentPageId);
-  const preferredDictionaryLanguageRef = useRef(preferredDictionaryLanguage);
   const imageUrlRef = useRef<string | null>(null);
   const messages = messagesFor(uiLocale);
   const documentMessages = documentMessagesFor(uiLocale);
 
   currentPageIdRef.current = currentPageId;
-  preferredDictionaryLanguageRef.current = preferredDictionaryLanguage;
 
   const rawCurrentIndex = snapshot.pages.findIndex(
     (summary) => summary.pageId === currentPageId,
@@ -147,10 +134,8 @@ export function DocumentReader({
     mutationRequest.current = null;
     setLanguageMutation(null);
     setStudyLanguageErrorCode(null);
-    setDictionaryLanguageErrorCode(null);
     setPage(null);
     replaceImageUrl(null);
-    autoDictionaryAttempt.current = null;
 
     if (!currentResultAvailable) return;
 
@@ -179,46 +164,6 @@ export function DocumentReader({
         setPage(loadedPage);
         replaceImageUrl(loadedImage);
         protectedImage = null;
-
-        const targetDictionaryLanguage = preferredDictionaryLanguageRef.current;
-        const persistedDictionaryLanguage = requestedDictionaryLanguageOf(loadedPage);
-        if (persistedDictionaryLanguage !== targetDictionaryLanguage) {
-          const attemptKey = `${currentPageId}:${targetDictionaryLanguage}`;
-          if (autoDictionaryAttempt.current !== attemptKey) {
-            autoDictionaryAttempt.current = attemptKey;
-            const mutation = new AbortController();
-            mutationRequest.current = mutation;
-            setLanguageMutation("dictionary");
-            try {
-              await reprocessDocumentDictionaryLanguage(
-                access,
-                currentPageId,
-                targetDictionaryLanguage,
-                mutation.signal,
-              );
-              const refreshed = await waitForDocumentPageResult(
-                access,
-                currentPageId,
-                mutation.signal,
-                setSnapshot,
-                (candidate) =>
-                  requestedDictionaryLanguageOf(candidate) === targetDictionaryLanguage,
-              );
-              if (currentPageIdRef.current === currentPageId) setPage(refreshed);
-            } catch (caught) {
-              if (!(caught instanceof DOMException && caught.name === "AbortError")) {
-                setDictionaryLanguageErrorCode(
-                  caught instanceof ApiError ? caught.code : "dictionary_language_update_failed",
-                );
-              }
-            } finally {
-              if (mutationRequest.current === mutation) {
-                mutationRequest.current = null;
-                setLanguageMutation(null);
-              }
-            }
-          }
-        }
       } catch (caught) {
         if (protectedImage) URL.revokeObjectURL(protectedImage);
         if (!(caught instanceof DOMException && caught.name === "AbortError")) {
@@ -322,52 +267,10 @@ export function DocumentReader({
     }
   };
 
-  const changeDictionaryLanguage = async (target: DictionaryLanguage) => {
-    if (!page || languageMutation) return;
-    const previousPreference = preferredDictionaryLanguage;
-    onPreferredDictionaryLanguageChange(target);
-    saveDictionaryLanguagePreference(target);
-    setDictionaryLanguageErrorCode(null);
-    if (target === requestedDictionaryLanguageOf(page)) return;
-
-    const controller = new AbortController();
-    mutationRequest.current?.abort();
-    mutationRequest.current = controller;
-    setLanguageMutation("dictionary");
-    try {
-      await reprocessDocumentDictionaryLanguage(access, page.pageId, target, controller.signal);
-      const refreshed = await waitForDocumentPageResult(
-        access,
-        page.pageId,
-        controller.signal,
-        setSnapshot,
-        (candidate) => requestedDictionaryLanguageOf(candidate) === target,
-      );
-      if (currentPageIdRef.current === page.pageId) setPage(refreshed);
-    } catch (caught) {
-      if (caught instanceof DOMException && caught.name === "AbortError") return;
-      onPreferredDictionaryLanguageChange(previousPreference);
-      saveDictionaryLanguagePreference(previousPreference);
-      setDictionaryLanguageErrorCode(
-        caught instanceof ApiError ? caught.code : "dictionary_language_update_failed",
-      );
-    } finally {
-      if (mutationRequest.current === controller) {
-        mutationRequest.current = null;
-        setLanguageMutation(null);
-      }
-    }
-  };
-
   const studyLanguageError = studyLanguageErrorCode
     ? studyLanguageErrorCode === "study_language_update_failed"
       ? messages.studyLanguageUpdateFailed
       : messages.apiError(studyLanguageErrorCode)
-    : null;
-  const dictionaryLanguageError = dictionaryLanguageErrorCode
-    ? dictionaryLanguageErrorCode === "dictionary_language_update_failed"
-      ? messages.dictionaryLanguageUpdateFailed
-      : messages.apiError(dictionaryLanguageErrorCode)
     : null;
   const documentActionError = documentActionErrorCode
     ? documentActionErrorCode === "document_action_failed"
@@ -517,9 +420,9 @@ export function DocumentReader({
         preferredDictionaryLanguage={preferredDictionaryLanguage}
         languageMutation={languageMutation}
         studyLanguageError={studyLanguageError}
-        dictionaryLanguageError={dictionaryLanguageError}
+        dictionaryLanguageError={null}
         onStudyLanguageChange={(language) => void changeStudyLanguage(language)}
-        onDictionaryLanguageChange={(language) => void changeDictionaryLanguage(language)}
+        onDictionaryLanguageChange={() => undefined}
         onReset={onReset}
       />
     </>
