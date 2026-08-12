@@ -22,10 +22,10 @@ describe("App UI localization", () => {
     expect(screen.getByRole("combobox", { name: "Study language" })).toHaveValue("pt-BR");
     expect(document.documentElement).toHaveAttribute("lang", "en");
     expect(window.localStorage.getItem(UI_LOCALE_PREFERENCE_KEY)).toBeNull();
-    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBeNull();
+    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBe("en");
   });
 
-  it("switches UI and study languages without rewriting dictionary preference", async () => {
+  it("switches UI and study languages while normalizing a stale dictionary preference", async () => {
     const user = userEvent.setup();
     window.localStorage.setItem(UI_LOCALE_PREFERENCE_KEY, "en");
     window.localStorage.setItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY, "de");
@@ -39,7 +39,7 @@ describe("App UI localization", () => {
     expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("en");
     expect(window.localStorage.getItem(UI_LOCALE_PREFERENCE_KEY)).toBe("pt-BR");
     expect(window.localStorage.getItem(STUDY_LANGUAGE_PREFERENCE_KEY)).toBe("en");
-    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBe("de");
+    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBe("en");
     expect(document.documentElement).toHaveAttribute("lang", "pt-BR");
 
     first.unmount();
@@ -47,18 +47,18 @@ describe("App UI localization", () => {
 
     expect(screen.getByRole("combobox", { name: "Idioma da interface" })).toHaveValue("pt-BR");
     expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("en");
-    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBe("de");
+    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBe("en");
     expect(document.documentElement).toHaveAttribute("lang", "pt-BR");
   });
 
-  it("falls back to English for an invalid persisted UI locale without changing dictionary preference", () => {
+  it("falls back to English for invalid persisted UI and dictionary preferences", () => {
     window.localStorage.setItem(UI_LOCALE_PREFERENCE_KEY, "es");
     window.localStorage.setItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY, "pt-BR");
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "Read Japanese in context" })).toBeVisible();
     expect(screen.getByRole("combobox", { name: "Interface language" })).toHaveValue("en");
-    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBe("pt-BR");
+    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBe("en");
     expect(document.documentElement).toHaveAttribute("lang", "en");
   });
 });
