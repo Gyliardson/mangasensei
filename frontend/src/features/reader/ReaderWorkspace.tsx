@@ -8,10 +8,7 @@ import type {
   StudyToken,
   VocabularyItem,
 } from "../../lib/api";
-import {
-  type DictionaryLanguage,
-  isDictionaryLanguage,
-} from "../../lib/dictionaryLanguage";
+import type { DictionaryLanguage } from "../../lib/dictionaryLanguage";
 import {
   type StudyLanguage,
   isStudyLanguage,
@@ -65,7 +62,6 @@ export function ReaderWorkspace({
   studyLanguageError,
   dictionaryLanguageError,
   onStudyLanguageChange,
-  onDictionaryLanguageChange,
   onReset,
 }: ReaderWorkspaceProps) {
   const [selectedId, setSelectedId] = useState(page.regions[0]?.id ?? null);
@@ -147,11 +143,6 @@ export function ReaderWorkspace({
     onStudyLanguageChange(value);
   };
 
-  const changeDictionaryLanguage = (value: string) => {
-    if (!isDictionaryLanguage(value)) return;
-    onDictionaryLanguageChange(value);
-  };
-
   const changeFitMode = (value: string) => {
     if (!isReaderFitMode(value)) return;
     setViewportPreference((current) => {
@@ -194,19 +185,6 @@ export function ReaderWorkspace({
                 >
                   <option value="pt-BR">{messages.studyLanguageName("pt-BR")}</option>
                   <option value="en">{messages.studyLanguageName("en")}</option>
-                </select>
-              </label>
-              <label className="reader-preference">
-                <span>{messages.dictionaryLanguageLabel}</span>
-                <select
-                  aria-label={messages.dictionaryLanguageLabel}
-                  value={preferredDictionaryLanguage}
-                  disabled={languageUpdating}
-                  onChange={(event) => changeDictionaryLanguage(event.currentTarget.value)}
-                >
-                  <option value="en">{messages.dictionaryLanguageName("en")}</option>
-                  <option value="de">{messages.dictionaryLanguageName("de")}</option>
-                  <option value="pt-BR">{messages.dictionaryLanguageName("pt-BR")}</option>
                 </select>
               </label>
               <label className="reader-preference">
