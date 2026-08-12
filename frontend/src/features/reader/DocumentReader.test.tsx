@@ -626,11 +626,10 @@ describe("DocumentReader", () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:page-a");
   });
 
-  it("automatically reprojects only the opened child when the dictionary preference differs", async () => {
-    const refreshed = studyPage("page-a", {
-      requestedDictionaryLanguage: "de",
-    });
-    pollingMocks.waitForDocumentPageResult.mockResolvedValue(refreshed);
+  it("keeps historical dictionary metadata readable without automatic reprojection", async () => {
+    apiMocks.fetchDocumentPage.mockResolvedValue(
+      studyPage("page-a", { requestedDictionaryLanguage: "de" }),
+    );
     const document = access(
       [
         { pageId: "page-a", ordinal: 0, status: "completed", resultAvailable: true },
@@ -639,19 +638,11 @@ describe("DocumentReader", () => {
       { totalPages: 2, completedPages: 2, processingPages: 0, failedPages: 0 },
     );
 
-    renderReader(document, { preferredDictionaryLanguage: "de" });
+    renderReader(document, { preferredDictionaryLanguage: "en" });
 
-    await waitFor(() => {
-      expect(apiMocks.reprocessDocumentDictionaryLanguage).toHaveBeenCalledWith(
-        document,
-        "page-a",
-        "de",
-        expect.any(AbortSignal),
-      );
-    });
-    expect(apiMocks.reprocessDocumentDictionaryLanguage).toHaveBeenCalledTimes(1);
-    expect(apiMocks.fetchDocumentPage).toHaveBeenCalledTimes(1);
     expect(await screen.findByTestId("reader-dictionary")).toHaveTextContent("de");
+    expect(apiMocks.reprocessDocumentDictionaryLanguage).not.toHaveBeenCalled();
+    expect(apiMocks.fetchDocumentPage).toHaveBeenCalledTimes(1);
   });
 
   it("reprocesses study language only for the current child", async () => {
@@ -681,12 +672,9 @@ describe("DocumentReader", () => {
     expect(await screen.findByTestId("reader-study")).toHaveTextContent("en");
   });
 
-  it("reprocesses dictionary language only for the current child", async () => {
+  it("ignores retired dictionary mutation callbacks for the current child", async () => {
     const user = userEvent.setup();
     const onPreferredDictionaryLanguageChange = vi.fn();
-    pollingMocks.waitForDocumentPageResult.mockResolvedValue(
-      studyPage("page-a", { requestedDictionaryLanguage: "de" }),
-    );
     const document = access(
       [{ pageId: "page-a", ordinal: 0, status: "completed", resultAvailable: true }],
       { totalPages: 1, completedPages: 1, processingPages: 0, failedPages: 0 },
@@ -696,34 +684,27 @@ describe("DocumentReader", () => {
 
     await user.click(screen.getByRole("button", { name: "change-dictionary" }));
 
-    await waitFor(() => {
-      expect(apiMocks.reprocessDocumentDictionaryLanguage).toHaveBeenCalledWith(
-        document,
-        "page-a",
-        "de",
-        expect.any(AbortSignal),
-      );
-    });
-    expect(onPreferredDictionaryLanguageChange).toHaveBeenCalledWith("de");
-    expect(await screen.findByTestId("reader-dictionary")).toHaveTextContent("de");
+    expect(apiMocks.reprocessDocumentDictionaryLanguage).not.toHaveBeenCalled();
+    expect(onPreferredDictionaryLanguageChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId("reader-dictionary")).toHaveTextContent("en");
+    expect(screen.getByTestId("reader-mutation")).toHaveTextContent("none");
   });
 
-  it("rolls dictionary preference back after a current-child mutation failure", async () => {
+  it("does not surface dictionary mutation errors after the retired action is ignored", async () => {
     const user = userEvent.setup();
-    const onPreferredDictionaryLanguageChange = vi.fn();
     apiMocks.reprocessDocumentDictionaryLanguage.mockRejectedValue(new Error("projection failed"));
     const document = access(
       [{ pageId: "page-a", ordinal: 0, status: "completed", resultAvailable: true }],
       { totalPages: 1, completedPages: 1, processingPages: 0, failedPages: 0 },
     );
-    renderReader(document, { onPreferredDictionaryLanguageChange });
+    renderReader(document);
     await screen.findByTestId("reader-page");
 
     await user.click(screen.getByRole("button", { name: "change-dictionary" }));
 
-    expect(await screen.findByTestId("dictionary-error")).toBeVisible();
-    expect(onPreferredDictionaryLanguageChange).toHaveBeenNthCalledWith(1, "de");
-    expect(onPreferredDictionaryLanguageChange).toHaveBeenLastCalledWith("en");
+    expect(apiMocks.reprocessDocumentDictionaryLanguage).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("dictionary-error")).not.toBeInTheDocument();
+    expect(screen.getByTestId("reader-dictionary")).toHaveTextContent("en");
   });
 
   it("renders localized Portuguese document navigation without changing page semantics", () => {
