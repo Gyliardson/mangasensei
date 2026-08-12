@@ -141,6 +141,7 @@ class EnglishDictionary:
 
 @dataclass(frozen=True, slots=True)
 class _FixturePack:
+    language: str
     source: JmdictGlossSourceReference
 
     def lookup_identity(self, identity: LexicalFormIdentity) -> JmdictGlossLookup:
@@ -162,12 +163,13 @@ class _Provider:
     def __init__(self) -> None:
         self.loads: list[str] = []
         self._pack = _FixturePack(
+            "en",
             JmdictGlossSourceReference(
                 dataset="JMdict",
                 language="en",
                 version=_VERSION,
                 digest_sha256=_EN_DIGEST.hex(),
-            )
+            ),
         )
 
     def is_supported_language(self, language: str) -> bool:
