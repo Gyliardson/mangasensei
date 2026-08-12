@@ -201,13 +201,13 @@ jobs:
               "/app/var/pdf-renderer-output",
           }
           assert renderer_mounts["/app/var/pdf-spool"]["read_only"] is True
-          assert renderer_mounts["/app/var/pdf-renderer-output"]["read_only"] is False
+          assert renderer_mounts["/app/var/pdf-renderer-output"].get("read_only", False) is False
           assert "/app/var/storage" not in renderer_mounts
           assert "/app/var/pdf-renderer-output" not in api_mounts
-          assert api_mounts["/app/var/pdf-spool"]["read_only"] is False
-          assert importer_mounts["/app/var/pdf-spool"]["read_only"] is False
-          assert importer_mounts["/app/var/pdf-renderer-output"]["read_only"] is False
-          assert importer_mounts["/app/var/storage"]["read_only"] is False
+          assert api_mounts["/app/var/pdf-spool"].get("read_only", False) is False
+          assert importer_mounts["/app/var/pdf-spool"].get("read_only", False) is False
+          assert importer_mounts["/app/var/pdf-renderer-output"].get("read_only", False) is False
+          assert importer_mounts["/app/var/storage"].get("read_only", False) is False
           assert "docker.sock" not in json.dumps(renderer_mounts)
           PY
       - name: Upload normalized Compose evidence

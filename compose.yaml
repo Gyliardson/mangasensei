@@ -78,7 +78,7 @@ services:
       - >-
         from pathlib import Path;
         from mangasensei.pdf_imports.spool import PdfSpool;
-        PdfSpool(Path("/app/var/pdf-spool"))
+        PdfSpool(Path("/app/var/pdf-spool"), Path("/app/var/pdf-renderer-output"))
     environment:
       MANGASENSEI_ENVIRONMENT: production
       MANGASENSEI_PDF_SPOOL_ROOT: /app/var/pdf-spool

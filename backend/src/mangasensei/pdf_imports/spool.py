@@ -30,10 +30,10 @@ class _PinnedRendererOutputPath(PosixPath):
     """Path facade whose privileged read returns bytes pinned by PdfSpool validation."""
 
     __slots__ = ("_spool", "_pinned_content")
-    _spool: "PdfSpool"
+    _spool: PdfSpool
     _pinned_content: bytes | None
 
-    def bind(self, spool: "PdfSpool") -> "_PinnedRendererOutputPath":
+    def bind(self, spool: PdfSpool) -> _PinnedRendererOutputPath:
         self._spool = spool
         self._pinned_content = None
         return self
