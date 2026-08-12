@@ -25,16 +25,22 @@ afterEach(() => {
 });
 
 describe("dictionary language preference", () => {
-  it("defaults fresh and malformed state to English", () => {
+  it.each(["de", "pt-BR", "es"])("normalizes legacy or malformed %s state to English", (value) => {
+    window.localStorage.setItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY, value);
     expect(loadDictionaryLanguagePreference()).toBe(DEFAULT_DICTIONARY_LANGUAGE);
-    window.localStorage.setItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY, "es");
+  });
+
+  it("persists only English", () => {
+    saveDictionaryLanguagePreference("en");
+    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBe("en");
     expect(loadDictionaryLanguagePreference()).toBe("en");
   });
 
-  it.each(["en", "de", "pt-BR"] as const)("persists %s", (language) => {
+  it.each(["de", "pt-BR"] as const)("clears retired %s preference", (language) => {
+    window.localStorage.setItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY, "en");
     saveDictionaryLanguagePreference(language);
-    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBe(language);
-    expect(loadDictionaryLanguagePreference()).toBe(language);
+    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBeNull();
+    expect(loadDictionaryLanguagePreference()).toBe("en");
   });
 
   it("survives storage read failure", () => {
@@ -48,15 +54,12 @@ describe("dictionary language preference", () => {
   it("survives storage write failure", () => {
     Object.defineProperty(window, "localStorage", {
       configurable: true,
-      value: { setItem: () => { throw new Error("blocked"); } },
+      value: {
+        setItem: () => { throw new Error("blocked"); },
+        removeItem: () => { throw new Error("blocked"); },
+      },
     });
+    expect(() => saveDictionaryLanguagePreference("en")).not.toThrow();
     expect(() => saveDictionaryLanguagePreference("de")).not.toThrow();
-  });
-
-  it("uses a storage key independent from study and UI preferences", () => {
-    saveDictionaryLanguagePreference("de");
-    window.localStorage.setItem("mangasensei.study.language", "pt-BR");
-    window.localStorage.setItem("mangasensei.ui.locale", "pt-BR");
-    expect(loadDictionaryLanguagePreference()).toBe("de");
   });
 });
