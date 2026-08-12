@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { StudyPage } from "../../lib/api";
 import { ReaderWorkspace } from "./ReaderWorkspace";
 
-function page(requested: "de" | "pt-BR"): StudyPage {
+function historicalPage(requested: "de" | "pt-BR"): StudyPage {
   return {
     pageId: `page-${requested}`,
     status: "completed",
@@ -66,22 +66,24 @@ function renderPage(studyPage: StudyPage) {
   );
 }
 
-describe("ReaderWorkspace dictionary projection", () => {
-  it("renders mixed German direct meanings and explicit English fallback", () => {
-    renderPage(page("de"));
+describe("ReaderWorkspace historical dictionary projection compatibility", () => {
+  it("renders persisted German metadata without exposing a new German selection control", () => {
+    renderPage(historicalPage("de"));
     expect(screen.getByText("Requested dictionary: German")).toBeVisible();
     expect(screen.getByText("Katze")).toHaveAttribute("lang", "de");
     expect(screen.getByText("dog")).toHaveAttribute("lang", "en");
     expect(screen.getByText("English fallback")).toBeVisible();
     expect(screen.getByText("JMdict · German")).toBeVisible();
     expect(screen.getByText("JMdict · English")).toBeVisible();
+    expect(screen.queryByRole("combobox", { name: "Dictionary language" })).not.toBeInTheDocument();
   });
 
-  it("keeps pt-BR requested while labeling deterministic meanings as English", () => {
-    renderPage(page("pt-BR"));
+  it("keeps historical pt-BR request metadata while labeling deterministic meanings as English", () => {
+    renderPage(historicalPage("pt-BR"));
     expect(screen.getByText("Requested dictionary: Portuguese (Brazil)")).toBeVisible();
     expect(screen.getByText(/Deterministic Portuguese JMdict glosses are not available/)).toBeVisible();
     expect(screen.getByText("cat")).toHaveAttribute("lang", "en");
     expect(screen.getByText("English fallback")).toBeVisible();
+    expect(screen.queryByRole("combobox", { name: "Dictionary language" })).not.toBeInTheDocument();
   });
 });

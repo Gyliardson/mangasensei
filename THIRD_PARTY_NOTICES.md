@@ -4,25 +4,24 @@ MangaSensei uses third-party software and data sources. Third-party components r
 
 ## JMdict Data
 
-MangaSensei bootstraps local normalized dictionary packs from [`scriptin/jmdict-simplified`](https://github.com/scriptin/jmdict-simplified), which is derived from JMdict data maintained by the Electronic Dictionary Research and Development Group (EDRDG).
+MangaSensei bootstraps one local normalized English dictionary pack from [`scriptin/jmdict-simplified`](https://github.com/scriptin/jmdict-simplified), which is derived from JMdict data maintained by the Electronic Dictionary Research and Development Group (EDRDG).
 
-The reviewed packs below use the same source snapshot, `jmdict-simplified-3.6.2+20260803141815`. English is the default deterministic dictionary pack. German is an additional explicitly selectable pack. The generated normalized files are local runtime data and are not committed to Git or included in the Docker image.
+The reviewed active pack uses source snapshot `jmdict-simplified-3.6.2+20260803141815`. The generated normalized file is local runtime data and is not committed to Git or included in the Docker image.
 
 | Product language | Upstream language | Source asset | Source SHA-256 | Source bytes | Normalized file | Normalized SHA-256 | Normalized bytes | Entries |
 | --- | --- | --- | --- | ---: | --- | --- | ---: | ---: |
 | `en` | `eng` | `jmdict-eng-3.6.2+20260803141815.json.zip` | `1806d2817215ebe7ded997c8dac4831a3335d83ed12f321ac869a97e745d3a5c` | `11475140` | `jmdict.json` | `93026b2540d40e9175a11d9b770e77b21ef6be5daf136cee680fa550c62193dc` | `65872497` | `218290` |
-| `de` | `ger` | `jmdict-ger-3.6.2+20260803141815.json.zip` | `4da33c567bb03490ffc9819fd1b3e8efc6522a4a790c99b0d2677094f184b7b3` | `7014092` | `jmdict-de.json` | `d9ee60df9ab892c91b3e20f2d3a55e4bc87d74884b7776fde957eea2c2f05e0f` | `42382199` | `128931` |
 
-Both reviewed manifests declare:
+The reviewed manifest declares:
 
 - license ID: `CC-BY-SA-4.0`;
 - attribution: JMdict data provided by the Electronic Dictionary Research and Development Group (EDRDG);
 - redistribution status: `local-bootstrap-derived-data`.
 
-The pack registry and per-language manifests are tracked under
-[`backend/src/mangasensei/linguistics/`](backend/src/mangasensei/linguistics/). The exact source URLs, compressed-size bounds, maximum accepted uncompressed size, converter version and independently verified normalized metadata are authoritative there.
+The pack registry and English manifest are tracked under
+[`backend/src/mangasensei/linguistics/`](backend/src/mangasensei/linguistics/). The exact source URL, compressed-size bounds, maximum accepted uncompressed size, converter version and independently verified normalized metadata are authoritative there.
 
-There is no reviewed word-level Portuguese JMdict pack in this contract. Portuguese KANJIDIC data is not used as a substitute for word-level JMdict vocabulary.
+There is no active reviewed German or word-level Portuguese JMdict pack in this contract. Historical persisted language metadata remains a database compatibility concern and does not require either retired/nonexistent pack to be downloaded. Portuguese KANJIDIC data is not used as a substitute for word-level JMdict vocabulary.
 
 References:
 

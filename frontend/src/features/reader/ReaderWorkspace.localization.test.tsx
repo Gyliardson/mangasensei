@@ -80,7 +80,7 @@ describe("ReaderWorkspace UI localization", () => {
     expect(screen.getByRole("heading", { name: "Select a region" })).toBeVisible();
     expect(screen.getByRole("group", { name: "Study preferences" })).toBeVisible();
     expect(screen.getByRole("combobox", { name: "Study language" })).toHaveValue("pt-BR");
-    expect(screen.getByRole("combobox", { name: "Dictionary language" })).toHaveValue("en");
+    expect(screen.queryByRole("combobox", { name: "Dictionary language" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Region 1: 猫です" })).toBeVisible();
     expect(screen.getByRole("button", { name: "New page" })).toBeVisible();
     expect(screen.getByRole("heading", { name: /猫/ })).toHaveAttribute("lang", "ja");
@@ -96,7 +96,7 @@ describe("ReaderWorkspace UI localization", () => {
     expect(screen.getByRole("heading", { name: "Selecione uma região" })).toBeVisible();
     expect(screen.getByRole("group", { name: "Preferências de estudo" })).toBeVisible();
     expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("pt-BR");
-    expect(screen.getByRole("combobox", { name: "Idioma do dicionário" })).toHaveValue("en");
+    expect(screen.queryByRole("combobox", { name: "Idioma do dicionário" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Região 1: 猫です" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Nova página" })).toBeVisible();
     expect(screen.getByRole("heading", { name: /猫/ })).toHaveAttribute("lang", "ja");

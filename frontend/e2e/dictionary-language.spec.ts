@@ -6,23 +6,21 @@ const png = Buffer.from(
   "base64",
 );
 
-type DictionaryLanguage = "en" | "de" | "pt-BR";
+type StudyLanguage = "pt-BR" | "en";
 
-function studyPage(requested: DictionaryLanguage) {
-  const german = requested === "de";
-  const portuguese = requested === "pt-BR";
+function studyPage(studyLanguage: StudyLanguage) {
+  const englishStudy = studyLanguage === "en";
   return {
     pageId: "page-dictionary",
     status: "completed",
     resultAvailable: true,
     contentLanguage: "ja",
-    studyLanguage: "pt-BR",
+    studyLanguage,
     dictionaryLanguage: "en",
-    requestedDictionaryLanguage: requested,
+    requestedDictionaryLanguage: "en",
     fallbackDictionaryLanguage: "en",
     dictionarySources: [
       { ref: "en-source", dataset: "JMdict", productLanguage: "en", sourceVersion: "fixture", normalizedDigestSha256: "a".repeat(64) },
-      ...(german ? [{ ref: "de-source", dataset: "JMdict", productLanguage: "de", sourceVersion: "fixture", normalizedDigestSha256: "b".repeat(64) }] : []),
     ],
     expiresAt: "2026-08-11T00:00:00Z",
     imageUrl: "/api/v1/pages/page-dictionary/image",
@@ -44,27 +42,24 @@ function studyPage(requested: DictionaryLanguage) {
         { surface: "猫", lemma: "猫", reading: "ネコ", partOfSpeech: "名詞", dictionaryId: "cat" },
         { surface: "犬", lemma: "犬", reading: "イヌ", partOfSpeech: "名詞", dictionaryId: "dog" },
       ],
-      translation: "É um gato e um cachorro.",
+      translation: englishStudy ? "It is a cat and a dog." : "É um gato e um cachorro.",
       explanation: null,
       grammar: [],
-      vocabulary: german ? [
-        { id: "cat", surface: "猫", lemma: "猫", reading: "ねこ", meanings: ["Katze"], source: "JMdict", effectiveLanguage: "de", fallbackUsed: false, fallbackReason: null, sourceRef: "de-source", jlpt: null },
-        { id: "dog", surface: "犬", lemma: "犬", reading: "いぬ", meanings: ["dog"], source: "JMdict", effectiveLanguage: "en", fallbackUsed: true, fallbackReason: "requested_form_not_found", sourceRef: "en-source", jlpt: null },
-      ] : [
-        { id: "cat", surface: "猫", lemma: "猫", reading: "ねこ", meanings: ["cat"], source: "JMdict", effectiveLanguage: "en", fallbackUsed: portuguese, fallbackReason: portuguese ? "unsupported_requested_language" : null, sourceRef: "en-source", jlpt: null },
-        { id: "dog", surface: "犬", lemma: "犬", reading: "いぬ", meanings: ["dog"], source: "JMdict", effectiveLanguage: "en", fallbackUsed: portuguese, fallbackReason: portuguese ? "unsupported_requested_language" : null, sourceRef: "en-source", jlpt: null },
+      vocabulary: [
+        { id: "cat", surface: "猫", lemma: "猫", reading: "ねこ", meanings: ["cat"], source: "JMdict", effectiveLanguage: "en", fallbackUsed: false, fallbackReason: null, sourceRef: "en-source", jlpt: null },
+        { id: "dog", surface: "犬", lemma: "犬", reading: "いぬ", meanings: ["dog"], source: "JMdict", effectiveLanguage: "en", fallbackUsed: false, fallbackReason: null, sourceRef: "en-source", jlpt: null },
       ],
     }],
   };
 }
 
 async function installMockApi(page: import("@playwright/test").Page) {
-  let requested: DictionaryLanguage = "en";
+  let studyLanguage: StudyLanguage = "pt-BR";
+  const reprocessPayloads: Array<Record<string, string>> = [];
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     if (request.method() === "POST" && url.pathname === "/api/v1/pages") {
-      requested = "en";
       await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({
         success: true,
         data: {
@@ -75,7 +70,7 @@ async function installMockApi(page: import("@playwright/test").Page) {
           height: 120,
           mediaType: "image/png",
           expiresAt: "2026-08-11T00:00:00Z",
-          studyLanguage: "pt-BR",
+          studyLanguage,
           capabilities: { readPage: "read-token", readImage: "image-token", reprocessPage: "reprocess-token" },
         },
         error: null,
@@ -83,11 +78,22 @@ async function installMockApi(page: import("@playwright/test").Page) {
       return;
     }
     if (request.method() === "POST" && url.pathname.endsWith("/reprocess")) {
-      const payload = request.postDataJSON() as { dictionaryLanguage?: DictionaryLanguage; studyLanguage?: string };
-      if (payload.dictionaryLanguage) requested = payload.dictionaryLanguage;
+      const payload = request.postDataJSON() as Record<string, string>;
+      reprocessPayloads.push(payload);
+      if (payload.dictionaryLanguage) {
+        await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({
+          success: false,
+          data: null,
+          error: { code: "invalid_request", message: "unsupported dictionary language" },
+        }) });
+        return;
+      }
+      if (payload.studyLanguage === "en" || payload.studyLanguage === "pt-BR") {
+        studyLanguage = payload.studyLanguage;
+      }
       await route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({
         success: true,
-        data: { jobId: `job-${requested}`, status: "pending", studyLanguage: "pt-BR", requestedDictionaryLanguage: requested, created: true },
+        data: { jobId: `job-${studyLanguage}`, status: "pending", studyLanguage, created: true },
         error: null,
       }) });
       return;
@@ -100,8 +106,9 @@ async function installMockApi(page: import("@playwright/test").Page) {
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({ success: true, data: { status: "completed", resultAvailable: true, error: null }, error: null }) });
       return;
     }
-    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ success: true, data: studyPage(requested), error: null }) });
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ success: true, data: studyPage(studyLanguage), error: null }) });
   });
+  return reprocessPayloads;
 }
 
 async function uploadFixture(page: import("@playwright/test").Page) {
@@ -110,59 +117,41 @@ async function uploadFixture(page: import("@playwright/test").Page) {
   await expect(page.getByRole("button", { name: "Região 1: 猫犬" })).toBeVisible();
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("mangasensei.ui.locale", "pt-BR"));
-  await installMockApi(page);
-});
-
-test("operates dictionary preference by keyboard and renders German with per-item English fallback", async ({ page }) => {
+test("normalizes a stale German preference without exposing or requesting German dictionary data", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("mangasensei.ui.locale", "pt-BR");
+    localStorage.setItem("mangasensei.dictionary.language", "de");
+  });
+  const reprocessPayloads = await installMockApi(page);
   await page.goto("/");
   await uploadFixture(page);
 
-  const dictionary = page.getByRole("combobox", { name: "Idioma do dicionário" });
-  await expect(dictionary).toHaveValue("en");
-  await dictionary.focus();
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Enter");
-
-  await expect(dictionary).toHaveValue("de");
-  await expect(page.getByText("Katze", { exact: true })).toHaveAttribute("lang", "de");
-  await expect(page.getByText("dog", { exact: true })).toHaveAttribute("lang", "en");
-  await expect(page.getByText("Fallback em inglês")).toHaveCount(1);
-  await expect(page.getByText("JMdict · Alemão")).toBeVisible();
-  await expect(page.getByText("JMdict · Inglês")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Idioma do dicionário" })).toHaveCount(0);
   await expect(page.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("pt-BR");
   await expect(page.getByRole("combobox", { name: "Exibição de furigana" })).toHaveValue("hiragana");
+  await expect(page.getByText("Dicionário solicitado: Inglês")).toBeVisible();
+  await expect(page.getByText("cat", { exact: true })).toHaveAttribute("lang", "en");
+  await expect(page.getByText("dog", { exact: true })).toHaveAttribute("lang", "en");
+  expect(await page.evaluate(() => localStorage.getItem("mangasensei.dictionary.language"))).toBe("en");
+  expect(reprocessPayloads).toEqual([]);
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);
 });
 
-test("persists German across re-entry and automatically reprojects a fresh English upload", async ({ page }) => {
+test("keeps study-language mutation independent from the English dictionary contract", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("mangasensei.ui.locale", "pt-BR"));
+  const reprocessPayloads = await installMockApi(page);
   await page.goto("/");
   await uploadFixture(page);
-  await page.getByRole("combobox", { name: "Idioma do dicionário" }).selectOption("de");
-  await expect(page.getByText("Katze")).toHaveAttribute("lang", "de");
 
-  await page.reload();
-  await expect(page.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("pt-BR");
-  await uploadFixture(page);
+  await page.getByRole("combobox", { name: "Idioma de estudo" }).selectOption("en");
 
-  await expect(page.getByRole("combobox", { name: "Idioma do dicionário" })).toHaveValue("de");
-  await expect(page.getByText("Katze")).toHaveAttribute("lang", "de");
-});
-
-test("presents requested pt-BR as explicit deterministic English fallback", async ({ page }) => {
-  await page.goto("/");
-  await uploadFixture(page);
-  await page.getByRole("combobox", { name: "Idioma do dicionário" }).selectOption("pt-BR");
-
-  await expect(page.getByText("Dicionário solicitado: Português (Brasil)")).toBeVisible();
-  await expect(page.getByText(/JMdict determinístico não oferece glosas em português/)).toBeVisible();
+  await expect(page.getByText("It is a cat and a dog.")).toHaveAttribute("lang", "en");
   await expect(page.getByText("cat", { exact: true })).toHaveAttribute("lang", "en");
-  await expect(page.getByText("dog", { exact: true })).toHaveAttribute("lang", "en");
-  await expect(page.getByText("Fallback em inglês")).toHaveCount(2);
-  await expect(page.getByRole("combobox", { name: "Idioma da interface" })).toHaveValue("pt-BR");
+  await expect(page.getByText("Dicionário solicitado: Inglês")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Idioma do dicionário" })).toHaveCount(0);
+  expect(reprocessPayloads).toEqual([{ studyLanguage: "en" }]);
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations).toEqual([]);

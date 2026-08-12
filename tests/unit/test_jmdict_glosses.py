@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,8 +14,6 @@ from mangasensei.linguistics.jmdict import (
 from mangasensei.linguistics.jmdict_bootstrap import JmdictManifest, convert_simplified_jmdict
 from mangasensei.linguistics.jmdict_glosses import (
     JmdictGlossFallbackReason,
-    JmdictGlossLookup,
-    JmdictGlossLookupStatus,
     JmdictGlossPack,
     JmdictGlossResolutionError,
     JmdictGlossSourceReference,
@@ -31,37 +28,19 @@ from mangasensei.linguistics.service import (
 )
 
 
-class _PackProvider:
-    def __init__(
-        self,
-        packs: Mapping[str, JmdictGlossPack],
-        *,
-        supported: set[str] | None = None,
-    ) -> None:
-        self._packs = dict(packs)
-        self._supported = frozenset(self._packs if supported is None else supported)
+class _EnglishPackProvider:
+    def __init__(self, pack: JmdictGlossPack) -> None:
+        self._pack = pack
         self.loads: list[str] = []
 
     def is_supported_language(self, language: str) -> bool:
-        return language in self._supported
+        return language == "en"
 
     def get_pack(self, language: str) -> JmdictGlossPack:
+        if language != "en":
+            raise LookupError(language)
         self.loads.append(language)
-        return self._packs[language]
-
-
-@dataclass(frozen=True, slots=True)
-class _GlosslessPack:
-    language: str
-    source: JmdictGlossSourceReference
-
-    def lookup_identity(self, identity: LexicalFormIdentity) -> JmdictGlossLookup:
-        return JmdictGlossLookup(
-            identity=identity,
-            status=JmdictGlossLookupStatus.GLOSSES_NOT_FOUND,
-            meanings=(),
-            source=self.source,
-        )
+        return self._pack
 
 
 class _WordTokenizer:
@@ -129,16 +108,14 @@ def _write_converted_dictionary(
     tmp_path: Path,
     name: str,
     payload: dict[str, object],
-    *,
-    language: str,
 ) -> JsonJmdictDictionary:
     path = tmp_path / name
     path.write_bytes(
         convert_simplified_jmdict(
             payload,
             version="jmdict-simplified-fixture-20260810",
-            language=language,
-            source_url=f"https://example.test/{language}.json.zip",
+            language="eng",
+            source_url="https://example.test/eng.json.zip",
             license_id="CC-BY-SA-4.0",
             attribution="JMdict fixture data",
         )
@@ -146,13 +123,13 @@ def _write_converted_dictionary(
     return JsonJmdictDictionary(path)
 
 
-def _fixture_pack(language: str, dictionary: JsonJmdictDictionary) -> JsonJmdictGlossPack:
+def _fixture_pack(dictionary: JsonJmdictDictionary) -> JsonJmdictGlossPack:
     return JsonJmdictGlossPack(
-        language=language,
+        language="en",
         dictionary=dictionary,
         source=JmdictGlossSourceReference(
             dataset="JMdict",
-            language=language,
+            language="en",
             version=dictionary.version,
             digest_sha256=dictionary.digest.hex(),
         ),
@@ -171,14 +148,8 @@ def _unique_identity(
 
 def _resolver(
     english: JsonJmdictDictionary,
-    german: JmdictGlossPack | None = None,
-) -> tuple[LocalizedJmdictGlossResolver, _PackProvider]:
-    packs: dict[str, JmdictGlossPack] = {"en": _fixture_pack("en", english)}
-    supported = {"en"}
-    if german is not None:
-        packs["de"] = german
-        supported.add("de")
-    provider = _PackProvider(packs, supported=supported)
+) -> tuple[LocalizedJmdictGlossResolver, _EnglishPackProvider]:
+    provider = _EnglishPackProvider(_fixture_pack(english))
     return LocalizedJmdictGlossResolver(provider), provider
 
 
@@ -227,115 +198,10 @@ def test_english_request_uses_exact_english_identity_without_fallback(tmp_path: 
     assert provider.loads == ["en"]
 
 
-def test_german_hit_uses_complete_localized_set_without_ordinal_english_splicing(
+@pytest.mark.parametrize("historical_language", ["de", "pt-BR"])
+def test_historical_unsupported_language_metadata_falls_back_without_loading_retired_pack(
     tmp_path: Path,
-) -> None:
-    english = _write_dictionary(
-        tmp_path,
-        "en.json",
-        [_entry("jmdict-cat", "猫", "ねこ", ("cat", "feline"))],
-    )
-    german_dictionary = _write_dictionary(
-        tmp_path,
-        "de.json",
-        [_entry("jmdict-cat", "猫", "ねこ", ("Katze", "Hauskatze", "Kätzchen"))],
-    )
-    identity = _unique_identity(english, "猫", "ネコ")
-    resolver, provider = _resolver(english, _fixture_pack("de", german_dictionary))
-
-    result = resolver.resolve(identity, requested_dictionary_language="de")
-
-    assert result.identity is identity
-    assert result.effective_dictionary_language == "de"
-    assert result.meanings == ("Katze", "Hauskatze", "Kätzchen")
-    assert "cat" not in result.meanings
-    assert result.fallback_used is False
-    assert result.fallback_reason is None
-    assert result.source.digest_sha256 == german_dictionary.digest.hex()
-    assert provider.loads == ["de"]
-
-
-def test_german_missing_entry_falls_back_to_same_english_identity(tmp_path: Path) -> None:
-    english = _write_dictionary(
-        tmp_path,
-        "en.json",
-        [_entry("jmdict-cat", "猫", "ねこ", ("cat",))],
-    )
-    german_dictionary = _write_dictionary(
-        tmp_path,
-        "de.json",
-        [_entry("jmdict-dog", "犬", "いぬ", ("Hund",))],
-    )
-    identity = _unique_identity(english, "猫", "ネコ")
-    resolver, provider = _resolver(english, _fixture_pack("de", german_dictionary))
-
-    result = resolver.resolve(identity, requested_dictionary_language="de")
-
-    assert result.identity is identity
-    assert result.effective_dictionary_language == "en"
-    assert result.meanings == ("cat",)
-    assert result.fallback_used is True
-    assert result.fallback_reason is JmdictGlossFallbackReason.REQUESTED_ENTRY_NOT_FOUND
-    assert provider.loads == ["de", "en"]
-
-
-def test_german_entry_without_exact_canonical_form_falls_back_to_english(
-    tmp_path: Path,
-) -> None:
-    english = _write_dictionary(
-        tmp_path,
-        "en.json",
-        [_entry("jmdict-shape", "形", "かたち", ("shape",))],
-    )
-    german_dictionary = _write_dictionary(
-        tmp_path,
-        "de.json",
-        [_entry("jmdict-shape", "形", "なり", ("Gestalt",))],
-    )
-    identity = _unique_identity(english, "形", "カタチ")
-    resolver, provider = _resolver(english, _fixture_pack("de", german_dictionary))
-
-    result = resolver.resolve(identity, requested_dictionary_language="de")
-
-    assert result.identity is identity
-    assert result.effective_dictionary_language == "en"
-    assert result.meanings == ("shape",)
-    assert result.fallback_used is True
-    assert result.fallback_reason is JmdictGlossFallbackReason.REQUESTED_FORM_NOT_FOUND
-    assert provider.loads == ["de", "en"]
-
-
-def test_german_exact_form_without_glosses_uses_explicit_english_fallback(
-    tmp_path: Path,
-) -> None:
-    english = _write_dictionary(
-        tmp_path,
-        "en.json",
-        [_entry("jmdict-cat", "猫", "ねこ", ("cat",))],
-    )
-    identity = _unique_identity(english, "猫", "ネコ")
-    glossless_source = JmdictGlossSourceReference(
-        dataset="JMdict",
-        language="de",
-        version=english.version,
-        digest_sha256="0" * 64,
-    )
-    resolver, provider = _resolver(
-        english,
-        _GlosslessPack(language="de", source=glossless_source),
-    )
-
-    result = resolver.resolve(identity, requested_dictionary_language="de")
-
-    assert result.effective_dictionary_language == "en"
-    assert result.meanings == ("cat",)
-    assert result.fallback_used is True
-    assert result.fallback_reason is JmdictGlossFallbackReason.REQUESTED_GLOSSES_NOT_FOUND
-    assert provider.loads == ["de", "en"]
-
-
-def test_unsupported_pt_br_is_never_presented_as_native_jmdict_portuguese(
-    tmp_path: Path,
+    historical_language: str,
 ) -> None:
     english = _write_dictionary(
         tmp_path,
@@ -345,9 +211,12 @@ def test_unsupported_pt_br_is_never_presented_as_native_jmdict_portuguese(
     identity = _unique_identity(english, "猫", "ネコ")
     resolver, provider = _resolver(english)
 
-    result = resolver.resolve(identity, requested_dictionary_language="pt-BR")
+    result = resolver.resolve(
+        identity,
+        requested_dictionary_language=historical_language,
+    )
 
-    assert result.requested_dictionary_language == "pt-BR"
+    assert result.requested_dictionary_language == historical_language
     assert result.fallback_dictionary_language == "en"
     assert result.effective_dictionary_language == "en"
     assert result.source.language == "en"
@@ -357,56 +226,48 @@ def test_unsupported_pt_br_is_never_presented_as_native_jmdict_portuguese(
     assert provider.loads == ["en"]
 
 
-def test_issue_26_spelling_reading_applicability_is_preserved_across_localization(
+def test_issue_26_spelling_reading_applicability_is_preserved_in_english_pack(
     tmp_path: Path,
 ) -> None:
-    payload = _restricted_multilingual_payload()
-    english = _write_converted_dictionary(tmp_path, "en.json", payload, language="eng")
-    german = _write_converted_dictionary(tmp_path, "de.json", payload, language="ger")
+    english = _write_converted_dictionary(
+        tmp_path,
+        "en.json",
+        _restricted_english_payload(),
+    )
     identity = _unique_identity(english, "半平", "ハンペイ")
-    resolver, _ = _resolver(english, _fixture_pack("de", german))
+    resolver, _ = _resolver(english)
 
-    result = resolver.resolve(identity, requested_dictionary_language="de")
+    result = resolver.resolve(identity, requested_dictionary_language="en")
 
     assert result.identity is identity
-    assert result.meanings == ("gestampfter Fischkuchen",)
-    assert "halbe Scheibe" not in result.meanings
-    assert result.effective_dictionary_language == "de"
+    assert result.meanings == ("pounded fish cake",)
+    assert "half a slice" not in result.meanings
+    assert result.effective_dictionary_language == "en"
 
 
-def test_issue_64_script_normalization_preserves_cross_pack_identity(tmp_path: Path) -> None:
+def test_issue_64_script_normalization_preserves_english_identity(tmp_path: Path) -> None:
     english = _write_dictionary(
         tmp_path,
         "en.json",
         [_entry("jmdict-kana", "カナ", "カナ", ("kana",))],
     )
-    german = _write_dictionary(
-        tmp_path,
-        "de.json",
-        [_entry("jmdict-kana", "カナ", "カナ", ("Kana",))],
-    )
     identity = _unique_identity(english, "かな", "カナ")
-    resolver, _ = _resolver(english, _fixture_pack("de", german))
+    resolver, _ = _resolver(english)
 
-    result = resolver.resolve(identity, requested_dictionary_language="de")
+    result = resolver.resolve(identity, requested_dictionary_language="en")
 
     assert identity.form_key == ("かな", "かな")
     assert result.identity is identity
-    assert result.meanings == ("Kana",)
+    assert result.meanings == ("kana",)
 
 
-def test_issue_112_multi_token_identity_localizes_like_single_token_identity(
+def test_issue_112_multi_token_identity_matches_single_token_identity_in_english(
     tmp_path: Path,
 ) -> None:
     english = _write_dictionary(
         tmp_path,
         "en.json",
         [_entry("jmdict-nantoka", "なんとか", "なんとか", ("somehow",))],
-    )
-    german = _write_dictionary(
-        tmp_path,
-        "de.json",
-        [_entry("jmdict-nantoka", "なんとか", "なんとか", ("irgendwie",))],
     )
     single = LinguisticService(
         _WordTokenizer("なんとか", "なんとか", "ナントカ"),
@@ -415,25 +276,25 @@ def test_issue_112_multi_token_identity_localizes_like_single_token_identity(
     split = LinguisticService(_SplitNantokaTokenizer(), english).analyze("split", "なんとか")
     single_match = single.lexical_matches[0]
     split_match = next(match for match in split.lexical_matches if match.end_token_ordinal == 3)
-    resolver, _ = _resolver(english, _fixture_pack("de", german))
+    resolver, _ = _resolver(english)
 
     single_result = resolver.resolve(
         single_match.identity,
-        requested_dictionary_language="de",
+        requested_dictionary_language="en",
     )
     split_result = resolver.resolve(
         split_match.identity,
-        requested_dictionary_language="de",
+        requested_dictionary_language="en",
     )
 
     assert single_match.identity == split_match.identity
     assert split_match.start_token_ordinal == 0
     assert split_match.end_token_ordinal == 3
     assert single_result == split_result
-    assert split_result.meanings == ("irgendwie",)
+    assert split_result.meanings == ("somehow",)
 
 
-def test_ambiguous_lexical_hypothesis_never_reaches_localized_gloss_resolver(
+def test_ambiguous_lexical_hypothesis_never_reaches_gloss_resolver(
     tmp_path: Path,
 ) -> None:
     english = _write_dictionary(
@@ -484,43 +345,47 @@ def test_english_only_lexical_behavior_remains_backward_compatible(tmp_path: Pat
     assert localized.meanings == legacy_match.meanings
 
 
-def test_reviewed_pack_binding_projects_exact_version_digest_and_language(
+def test_reviewed_english_pack_binding_projects_exact_version_digest_and_language(
     tmp_path: Path,
 ) -> None:
-    german = _write_dictionary(
+    english = _write_dictionary(
         tmp_path,
-        "de.json",
-        [_entry("jmdict-cat", "猫", "ねこ", ("Katze",))],
+        "en.json",
+        [_entry("jmdict-cat", "猫", "ねこ", ("cat",))],
     )
-    reviewed = _reviewed_fixture_pack(tmp_path, "de", "ger", german)
+    reviewed = _reviewed_fixture_pack(tmp_path, english)
 
-    pack = JsonJmdictGlossPack.from_reviewed_pack(reviewed, german)
+    pack = JsonJmdictGlossPack.from_reviewed_pack(reviewed, english)
 
-    assert pack.language == "de"
+    assert pack.language == "en"
     assert pack.source.dataset == "JMdict"
-    assert pack.source.version == german.version
-    assert pack.source.digest_sha256 == german.digest.hex()
+    assert pack.source.version == english.version
+    assert pack.source.digest_sha256 == english.digest.hex()
 
 
-def test_reviewed_pack_binding_rejects_unreviewed_dictionary_digest(tmp_path: Path) -> None:
-    german = _write_dictionary(
+def test_reviewed_english_pack_binding_rejects_unreviewed_dictionary_digest(
+    tmp_path: Path,
+) -> None:
+    english = _write_dictionary(
         tmp_path,
-        "de.json",
-        [_entry("jmdict-cat", "猫", "ねこ", ("Katze",))],
+        "en.json",
+        [_entry("jmdict-cat", "猫", "ねこ", ("cat",))],
     )
-    reviewed = _reviewed_fixture_pack(tmp_path, "de", "ger", german)
+    reviewed = _reviewed_fixture_pack(tmp_path, english)
     other = _write_dictionary(
         tmp_path,
-        "other-de.json",
-        [_entry("jmdict-cat", "猫", "ねこ", ("andere Katze",))],
-        version=german.version,
+        "other-en.json",
+        [_entry("jmdict-cat", "猫", "ねこ", ("other cat",))],
+        version=english.version,
     )
 
     with pytest.raises(JmdictGlossResolutionError, match="digest"):
         JsonJmdictGlossPack.from_reviewed_pack(reviewed, other)
 
 
-def test_missing_exact_english_fallback_fails_closed(tmp_path: Path) -> None:
+def test_missing_exact_english_fallback_for_historical_metadata_fails_closed(
+    tmp_path: Path,
+) -> None:
     english = _write_dictionary(
         tmp_path,
         "en.json",
@@ -535,32 +400,30 @@ def test_missing_exact_english_fallback_fails_closed(tmp_path: Path) -> None:
     resolver, _ = _resolver(english)
 
     with pytest.raises(JmdictGlossResolutionError, match="mandatory English"):
-        resolver.resolve(identity, requested_dictionary_language="pt-BR")
+        resolver.resolve(identity, requested_dictionary_language="de")
 
 
 def _reviewed_fixture_pack(
     tmp_path: Path,
-    product_language: str,
-    upstream_language: str,
     dictionary: JsonJmdictDictionary,
 ) -> ResolvedJmdictPack:
     manifest = JmdictManifest.model_validate(
         {
             "version": "fixture-pack-v1",
             "source": {
-                "filename": f"jmdict-{upstream_language}.json.zip",
-                "url": f"https://example.test/jmdict-{upstream_language}.json.zip",
+                "filename": "jmdict-eng.json.zip",
+                "url": "https://example.test/jmdict-eng.json.zip",
                 "sha256": "1" * 64,
                 "size_bytes": 1,
                 "max_uncompressed_bytes": 1,
-                "language": upstream_language,
+                "language": "eng",
                 "source_version": dictionary.version,
                 "license_id": "CC-BY-SA-4.0",
                 "attribution": "JMdict fixture data",
                 "redistribution_status": "fixture-only",
             },
             "normalized": {
-                "filename": f"jmdict-{product_language}.json",
+                "filename": "jmdict-en.json",
                 "sha256": dictionary.digest.hex(),
                 "size_bytes": 1,
                 "entry_count": dictionary.entry_count,
@@ -569,15 +432,15 @@ def _reviewed_fixture_pack(
         }
     )
     return ResolvedJmdictPack(
-        product_language=product_language,
-        upstream_language=upstream_language,
-        manifest_path=tmp_path / f"manifest-{product_language}.json",
+        product_language="en",
+        upstream_language="eng",
+        manifest_path=tmp_path / "manifest-en.json",
         manifest=manifest,
         default_language="en",
     )
 
 
-def _restricted_multilingual_payload() -> dict[str, object]:
+def _restricted_english_payload() -> dict[str, object]:
     return {
         "words": [
             {
@@ -601,13 +464,9 @@ def _restricted_multilingual_payload() -> dict[str, object]:
                     },
                 ],
                 "sense": [
-                    _multilingual_sense(
-                        "pounded fish cake",
-                        "gestampfter Fischkuchen",
-                    ),
-                    _multilingual_sense(
+                    _english_sense("pounded fish cake"),
+                    _english_sense(
                         "half a slice",
-                        "halbe Scheibe",
                         applies_to_kanji=["半片"],
                     ),
                 ],
@@ -616,16 +475,14 @@ def _restricted_multilingual_payload() -> dict[str, object]:
     }
 
 
-def _multilingual_sense(
+def _english_sense(
     english: str,
-    german: str,
     *,
     applies_to_kanji: list[str] | None = None,
 ) -> dict[str, object]:
     return {
         "gloss": [
             {"lang": "eng", "text": english, "gender": None, "type": None},
-            {"lang": "ger", "text": german, "gender": None, "type": None},
         ],
         "appliesToKanji": applies_to_kanji or ["*"],
         "appliesToKana": ["*"],

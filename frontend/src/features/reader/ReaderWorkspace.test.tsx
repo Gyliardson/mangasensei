@@ -163,7 +163,7 @@ describe("ReaderWorkspace", () => {
     expect(screen.getByText("ねこ", { selector: "rt" })).toBeVisible();
   });
 
-  it("shows legacy local English dictionary meanings independently from contextual study language", () => {
+  it("shows local English dictionary meanings independently from contextual study language", () => {
     const localOnlyRegion: StudyRegion = {
       ...region("local", "猫", 0),
       tokens: [{ surface: "猫", lemma: "猫", reading: "ネコ", partOfSpeech: "名詞", dictionaryId: "jmdict-1467640" }],
@@ -176,6 +176,7 @@ describe("ReaderWorkspace", () => {
     expect(screen.getByText("Frase nominal polida.")).toHaveAttribute("lang", "pt-BR");
     expect(screen.getByText("cat")).toHaveAttribute("lang", "en");
     expect(screen.getByText("Dicionário solicitado: Inglês")).toBeVisible();
+    expect(screen.queryByRole("combobox", { name: "Idioma do dicionário" })).not.toBeInTheDocument();
     expect(screen.getByText("JMdict · JLPT N5 não oficial")).toBeVisible();
   });
 
@@ -205,36 +206,18 @@ describe("ReaderWorkspace", () => {
     );
     expect(select).toHaveValue("en");
     expect(select).toBeDisabled();
-    expect(screen.getByRole("combobox", { name: "Idioma do dicionário" })).toBeDisabled();
+    expect(screen.queryByRole("combobox", { name: "Idioma do dicionário" })).not.toBeInTheDocument();
     expect(screen.getByText(/O resultado exibido continua em Português \(Brasil\)/)).toBeVisible();
     expect(screen.getByText(/estudo Português \(Brasil\)/)).toBeVisible();
   });
 
-  it("requests a dictionary language and prevents a competing study mutation while pending", async () => {
-    const user = userEvent.setup();
+  it("does not expose a dictionary-language mutation control", () => {
     const onDictionaryLanguageChange = vi.fn();
-    const studyPage = page([region("dictionary", "猫", 0)]);
-    const rendered = renderWorkspace(studyPage, { onDictionaryLanguageChange });
-    const dictionary = screen.getByRole("combobox", { name: "Idioma do dicionário" });
-    await user.selectOptions(dictionary, "de");
-    expect(onDictionaryLanguageChange).toHaveBeenCalledWith("de");
-    rendered.rerender(
-      <ReaderWorkspace
-        page={studyPage}
-        imageUrl="fixture-image"
-        uiLocale="pt-BR"
-        preferredStudyLanguage="pt-BR"
-        preferredDictionaryLanguage="de"
-        languageMutation="dictionary"
-        studyLanguageError={null}
-        dictionaryLanguageError={null}
-        onStudyLanguageChange={vi.fn()}
-        onDictionaryLanguageChange={onDictionaryLanguageChange}
-        onReset={vi.fn()}
-      />,
-    );
-    expect(dictionary).toBeDisabled();
-    expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toBeDisabled();
-    expect(screen.getByText(/resultado concluído em Inglês continua visível/)).toBeVisible();
+    renderWorkspace(page([region("dictionary", "猫", 0)]), { onDictionaryLanguageChange });
+
+    expect(screen.queryByRole("combobox", { name: "Idioma do dicionário" })).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Exibição de furigana" })).toBeVisible();
+    expect(onDictionaryLanguageChange).not.toHaveBeenCalled();
   });
 });

@@ -19,7 +19,7 @@ Verified on 2026-08-09 using official documentation, package registries and revi
 | Components | shadcn CLI | 4.16.2 | Tailwind v4 compatible |
 | Unit tests | Vitest | 4.1.10 | jsdom environment |
 | E2E | Playwright | 1.62.1 | Desktop and mobile projects |
-| Dictionary data | jmdict-simplified | 3.6.2+20260803141815 | Reviewed `en`/`eng` and `de`/`ger` packs share one pinned source snapshot; English remains the default runtime pack; both normalize with `mangasensei-jmdict-v3` while preserving reading/spelling and sense restrictions |
+| Dictionary data | jmdict-simplified | 3.6.2+20260803141815 | Reviewed `en`/`eng` pack pinned to one source snapshot and normalized with `mangasensei-jmdict-v3` while preserving reading/spelling and sense restrictions |
 | OCR source | manga-image-translator | 95227a2bb0fd306cd4f0c104d57284026f991b3a | Vendored OCR subset |
 | OCR image runtime | opencv-python-headless | 5.0.0.93 | Headless Python wheel; adopted after a same-code 12-page A/B against 4.14.0.94 |
 
@@ -27,16 +27,16 @@ Python packages are locked by `uv.lock`. JavaScript packages are locked by
 `package-lock.json`. Model artifacts use a separate checksum manifest because
 they cannot be redistributed with the application.
 
-Reviewed JMdict language packs are registered in
-[`backend/src/mangasensei/linguistics/jmdict_packs.json`](../backend/src/mangasensei/linguistics/jmdict_packs.json), with independent source and normalized integrity metadata in each pack manifest. All packs in the registry must declare the same reviewed source snapshot. English remains the configured worker/runtime dictionary in this infrastructure slice; German is selected explicitly only through the bootstrap/verification CLI and is not eagerly loaded.
+The reviewed English JMdict pack is registered in
+[`backend/src/mangasensei/linguistics/jmdict_packs.json`](../backend/src/mangasensei/linguistics/jmdict_packs.json), with source and normalized integrity metadata in its manifest. English is the only active deterministic local dictionary language.
 
-Normalized JMdict artifacts are derived locally from the exact reviewed source ZIPs and are not
+Normalized JMdict artifacts are derived locally from the exact reviewed source ZIP and are not
 hand-edited. When the converter contract or reviewed pack metadata changes, refresh derived
-metadata with `uv run python scripts/update_jmdict_manifest.py`; use `--check` to verify all
-registered packs without modifying them, or `--language en` / `--language de` to select a
-specific reviewed pack. See [Reviewed JMdict language packs](jmdict-packs.md) for the current
-bootstrap boundary and [JMdict pack load measurement methodology](jmdict-pack-measurement.md)
-for the non-gating RSS/startup evidence method.
+metadata with `uv run python scripts/update_jmdict_manifest.py`; use `--check` to verify the
+registered pack without modifying it, or `--language en` to select it explicitly. See
+[Reviewed JMdict data](jmdict-packs.md) for the current bootstrap boundary and
+[JMdict pack load measurement methodology](jmdict-pack-measurement.md) for historical
+non-gating RSS/startup evidence.
 
 ## Application release version
 

@@ -71,7 +71,7 @@ Never reuse repository placeholders or commit your `.env` file.
 docker compose up --detach --build
 ```
 
-On a fresh installation, this builds the application and runs one-shot bootstrap services for migrations, checksum-pinned OCR models, and reviewed English/German JMdict data before the worker becomes ready. **The first bootstrap requires network access** to obtain container layers, OCR model artifacts, and JMdict source data. Those artifacts are then kept in local Docker volumes for subsequent local processing.
+On a fresh installation, this builds the application and runs one-shot bootstrap services for migrations, checksum-pinned OCR models, and the reviewed English JMdict data before the worker becomes ready. **The first bootstrap requires network access** to obtain container layers, OCR model artifacts, and JMdict source data. Those artifacts are then kept in local Docker volumes for subsequent local processing.
 
 Gemini remains disabled when `GOOGLE_API_KEY` is blank. Japanese OCR, Sudachi analysis, and deterministic JMdict vocabulary still work; contextual AI translation/explanation fields may be absent.
 
@@ -145,7 +145,7 @@ Slices B and C of [#105](https://github.com/Gyliardson/mangasensei/issues/105) s
 - cooperatively cancel active Document processing without rewriting already completed siblings;
 - persist post-create page order with optimistic concurrency;
 - navigate by direct page selection plus Previous / Next;
-- reprocess study language or dictionary language only for the current Page;
+- reprocess study language only for the current Page from the reader; the protected API retains an English-only dictionary reprojection path;
 - keep the Document and all child Pages on the same exact 24-hour retention boundary.
 
 **Still deferred under #105:** hardened PDF import, thumbnails, a persistent manga library, spread-aware/cross-page reading-order semantics, and later large-document/performance hardening.
@@ -192,18 +192,18 @@ See [SECURITY.md](SECURITY.md), [docs/document-imports.md](docs/document-imports
 
 ## Language and study features
 
-Four language axes are deliberately independent:
+Four language axes remain conceptually distinct even though the deterministic local dictionary is now English-only:
 
 | Axis | Current support |
 | --- | --- |
 | Manga content | Japanese (`ja`) |
 | Study / contextual explanation | Brazilian Portuguese (`pt-BR`) or English (`en`) |
-| Requested deterministic dictionary language | English (`en`), German (`de`), or Brazilian Portuguese (`pt-BR`) |
+| Deterministic local dictionary | English (`en`) only |
 | UI locale | English (`en`) or Brazilian Portuguese (`pt-BR`) |
 
-German uses the reviewed local JMdict pack when the exact canonical form is available and falls back per item to English otherwise. A `pt-BR` dictionary request remains explicitly Portuguese-requested, but deterministic word meanings currently use English fallback because there is no reviewed word-level Portuguese JMdict gloss pack. Changing dictionary language reuses persisted canonical linguistic analysis and does not rerun OCR, Sudachi lexical acquisition, or Gemini.
+The reader no longer exposes a dictionary-language selector. New dictionary reprojection requests accept only English; unsupported values such as `de` or `pt-BR` are rejected rather than silently mapped to English. Historical unexpired results may still expose older requested/effective/fallback metadata, which remains readable without downloading the retired German pack. Study and UI language choices are unchanged.
 
-See the [language-axis contract](docs/study-languages.md) and [JMdict pack contract](docs/jmdict-packs.md).
+See the [language-axis contract](docs/study-languages.md) and [JMdict data contract](docs/jmdict-packs.md).
 
 ## Features
 
@@ -211,9 +211,9 @@ See the [language-axis contract](docs/study-languages.md) and [JMdict pack contr
 | --- | --- |
 | Upload | Safe standalone image upload plus bounded ordered multi-image Documents with idempotency and scoped capabilities |
 | OCR | Local Manga Image Translator subset with checksum-verified model artifacts |
-| Linguistics | Sudachi tokenization plus reviewed local English/German JMdict data over language-neutral canonical lexical identities |
+| Linguistics | Sudachi tokenization plus reviewed local English JMdict data over language-neutral canonical lexical identities |
 | Reader | Authenticated original-image Blob rendering, responsive SVG overlays, furigana, zoom/fit controls, multi-page navigation and partial-result reading |
-| Languages | Independent UI, study/explanation, and requested dictionary preferences with explicit fallback presentation |
+| Languages | Independent UI and study/explanation preferences with deterministic English local dictionary meanings |
 | Gemini | Optional structured contextual explanations in `pt-BR`/`en`, budget tracking, minimal text context, and `store=False` |
 | Operations | PostgreSQL queue, lease recovery, bounded retention, readiness, metrics, and hardened Compose runtime |
 
@@ -287,7 +287,6 @@ npm install
 uv run mangasensei models download
 uv run mangasensei models verify
 uv run mangasensei jmdict download
-uv run mangasensei jmdict download --language de
 ```
 
 For direct host execution, create `.env` from `.env.example` and follow its comments so the host database URL uses the same generated database password. Docker Compose remains the simpler supported path for running the complete stack.
@@ -332,13 +331,13 @@ FastAPI serves interactive API documentation at `/api/docs` when MangaSensei is 
 | `POST` | `/api/v1/pages` | Upload one Japanese manga page and queue analysis |
 | `GET` | `/api/v1/pages/{page_id}` | Read a standalone Page with its read capability |
 | `GET` | `/api/v1/pages/{page_id}/image` | Stream the protected original standalone image |
-| `POST` | `/api/v1/pages/{page_id}/reprocess` | Reprocess one standalone study/dictionary language axis |
+| `POST` | `/api/v1/pages/{page_id}/reprocess` | Reprocess one supported standalone language axis |
 | `POST` | `/api/v1/documents` | Create an ordered multi-image Document |
 | `GET` | `/api/v1/documents/{document_id}` | Read ordered child summaries, aggregate status, and progress |
 | `GET` | `/api/v1/documents/{document_id}/progress` | Read completed/processing/failed/cancelled counters |
 | `GET` | `/api/v1/documents/{document_id}/pages/{page_id}` | Read a member StudyPage |
 | `GET` | `/api/v1/documents/{document_id}/pages/{page_id}/image` | Stream a protected member original image |
-| `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | Reprocess one language axis on one member Page |
+| `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | Reprocess one supported language axis on one member Page |
 | `POST` | `/api/v1/documents/{document_id}/retry-failed` | Retry eligible unreadable failed member Pages idempotently |
 | `POST` | `/api/v1/documents/{document_id}/cancel` | Request cooperative cancellation of active Document work |
 | `PUT` | `/api/v1/documents/{document_id}/order` | Persist complete member order with optimistic concurrency |
@@ -352,7 +351,7 @@ Useful deep documentation:
 
 - [Multi-image Document imports](docs/document-imports.md)
 - [Study and language-axis contract](docs/study-languages.md)
-- [Reviewed JMdict packs](docs/jmdict-packs.md)
+- [Reviewed JMdict data](docs/jmdict-packs.md)
 - [Testing strategy](docs/testing.md)
 - [Reviewed stack versions](docs/versions.md)
 - [Security policy](SECURITY.md)
