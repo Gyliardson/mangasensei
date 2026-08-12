@@ -1,5 +1,5 @@
 {
-  "version": "2026-08-09",
+  "version": "2026-08-12",
   "source_snapshot": "jmdict-simplified-3.6.2+20260803141815",
   "default_language": "en",
   "fallback_language": "en",
@@ -8,11 +8,6 @@
       "product_language": "en",
       "upstream_language": "eng",
       "manifest": "jmdict_manifest.json"
-    },
-    {
-      "product_language": "de",
-      "upstream_language": "ger",
-      "manifest": "jmdict_manifest.de.json"
     }
   ]
 }
