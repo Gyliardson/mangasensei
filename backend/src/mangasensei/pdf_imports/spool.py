@@ -39,17 +39,12 @@ class _PinnedRendererOutputPath(PosixPath):
         return self
 
     def exists(self) -> bool:
-        spool = getattr(self, "_spool", None)
-        if spool is None:
-            raise PdfSpoolError("unbound renderer output path")
-        return spool.output_file_exists(Path(self))
+        return self._spool.output_file_exists(Path(self))
 
     def read_bytes(self) -> bytes:
-        content = getattr(self, "_pinned_content", None)
-        if content is not None:
-            return content
-        spool = getattr(self, "_spool", None)
-        if spool is not None and not spool.split_output:
+        if self._pinned_content is not None:
+            return self._pinned_content
+        if not self._spool.split_output:
             return Path(self).read_bytes()
         raise PdfSpoolError("renderer output must be validated before consumption")
 
