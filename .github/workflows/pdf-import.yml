@@ -24,6 +24,7 @@ on:
       - "tests/fixtures/**"
       - "tests/fullstack/**"
       - "tests/integration/test_pdf_imports.py"
+      - "tests/integration/test_pdf_import_review_fixes.py"
       - "tests/unit/test_pdf_*.py"
   workflow_dispatch:
 
@@ -63,52 +64,116 @@ jobs:
           python-version: "3.11"
           prune-cache: true
       - name: Install exact locked runtime
-        run: uv sync --frozen
-      - name: Verify bundled PDFium identity and collect licenses
+        run: uv sync --frozen --no-build-package pypdfium2
+      - name: Verify reviewed PDFium wheels, native hashes and runtime identity
         run: |
           uv run python - <<'PY'
           import hashlib
+          import json
+          import platform
           import shutil
           import sys
+          import urllib.request
+          import zipfile
           from pathlib import Path
 
           import pypdfium2_raw
+          from mangasensei.pdf_imports.native_provenance import (
+              PDFIUM_NATIVE_SHA256_BY_PLATFORM,
+              PYPDFIUM2_WHEEL_SHA256_BY_PLATFORM,
+          )
+          from mangasensei.pdf_imports.renderer import renderer_provenance
           from pypdfium2.version import PDFIUM_INFO, PYPDFIUM_INFO
 
           assert sys.version_info[:2] == (3, 11)
+          assert platform.system() == "Linux"
+          assert platform.machine().lower() == "x86_64"
+          provenance = renderer_provenance()
+          assert provenance.pypdfium2 == "5.12.1"
+          assert provenance.pdfium_build == 7947
+          assert provenance.pdfium_flags == ()
           assert PYPDFIUM_INFO.tag == "5.12.1"
           assert PDFIUM_INFO.build == 7947
           assert "V8" not in PDFIUM_INFO.flags
           assert "XFA" not in PDFIUM_INFO.flags
+
           raw_root = Path(pypdfium2_raw.__file__).resolve().parent
           native = raw_root / "libpdfium.so"
-          assert native.is_file() and not native.is_symlink()
-          assert native.resolve().is_relative_to(raw_root)
+          runtime_sha256 = hashlib.sha256(native.read_bytes()).hexdigest()
+          assert runtime_sha256 == PDFIUM_NATIVE_SHA256_BY_PLATFORM[("Linux", "x86_64")]
           site_packages = raw_root.parent
           license_candidates = sorted(
-              path for path in site_packages.rglob("*")
-              if path.name.startswith("BUILD_LICENSES")
+              path for path in site_packages.rglob("*") if path.name.startswith("BUILD_LICENSES")
           )
           assert license_candidates, "installed binary wheel did not expose BUILD_LICENSES"
           target = Path("/tmp/pdfium-licenses")
-          target.mkdir()
+          runtime_target = target / "runtime-x86_64"
+          runtime_target.mkdir(parents=True)
           for index, candidate in enumerate(license_candidates):
-              destination = target / f"{index:02d}-{candidate.name}"
+              destination = runtime_target / f"{index:02d}-{candidate.name}"
               if candidate.is_dir():
                   shutil.copytree(candidate, destination)
               else:
                   shutil.copy2(candidate, destination)
-              print(candidate.relative_to(site_packages))
-          print("pypdfium2", PYPDFIUM_INFO.tag)
-          print("pdfium", PDFIUM_INFO.tag, "build", PDFIUM_INFO.build, "flags", PDFIUM_INFO.flags)
-          print("native_sha256", hashlib.sha256(native.read_bytes()).hexdigest())
-          print("native", native)
+              print("runtime license", candidate.relative_to(site_packages))
+
+          reviewed_wheels = {
+              ("Linux", "x86_64"): "pypdfium2-5.12.1-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+              ("Linux", "aarch64"): "pypdfium2-5.12.1-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+          }
+          with urllib.request.urlopen(
+              "https://pypi.org/pypi/pypdfium2/5.12.1/json", timeout=30
+          ) as response:
+              release = json.load(response)
+          by_filename = {item["filename"]: item for item in release["urls"]}
+          lock = Path("uv.lock").read_text()
+          evidence = []
+          for key, filename in reviewed_wheels.items():
+              item = by_filename[filename]
+              expected_wheel_sha256 = PYPDFIUM2_WHEEL_SHA256_BY_PLATFORM[key]
+              expected_native_sha256 = PDFIUM_NATIVE_SHA256_BY_PLATFORM[key]
+              assert item["packagetype"] == "bdist_wheel"
+              assert item["digests"]["sha256"] == expected_wheel_sha256
+              assert expected_wheel_sha256 in lock
+              with urllib.request.urlopen(item["url"], timeout=60) as response:
+                  payload = response.read()
+              assert hashlib.sha256(payload).hexdigest() == expected_wheel_sha256
+              wheel_path = Path("/tmp") / filename
+              wheel_path.write_bytes(payload)
+              with zipfile.ZipFile(wheel_path) as archive:
+                  bundled_native = archive.read("pypdfium2_raw/libpdfium.so")
+                  native_sha256 = hashlib.sha256(bundled_native).hexdigest()
+                  assert native_sha256 == expected_native_sha256
+                  license_files = sorted(
+                      name
+                      for name in archive.namelist()
+                      if "/BUILD_LICENSES/" in name and not name.endswith("/")
+                  )
+                  assert license_files, f"{filename} did not include BUILD_LICENSES"
+                  wheel_license_target = target / "reviewed-wheels" / key[1]
+                  wheel_license_target.mkdir(parents=True)
+                  for name in license_files:
+                      (wheel_license_target / Path(name).name).write_bytes(archive.read(name))
+              entry = {
+                  "platform": key[0],
+                  "machine": key[1],
+                  "filename": filename,
+                  "wheel_sha256": expected_wheel_sha256,
+                  "native_sha256": native_sha256,
+              }
+              evidence.append(entry)
+              print(json.dumps(entry, sort_keys=True))
+
+          (target / "reviewed-wheel-provenance.json").write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + "\n"
+          )
+          print("runtime", provenance.model_dump_json())
+          print("runtime_native_sha256", runtime_sha256)
           PY
           native="$(uv run python -c 'from pathlib import Path; import pypdfium2_raw; print(Path(pypdfium2_raw.__file__).resolve().parent / "libpdfium.so")')"
           ldd "${native}" | tee /tmp/pdfium-ldd.txt
           ! grep -q "not found" /tmp/pdfium-ldd.txt
-          grep -q "e10cbf41b21233ec5e20adfc170cf60edd77abead86a97dc708fff55a8a886c7" uv.lock
-          grep -q "6eabf028ad8e7bc7811c9acf3a72718c180569b624b844d2c6cc974609784275" uv.lock
+          grep -q -- "--no-build-package pypdfium2" Dockerfile
       - name: Upload exact bundled license evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -124,6 +189,7 @@ jobs:
           tests/unit/test_pdf_spool.py
           tests/unit/test_pdf_import_security.py
           tests/integration/test_pdf_imports.py
+          tests/integration/test_pdf_import_review_fixes.py
           -q
 
   container:
@@ -272,7 +338,7 @@ jobs:
           test "$(docker inspect --format '{{.HostConfig.NetworkMode}}' "${container}")" = "none"
           test "$(docker inspect --format '{{.HostConfig.Memory}}' "${container}")" = "1073741824"
           test "$(docker inspect --format '{{.HostConfig.PidsLimit}}' "${container}")" = "64"
-          docker exec "${container}" python - <<'PY'
+          docker exec -i "${container}" python - <<'PY'
           import socket
           from pathlib import Path
 
@@ -409,7 +475,7 @@ jobs:
           python_bin="$(UV_PYTHON_INSTALL_DIR=/opt/mangasensei-pdf-ci/python uv python find 3.11)"
           UV_PROJECT_ENVIRONMENT=/opt/mangasensei-pdf-ci/venv \
             UV_PYTHON_INSTALL_DIR=/opt/mangasensei-pdf-ci/python \
-            uv sync --frozen --python "${python_bin}" --no-editable
+            uv sync --frozen --python "${python_bin}" --no-editable --no-build-package pypdfium2
           install -m 0644 tests/fullstack/worker.py /opt/mangasensei-pdf-ci/harness/fullstack/worker.py
           cp -a tests/fullstack/fixtures/. /opt/mangasensei-pdf-ci/harness/fullstack/fixtures/
           cp -a frontend/dist/. /opt/mangasensei-pdf-ci/harness/frontend/
@@ -511,7 +577,7 @@ jobs:
           assert by_destination["/app/var/pdf-renderer-output"]["RW"] is True
           assert "/app/var/storage" not in by_destination
           PY
-          docker exec mangasensei-pdf-renderer-e2e python - <<'PY'
+          docker exec -i mangasensei-pdf-renderer-e2e python - <<'PY'
           from pathlib import Path
 
           status = Path("/proc/self/status").read_text()
