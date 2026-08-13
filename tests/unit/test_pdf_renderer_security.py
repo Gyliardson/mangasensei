@@ -3,14 +3,26 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pypdfium2 as pdfium
 import pytest
+from pydantic import ValidationError
 
 from mangasensei.config import Settings
+from mangasensei.pdf_imports import native_provenance as native_provenance_module
+from mangasensei.pdf_imports import renderer as renderer_module
 from mangasensei.pdf_imports.contracts import PdfRenderRequest
-from mangasensei.pdf_imports.renderer import PdfRenderer, PdfRenderRejected
+from mangasensei.pdf_imports.native_provenance import (
+    PDFIUM_NATIVE_SHA256_BY_PLATFORM,
+    PYPDFIUM2_WHEEL_SHA256_BY_PLATFORM,
+)
+from mangasensei.pdf_imports.renderer import (
+    PdfRenderer,
+    PdfRenderRejected,
+    renderer_provenance,
+)
 from mangasensei.pdf_imports.spool import PdfSpool, PdfSpoolError
 
 _ENCRYPTED_FIXTURE = (
@@ -74,7 +86,6 @@ def _request_for(settings: Settings, spool: PdfSpool, content: bytes) -> PdfRend
 
 
 def test_password_protected_pdf_is_rejected_without_password_prompt(tmp_path: Path) -> None:
-    # Project-authored frozen fixture: it exists only to prove encrypted PDFs fail closed.
     content = _ENCRYPTED_FIXTURE.read_bytes()
     assert hashlib.sha256(content).hexdigest() == _ENCRYPTED_FIXTURE_SHA256
     settings = Settings(environment="test", pdf_spool_root=tmp_path / "spool")
@@ -144,3 +155,151 @@ def test_spool_rejects_traversal_symlink_and_hardlink_rasters(tmp_path: Path) ->
     os.link(target, hardlink)
     with pytest.raises(PdfSpoolError, match="hard-linked"):
         spool.require_regular_file(hardlink)
+
+
+def _stub_renderer_provenance_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    flags: tuple[str, ...] = (),
+    native_content: bytes | None = b"reviewed-native",
+) -> Path:
+    raw_root = tmp_path / "site-packages" / "pypdfium2_raw"
+    raw_root.mkdir(parents=True)
+    module_file = raw_root / "__init__.py"
+    module_file.write_text("# test package\n")
+    monkeypatch.setattr(renderer_module.pypdfium2_raw, "__file__", str(module_file))
+    monkeypatch.setattr(renderer_module, "PYPDFIUM_INFO", SimpleNamespace(tag="5.12.1"))
+    monkeypatch.setattr(
+        renderer_module,
+        "PDFIUM_INFO",
+        SimpleNamespace(tag="152.0.7947.0", build=7947, flags=flags),
+    )
+    monkeypatch.setattr(
+        native_provenance_module, "_runtime_platform_key", lambda: ("Linux", "x86_64")
+    )
+    native = raw_root / "libpdfium.so"
+    if native_content is not None:
+        native.write_bytes(native_content)
+    return native
+
+
+def test_renderer_provenance_accepts_supported_reviewed_native(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native = _stub_renderer_provenance_runtime(tmp_path, monkeypatch)
+    expected = hashlib.sha256(native.read_bytes()).hexdigest()
+    monkeypatch.setattr(
+        native_provenance_module,
+        "PDFIUM_NATIVE_SHA256_BY_PLATFORM",
+        {("Linux", "x86_64"): expected},
+    )
+
+    provenance = renderer_provenance()
+
+    assert provenance.pypdfium2 == "5.12.1"
+    assert provenance.pdfium_build == 7947
+    assert provenance.pdfium_flags == ()
+    assert provenance.native_library == "pypdfium2_raw/libpdfium.so"
+
+
+def test_renderer_provenance_rejects_wrong_native_sha(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_renderer_provenance_runtime(tmp_path, monkeypatch, native_content=b"tampered-native")
+    monkeypatch.setattr(
+        native_provenance_module,
+        "PDFIUM_NATIVE_SHA256_BY_PLATFORM",
+        {("Linux", "x86_64"): "0" * 64},
+    )
+
+    with pytest.raises(ValidationError, match="integrity verification"):
+        renderer_provenance()
+
+
+@pytest.mark.parametrize(
+    ("system", "machine"),
+    [("Darwin", "arm64"), ("Windows", "AMD64"), ("Linux", "riscv64")],
+)
+def test_renderer_provenance_rejects_unsupported_platform(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    system: str,
+    machine: str,
+) -> None:
+    _stub_renderer_provenance_runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        native_provenance_module,
+        "_runtime_platform_key",
+        lambda: (system, machine.lower()),
+    )
+
+    with pytest.raises(ValidationError, match="unsupported hardened PDF renderer platform"):
+        renderer_provenance()
+
+
+def test_renderer_provenance_rejects_missing_native_library(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_renderer_provenance_runtime(tmp_path, monkeypatch, native_content=None)
+
+    with pytest.raises(RuntimeError, match="shared library is missing"):
+        renderer_provenance()
+
+
+def test_renderer_provenance_rejects_symlink_outside_package(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native = _stub_renderer_provenance_runtime(tmp_path, monkeypatch, native_content=None)
+    outside = tmp_path / "system-libpdfium.so"
+    outside.write_bytes(b"system-native")
+    native.symlink_to(outside)
+
+    with pytest.raises(RuntimeError, match="shared library is missing"):
+        renderer_provenance()
+
+
+@pytest.mark.parametrize("flag", ["V8", "XFA"])
+def test_renderer_provenance_rejects_active_content_builds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    flag: str,
+) -> None:
+    _stub_renderer_provenance_runtime(tmp_path, monkeypatch, flags=(flag,))
+
+    with pytest.raises(RuntimeError, match="non-V8/non-XFA"):
+        renderer_provenance()
+
+
+def test_renderer_provenance_rejects_wrong_wrapper_or_pdfium_build(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_renderer_provenance_runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(renderer_module, "PYPDFIUM_INFO", SimpleNamespace(tag="5.12.0"))
+    with pytest.raises(RuntimeError, match="helper version"):
+        renderer_provenance()
+
+    monkeypatch.setattr(renderer_module, "PYPDFIUM_INFO", SimpleNamespace(tag="5.12.1"))
+    monkeypatch.setattr(
+        renderer_module,
+        "PDFIUM_INFO",
+        SimpleNamespace(tag="152.0.7946.0", build=7946, flags=()),
+    )
+    with pytest.raises(RuntimeError, match="PDFium build"):
+        renderer_provenance()
+
+
+def test_reviewed_linux_wheel_and_native_hash_contract_is_frozen() -> None:
+    assert PYPDFIUM2_WHEEL_SHA256_BY_PLATFORM == {
+        ("Linux", "x86_64"): "e10cbf41b21233ec5e20adfc170cf60edd77abead86a97dc708fff55a8a886c7",
+        ("Linux", "aarch64"): "6eabf028ad8e7bc7811c9acf3a72718c180569b624b844d2c6cc974609784275",
+    }
+    assert PDFIUM_NATIVE_SHA256_BY_PLATFORM == {
+        ("Linux", "x86_64"): "61c9f745c6296a1050599a99a1ed985036411b591a11bd2a41bafe530ecb4f33",
+        ("Linux", "aarch64"): "f5c8d54a498e2112fbcf53e866c4a5635e9839db3a36d88c4772e5384dabeac6",
+    }
