@@ -20,17 +20,12 @@ import {
   type StudyPage,
   type UploadData,
   fetchProtectedImage,
-  reprocessDictionaryLanguage,
   reprocessStudyLanguage,
   uploadDocument,
   uploadPage,
   waitForPage,
 } from "./lib/api";
-import {
-  type DictionaryLanguage,
-  loadDictionaryLanguagePreference,
-  saveDictionaryLanguagePreference,
-} from "./lib/dictionaryLanguage";
+import { migrateLegacyDictionaryLanguagePreference } from "./lib/dictionaryLanguage";
 import { documentMessagesFor, type DocumentUiMessages } from "./lib/documentUiMessages";
 import {
   type PdfImportStatus,
@@ -59,7 +54,7 @@ type LocalErrorCode = "select_image_first" | "pdf_must_be_single" | "unexpected_
 type DisplayError =
   | { readonly kind: "local"; readonly code: LocalErrorCode }
   | { readonly kind: "api"; readonly code: string };
-type LanguageMutation = "study" | "dictionary" | null;
+type LanguageMutation = "study" | null;
 type AppPhase =
   | "idle"
   | "uploading"
@@ -68,10 +63,6 @@ type AppPhase =
   | "complete"
   | "document"
   | "error";
-
-function requestedDictionaryLanguageOf(page: StudyPage): DictionaryLanguage {
-  return page.requestedDictionaryLanguage ?? "en";
-}
 
 export function App() {
   const [files, setFiles] = useState<File[]>([]);
@@ -87,15 +78,15 @@ export function App() {
   const [preferredStudyLanguage, setPreferredStudyLanguage] = useState<StudyLanguage>(() =>
     loadStudyLanguagePreference(),
   );
-  const [preferredDictionaryLanguage, setPreferredDictionaryLanguage] = useState<DictionaryLanguage>(() =>
-    loadDictionaryLanguagePreference(),
-  );
   const [languageMutation, setLanguageMutation] = useState<LanguageMutation>(null);
   const [studyLanguageErrorCode, setStudyLanguageErrorCode] = useState<string | null>(null);
-  const [dictionaryLanguageErrorCode, setDictionaryLanguageErrorCode] = useState<string | null>(null);
   const operation = useRef<AbortController | null>(null);
   const messages = messagesFor(uiLocale);
   const documentMessages = documentMessagesFor(uiLocale);
+
+  useEffect(() => {
+    migrateLegacyDictionaryLanguagePreference();
+  }, []);
 
   useEffect(() => () => operation.current?.abort(), []);
 
@@ -126,7 +117,6 @@ export function App() {
     setError(null);
     setLanguageMutation(null);
     setStudyLanguageErrorCode(null);
-    setDictionaryLanguageErrorCode(null);
   };
 
   const changeUiLocale = (value: string) => {
@@ -166,42 +156,6 @@ export function App() {
 
   const removeFile = (index: number) => {
     setFiles((current) => current.filter((_, candidateIndex) => candidateIndex !== index));
-  };
-
-  const runDictionaryReprojection = async (
-    currentPage: StudyPage,
-    access: UploadData,
-    target: DictionaryLanguage,
-    controller: AbortController,
-  ) => {
-    const previousLanguage = requestedDictionaryLanguageOf(currentPage);
-    setPreferredDictionaryLanguage(target);
-    saveDictionaryLanguagePreference(target);
-    setDictionaryLanguageErrorCode(null);
-    if (target === previousLanguage) {
-      if (operation.current === controller) operation.current = null;
-      return;
-    }
-
-    setLanguageMutation("dictionary");
-    try {
-      await reprocessDictionaryLanguage(access, target, controller.signal);
-      const result = await waitForPage(access, controller.signal, setJobStatus);
-      setPage(result);
-      const persistedLanguage = requestedDictionaryLanguageOf(result);
-      setPreferredDictionaryLanguage(persistedLanguage);
-      saveDictionaryLanguagePreference(persistedLanguage);
-    } catch (caught) {
-      if (caught instanceof DOMException && caught.name === "AbortError") return;
-      setPreferredDictionaryLanguage(previousLanguage);
-      saveDictionaryLanguagePreference(previousLanguage);
-      setDictionaryLanguageErrorCode(
-        caught instanceof ApiError ? caught.code : "dictionary_language_update_failed",
-      );
-    } finally {
-      if (operation.current === controller) operation.current = null;
-      setLanguageMutation(null);
-    }
   };
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -263,14 +217,7 @@ export function App() {
       setPreferredStudyLanguage(result.studyLanguage);
       saveStudyLanguagePreference(result.studyLanguage);
       setPhase("complete");
-
-      const persistedDictionaryLanguage = requestedDictionaryLanguageOf(result);
-      if (preferredDictionaryLanguage === persistedDictionaryLanguage) {
-        saveDictionaryLanguagePreference(persistedDictionaryLanguage);
-        operation.current = null;
-        return;
-      }
-      await runDictionaryReprojection(result, upload, preferredDictionaryLanguage, controller);
+      operation.current = null;
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setPageAccess(null);
@@ -312,28 +259,10 @@ export function App() {
     }
   };
 
-  const changeDictionaryLanguage = async (target: DictionaryLanguage) => {
-    if (!page || !pageAccess || languageMutation) return;
-    if (target === requestedDictionaryLanguageOf(page)) {
-      setPreferredDictionaryLanguage(target);
-      saveDictionaryLanguagePreference(target);
-      setDictionaryLanguageErrorCode(null);
-      return;
-    }
-    const controller = new AbortController();
-    operation.current = controller;
-    await runDictionaryReprojection(page, pageAccess, target, controller);
-  };
-
   const studyLanguageError = studyLanguageErrorCode
     ? studyLanguageErrorCode === "study_language_update_failed"
       ? messages.studyLanguageUpdateFailed
       : messages.apiError(studyLanguageErrorCode)
-    : null;
-  const dictionaryLanguageError = dictionaryLanguageErrorCode
-    ? dictionaryLanguageErrorCode === "dictionary_language_update_failed"
-      ? messages.dictionaryLanguageUpdateFailed
-      : messages.apiError(dictionaryLanguageErrorCode)
     : null;
 
   if (phase === "document" && documentAccess) {
@@ -344,9 +273,7 @@ export function App() {
           access={documentAccess}
           uiLocale={uiLocale}
           preferredStudyLanguage={preferredStudyLanguage}
-          preferredDictionaryLanguage={preferredDictionaryLanguage}
           onPreferredStudyLanguageChange={setPreferredStudyLanguage}
-          onPreferredDictionaryLanguageChange={setPreferredDictionaryLanguage}
           onReset={reset}
         />
         <Footer />
@@ -363,12 +290,9 @@ export function App() {
           imageUrl={imageUrl}
           uiLocale={uiLocale}
           preferredStudyLanguage={preferredStudyLanguage}
-          preferredDictionaryLanguage={preferredDictionaryLanguage}
           languageMutation={languageMutation}
           studyLanguageError={studyLanguageError}
-          dictionaryLanguageError={dictionaryLanguageError}
           onStudyLanguageChange={changeStudyLanguage}
-          onDictionaryLanguageChange={changeDictionaryLanguage}
           onReset={reset}
         />
         <Footer />
@@ -436,7 +360,7 @@ export function App() {
             type="file"
             multiple
             accept={acceptedTypes}
-            aria-label={`${messages.pageImageAria} / PDF`}
+            aria-label={messages.pageImageAria}
             aria-describedby="upload-retention page-order-hint"
             onChange={(event) => selectFiles(Array.from(event.target.files ?? []))}
           />
@@ -597,9 +521,7 @@ function displayError(
     return messages.apiError(error.code);
   }
   if (error.code === "select_image_first") return messages.selectImageFirst;
-  if (error.code === "pdf_must_be_single") {
-    return messages.apiError("pdf_must_be_single");
-  }
+  if (error.code === "pdf_must_be_single") return messages.apiError("pdf_must_be_single");
   return messages.unexpectedProcessingError;
 }
 
@@ -639,10 +561,22 @@ function pdfErrorMessage(messages: UiMessages, code: string): string {
     pdf_pixel_limit: ["The rendered PDF exceeds the pixel limit.", "O PDF renderizado excede o limite de pixels."],
     pdf_raster_bytes_limit: ["The rendered PDF exceeds the byte limit.", "O PDF renderizado excede o limite de bytes."],
     pdf_renderer_timeout: ["Local PDF rendering timed out.", "A renderização local do PDF excedeu o tempo limite."],
-    pdf_renderer_crash: ["The local PDF renderer stopped unexpectedly.", "O renderizador local de PDF foi interrompido inesperadamente."],
-    pdf_temp_storage_exhausted: ["Temporary PDF storage is exhausted.", "O armazenamento temporário do PDF foi esgotado."],
-    pdf_raster_validation_failed: ["A rendered page failed image validation.", "Uma página renderizada falhou na validação de imagem."],
-    pdf_manifest_invalid: ["The PDF render manifest failed integrity checks.", "O manifesto de renderização do PDF falhou nas verificações de integridade."],
+    pdf_renderer_crash: [
+      "The local PDF renderer stopped unexpectedly.",
+      "O renderizador local de PDF foi interrompido inesperadamente.",
+    ],
+    pdf_temp_storage_exhausted: [
+      "Temporary PDF storage is exhausted.",
+      "O armazenamento temporário do PDF foi esgotado.",
+    ],
+    pdf_raster_validation_failed: [
+      "A rendered page failed image validation.",
+      "Uma página renderizada falhou na validação de imagem.",
+    ],
+    pdf_manifest_invalid: [
+      "The PDF render manifest failed integrity checks.",
+      "O manifesto de renderização do PDF falhou nas verificações de integridade.",
+    ],
     pdf_render_failed: ["Local PDF rendering failed.", "A renderização local do PDF falhou."],
   };
   const label = labels[code];

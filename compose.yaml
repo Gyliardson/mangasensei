@@ -44,12 +44,7 @@ services:
 
   jmdict:
     <<: *app-service
-    command:
-      - sh
-      - -c
-      - >-
-        mangasensei jmdict download &&
-        mangasensei jmdict download --language de
+    command: ["mangasensei", "jmdict", "download"]
     environment:
       MANGASENSEI_ENVIRONMENT: production
       MANGASENSEI_JMDICT_PATH: /app/var/data/jmdict.json

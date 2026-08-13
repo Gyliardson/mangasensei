@@ -54,30 +54,42 @@ const pageTwoSvg = `
   </g>
 </svg>`;
 
-const [readPageToken, readImageToken, reprocessToken, readDocumentToken, readDocumentImageToken, reprocessDocumentToken] = MEDIA_FIXTURE_SECRETS;
+const [
+  readPageToken,
+  readImageToken,
+  reprocessToken,
+  readDocumentToken,
+  readDocumentImageToken,
+  reprocessDocumentToken,
+] = MEDIA_FIXTURE_SECRETS;
 
-type DictionaryLanguage = "en" | "de";
+type StudyLanguage = "en" | "pt-BR";
 type SingleFixtureMode = "completed" | "workflow";
 
 function studyPage(options: {
   readonly pageId: string;
   readonly imageUrl: string;
-  readonly dictionaryLanguage?: DictionaryLanguage;
+  readonly studyLanguage: StudyLanguage;
   readonly second?: boolean;
 }) {
-  const german = options.dictionaryLanguage === "de";
+  const portuguese = options.studyLanguage === "pt-BR";
   return {
     pageId: options.pageId,
     status: "completed",
     resultAvailable: true,
     contentLanguage: "ja",
-    studyLanguage: "en",
+    studyLanguage: options.studyLanguage,
     dictionaryLanguage: "en",
-    requestedDictionaryLanguage: options.dictionaryLanguage ?? "en",
+    requestedDictionaryLanguage: "en",
     fallbackDictionaryLanguage: "en",
     dictionarySources: [
-      { ref: "en-fixture", dataset: "JMdict", productLanguage: "en", sourceVersion: "fixture", normalizedDigestSha256: "a".repeat(64) },
-      ...(german ? [{ ref: "de-fixture", dataset: "JMdict", productLanguage: "de", sourceVersion: "fixture", normalizedDigestSha256: "b".repeat(64) }] : []),
+      {
+        ref: "en-fixture",
+        dataset: "JMdict",
+        productLanguage: "en",
+        sourceVersion: "fixture",
+        normalizedDigestSha256: "a".repeat(64),
+      },
     ],
     expiresAt: "2030-01-01T00:00:00Z",
     imageUrl: options.imageUrl,
@@ -109,21 +121,41 @@ function studyPage(options: {
             dictionaryId: options.second ? "rain" : "cat",
           },
         ],
-        translation: options.second ? "It is raining, isn't it?" : "It is a cat.",
-        explanation: options.second ? "A conversational observation." : "A polite nominal sentence.",
-        grammar: [options.second ? "sentence-ending particle ね" : "polite copula"],
+        translation: options.second
+          ? portuguese
+            ? "Está chovendo, não é?"
+            : "It is raining, isn't it?"
+          : portuguese
+            ? "É um gato."
+            : "It is a cat.",
+        explanation: options.second
+          ? portuguese
+            ? "Uma observação conversacional."
+            : "A conversational observation."
+          : portuguese
+            ? "Uma frase nominal polida."
+            : "A polite nominal sentence.",
+        grammar: [
+          options.second
+            ? portuguese
+              ? "partícula final ね"
+              : "sentence-ending particle ね"
+            : portuguese
+              ? "cópula polida"
+              : "polite copula",
+        ],
         vocabulary: [
           {
             id: options.second ? "rain" : "cat",
             surface: options.second ? "雨" : "猫",
             lemma: options.second ? "雨" : "猫",
             reading: options.second ? "あめ" : "ねこ",
-            meanings: [german ? (options.second ? "Regen" : "Katze") : (options.second ? "rain" : "cat")],
+            meanings: [options.second ? "rain" : "cat"],
             source: "JMdict",
-            effectiveLanguage: german ? "de" : "en",
+            effectiveLanguage: "en",
             fallbackUsed: false,
             fallbackReason: null,
-            sourceRef: german ? "de-fixture" : "en-fixture",
+            sourceRef: "en-fixture",
             jlpt: { level: "N5", official: false },
           },
         ],
@@ -132,8 +164,19 @@ function studyPage(options: {
   };
 }
 
+function invalidDictionaryLanguageResponse() {
+  return {
+    success: false,
+    data: null,
+    error: {
+      code: "invalid_request",
+      message: "unsupported dictionary language",
+    },
+  };
+}
+
 export async function installSinglePageFixture(page: Page, mode: SingleFixtureMode = "completed") {
-  let dictionaryLanguage: DictionaryLanguage = "en";
+  let studyLanguage: StudyLanguage = "en";
   let statusReads = 0;
 
   await page.route("**/api/v1/**", async (route) => {
@@ -153,7 +196,7 @@ export async function installSinglePageFixture(page: Page, mode: SingleFixtureMo
             height: 900,
             mediaType: "image/png",
             expiresAt: "2030-01-01T00:00:00Z",
-            studyLanguage: "en",
+            studyLanguage,
             capabilities: {
               readPage: readPageToken,
               readImage: readImageToken,
@@ -166,8 +209,21 @@ export async function installSinglePageFixture(page: Page, mode: SingleFixtureMo
       return;
     }
     if (request.method() === "POST" && url.pathname.endsWith("/reprocess")) {
-      const payload = request.postDataJSON() as { dictionaryLanguage?: DictionaryLanguage };
-      if (payload.dictionaryLanguage) dictionaryLanguage = payload.dictionaryLanguage;
+      const payload = request.postDataJSON() as {
+        studyLanguage?: StudyLanguage;
+        dictionaryLanguage?: string;
+      };
+      if (payload.dictionaryLanguage !== undefined) {
+        await route.fulfill({
+          status: 422,
+          contentType: "application/json",
+          body: JSON.stringify(invalidDictionaryLanguageResponse()),
+        });
+        return;
+      }
+      if (payload.studyLanguage === "en" || payload.studyLanguage === "pt-BR") {
+        studyLanguage = payload.studyLanguage;
+      }
       await route.fulfill({
         status: 202,
         contentType: "application/json",
@@ -176,8 +232,7 @@ export async function installSinglePageFixture(page: Page, mode: SingleFixtureMo
           data: {
             jobId: "media-job-reprocess",
             status: "pending",
-            studyLanguage: "en",
-            requestedDictionaryLanguage: dictionaryLanguage,
+            studyLanguage,
             created: true,
           },
           error: null,
@@ -213,7 +268,7 @@ export async function installSinglePageFixture(page: Page, mode: SingleFixtureMo
         data: studyPage({
           pageId: "media-page-1",
           imageUrl: "/api/v1/pages/media-page-1/image",
-          dictionaryLanguage,
+          studyLanguage,
         }),
         error: null,
       }),
@@ -247,7 +302,7 @@ function documentProgress(partial: boolean) {
 }
 
 export async function installDocumentFixture(page: Page, options: DocumentFixtureOptions) {
-  const dictionaryByPage = new Map<string, DictionaryLanguage>([
+  const studyLanguageByPage = new Map<string, StudyLanguage>([
     ["media-page-a", "en"],
     ["media-page-b", "en"],
   ]);
@@ -296,7 +351,9 @@ export async function installDocumentFixture(page: Page, options: DocumentFixtur
       });
       return;
     }
-    const pageMatch = url.pathname.match(/^\/api\/v1\/documents\/media-document-1\/pages\/(media-page-[ab])$/);
+    const pageMatch = url.pathname.match(
+      /^\/api\/v1\/documents\/media-document-1\/pages\/(media-page-[ab])$/,
+    );
     if (request.method() === "GET" && pageMatch?.[1]) {
       const pageId = pageMatch[1];
       await route.fulfill({
@@ -306,7 +363,7 @@ export async function installDocumentFixture(page: Page, options: DocumentFixtur
           data: studyPage({
             pageId,
             imageUrl: `/api/v1/documents/media-document-1/pages/${pageId}/image`,
-            dictionaryLanguage: dictionaryByPage.get(pageId),
+            studyLanguage: studyLanguageByPage.get(pageId) ?? "en",
             second: pageId === "media-page-b",
           }),
           error: null,
@@ -314,7 +371,9 @@ export async function installDocumentFixture(page: Page, options: DocumentFixtur
       });
       return;
     }
-    const imageMatch = url.pathname.match(/^\/api\/v1\/documents\/media-document-1\/pages\/(media-page-[ab])\/image$/);
+    const imageMatch = url.pathname.match(
+      /^\/api\/v1\/documents\/media-document-1\/pages\/(media-page-[ab])\/image$/,
+    );
     if (request.method() === "GET" && imageMatch?.[1]) {
       await route.fulfill({
         status: 200,
@@ -323,10 +382,24 @@ export async function installDocumentFixture(page: Page, options: DocumentFixtur
       });
       return;
     }
-    const reprocessMatch = url.pathname.match(/^\/api\/v1\/documents\/media-document-1\/pages\/(media-page-[ab])\/reprocess$/);
+    const reprocessMatch = url.pathname.match(
+      /^\/api\/v1\/documents\/media-document-1\/pages\/(media-page-[ab])\/reprocess$/,
+    );
     if (request.method() === "POST" && reprocessMatch?.[1]) {
-      const payload = request.postDataJSON() as { dictionaryLanguage?: DictionaryLanguage };
-      if (payload.dictionaryLanguage) dictionaryByPage.set(reprocessMatch[1], payload.dictionaryLanguage);
+      const payload = request.postDataJSON() as {
+        studyLanguage?: StudyLanguage;
+        dictionaryLanguage?: string;
+      };
+      if (payload.dictionaryLanguage !== undefined) {
+        await route.fulfill({
+          status: 422,
+          contentType: "application/json",
+          body: JSON.stringify(invalidDictionaryLanguageResponse()),
+        });
+        return;
+      }
+      const studyLanguage = payload.studyLanguage ?? "en";
+      studyLanguageByPage.set(reprocessMatch[1], studyLanguage);
       await route.fulfill({
         status: 202,
         contentType: "application/json",
@@ -335,8 +408,7 @@ export async function installDocumentFixture(page: Page, options: DocumentFixtur
           data: {
             jobId: "media-document-reprocess",
             status: "pending",
-            studyLanguage: "en",
-            requestedDictionaryLanguage: payload.dictionaryLanguage ?? "en",
+            studyLanguage,
             created: true,
           },
           error: null,
@@ -355,7 +427,9 @@ export async function uploadSinglePage(page: Page): Promise<void> {
     buffer: uploadPng,
   });
   await page.getByRole("button", { name: "Analyze page" }).click();
-  await expect(page.getByRole("button", { name: "Region 1: 猫です" })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("button", { name: "Region 1: 猫です" })).toBeVisible({
+    timeout: 10_000,
+  });
 }
 
 export async function uploadDocument(page: Page): Promise<void> {

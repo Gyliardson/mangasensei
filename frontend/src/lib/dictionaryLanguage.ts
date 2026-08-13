@@ -1,26 +1,19 @@
-export const DICTIONARY_LANGUAGE_PREFERENCE_KEY = "mangasensei.dictionary.language";
+export const LEGACY_DICTIONARY_LANGUAGE_PREFERENCE_KEY = "mangasensei.dictionary.language";
 
-export type DictionaryLanguage = "en" | "de" | "pt-BR";
+// Historical page payloads may still contain requested values emitted by older
+// releases. This type is for wire/persisted metadata only, not new commands.
+export type HistoricalDictionaryLanguage = "en" | "de" | "pt-BR";
 
-export const DEFAULT_DICTIONARY_LANGUAGE: DictionaryLanguage = "en";
+// The deterministic local dictionary product surface is English-only.
+export type ActiveDictionaryLanguage = "en";
+export const ACTIVE_DICTIONARY_LANGUAGE: ActiveDictionaryLanguage = "en";
 
-export function isDictionaryLanguage(value: unknown): value is DictionaryLanguage {
-  return value === "en" || value === "de" || value === "pt-BR";
-}
-
-export function loadDictionaryLanguagePreference(): DictionaryLanguage {
+export function migrateLegacyDictionaryLanguagePreference(): ActiveDictionaryLanguage {
   try {
-    const stored = window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY);
-    return isDictionaryLanguage(stored) ? stored : DEFAULT_DICTIONARY_LANGUAGE;
+    window.localStorage.removeItem(LEGACY_DICTIONARY_LANGUAGE_PREFERENCE_KEY);
   } catch {
-    return DEFAULT_DICTIONARY_LANGUAGE;
+    // Browser storage is optional. Failure to remove a legacy key must not make
+    // the application unusable or change the English-only active behavior.
   }
-}
-
-export function saveDictionaryLanguagePreference(language: DictionaryLanguage): void {
-  try {
-    window.localStorage.setItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY, language);
-  } catch {
-    // Browser storage is a convenience only; the persisted page result remains authoritative.
-  }
+  return ACTIVE_DICTIONARY_LANGUAGE;
 }

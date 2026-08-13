@@ -148,7 +148,7 @@ async function expectBlobImageRendered(page: Page): Promise<void> {
   ).toBe(true);
 }
 
-test("creates, partially reads, navigates and reprojects a real multipage document", async ({
+test("creates, partially reads, navigates and reprocesses a real multipage document", async ({
   page,
   request,
 }, testInfo) => {
@@ -274,20 +274,22 @@ test("creates, partially reads, navigates and reprojects a real multipage docume
     ),
   ).toEqual(redPage);
 
-  const dictionaryMutationPromise = page.waitForResponse((response) => {
+  const studyMutationPromise = page.waitForResponse((response) => {
     const path = new URL(response.url()).pathname;
     return response.request().method() === "POST"
       && path === `/api/v1/documents/${document.documentId}/pages/${secondPageId}/reprocess`;
   });
   const studyControls = page.getByRole("group", { name: "Study preferences" });
-  await studyControls.getByRole("combobox", { name: "Dictionary language" }).selectOption("de");
-  const dictionaryMutation = await dictionaryMutationPromise;
-  expect(dictionaryMutation.status()).toBe(202);
-  expect(dictionaryMutation.request().postDataJSON()).toEqual({ dictionaryLanguage: "de" });
-  expect(await dictionaryMutation.request().headerValue("x-document-token")).toBeTruthy();
-  await expect(page.getByText("Katze", { exact: true })).toHaveAttribute("lang", "de", {
+  await expect(studyControls.getByRole("combobox", { name: "Dictionary language" })).toHaveCount(0);
+  await studyControls.getByRole("combobox", { name: "Study language" }).selectOption("en");
+  const studyMutation = await studyMutationPromise;
+  expect(studyMutation.status()).toBe(202);
+  expect(studyMutation.request().postDataJSON()).toEqual({ studyLanguage: "en" });
+  expect(await studyMutation.request().headerValue("x-document-token")).toBeTruthy();
+  await expect(page.getByText("It is a cat.")).toHaveAttribute("lang", "en", {
     timeout: 20_000,
   });
+  await expect(page.getByText("cat", { exact: true })).toHaveAttribute("lang", "en");
 
   const untouchedFirstPageResponse = await request.get(
     `/api/v1/documents/${document.documentId}/pages/${firstPageId}`,

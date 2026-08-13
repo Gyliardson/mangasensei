@@ -71,7 +71,7 @@ No reutilices los placeholders del repositorio ni hagas commit de tu `.env`.
 docker compose up --detach --build
 ```
 
-En una instalación limpia, este comando construye la aplicación y ejecuta servicios one-shot para migraciones, modelos OCR fijados por checksum y datos JMdict revisados en inglés/alemán antes de que el worker quede listo. **El primer bootstrap necesita acceso a la red** para obtener capas de contenedores, artefactos de modelos OCR y datos fuente de JMdict. Después, esos artefactos quedan en volúmenes Docker locales para el procesamiento local posterior.
+En una instalación limpia, este comando construye la aplicación y ejecuta servicios one-shot para migraciones, modelos OCR fijados por checksum y los datos JMdict revisados en inglés antes de que el worker quede listo. **El primer bootstrap necesita acceso a la red** para obtener capas de contenedores, artefactos de modelos OCR y datos fuente de JMdict. Después, esos artefactos quedan en volúmenes Docker locales para el procesamiento local posterior.
 
 Gemini permanece deshabilitado mientras `GOOGLE_API_KEY` esté vacío. El OCR japonés, el análisis Sudachi y el vocabulario determinista de JMdict siguen funcionando; los campos de traducción/explicación contextual por IA pueden estar ausentes.
 
@@ -88,12 +88,12 @@ En PowerShell:
 Invoke-RestMethod http://127.0.0.1:8000/ready
 ```
 
-Después abre **http://127.0.0.1:8000** y analiza una fuente JPEG, PNG, WebP o un PDF. Varias imágenes conservan el orden elegido; un PDF pasa primero por un render/import local acotado y después usa el mismo Document temporal y ordenado.
+Después abre **http://127.0.0.1:8000** y analiza una página JPEG, PNG o WebP. También puedes seleccionar varias imágenes compatibles para crear un Document temporal y ordenado.
 
 Si el bootstrap falla:
 
 ```sh
-docker compose logs models jmdict migrate api pdf-renderer pdf-importer worker
+docker compose logs models jmdict migrate api worker
 ```
 
 ### 4. Detén o limpia el entorno
@@ -116,7 +116,7 @@ El segundo comando elimina el estado local de la base de datos, el almacenamient
 
 Una sesión normal de lectura es intencionadamente sencilla:
 
-1. Selecciona una imagen compatible, un conjunto ordenado de imágenes o un PDF.
+1. Selecciona una imagen compatible o un conjunto ordenado de imágenes.
 2. MangaSensei preserva la imagen original y encola cada Page para OCR local y análisis lingüístico.
 3. Abre Pages completadas en el lector responsivo mientras los overlays de estudio permanecen separados de la imagen fuente.
 4. Selecciona regiones OCR para inspeccionar texto japonés, furigana, tokens y vocabulario determinista del diccionario.
@@ -132,14 +132,11 @@ El lector actual también es responsivo en móvil:
 
 ## Flujo multipágina
 
-Los Slices B, C y D de [#105](https://github.com/Gyliardson/mangasensei/issues/105) admiten Documents de múltiples imágenes ordenadas, resultados parciales/recuperación e importación PDF local endurecida sin convertir un volumen entero en un único job gigante de OCR.
+Los Slices B y C de [#105](https://github.com/Gyliardson/mangasensei/issues/105) admiten Documents de múltiples imágenes ordenadas, resultados parciales y controles de recuperación sin convertir un volumen entero en un único job gigante de OCR.
 
 **Disponible ahora:**
 
 - seleccionar varias imágenes JPEG, PNG o WebP e inspeccionarlas/reordenarlas antes de subirlas;
-- seleccionar un PDF para una etapa asíncrona, local y acotada de render/import; todos los raster se validan antes de confirmar el Document normal;
-- seleccionar un PDF para una etapa asíncrona, local y acotada de render/import; todos los raster se validan antes de confirmar el Document normal;
-- seleccionar un PDF para una etapa asíncrona, local y acotada de render/import; todos los raster se validan antes de confirmar el Document normal;
 - conservar el orden mostrado antes de la carga como orden inicial canónico del Document;
 - mantener cada Page como unidad independiente de OCR/estudio/job;
 - mostrar estados agregados veraces de procesando, completado, completado con errores y cancelado, junto con contadores de Pages completadas / en proceso / con fallo / canceladas;
@@ -148,10 +145,10 @@ Los Slices B, C y D de [#105](https://github.com/Gyliardson/mangasensei/issues/1
 - cancelar cooperativamente el procesamiento activo del Document sin reescribir Pages ya completadas;
 - persistir el orden de Pages después de la creación con concurrencia optimista;
 - navegar mediante selección directa y controles Anterior / Siguiente;
-- reprocesar idioma de estudio o idioma de diccionario solo para la Page actual;
+- reprocesar el idioma de estudio solo para la Page actual desde el lector; la API protegida conserva una ruta de reproyección de diccionario únicamente en inglés;
 - mantener el Document y todas las Pages hijas en el mismo límite exacto de retención de 24 horas.
 
-**Aún aplazado en #105:** thumbnails, biblioteca persistente de manga, semántica de orden de lectura consciente de spreads/entre páginas y hardening posterior de rendimiento/escala para Documents grandes.
+**Aún aplazado en #105:** importación PDF endurecida, thumbnails, biblioteca persistente de manga, semántica de orden de lectura consciente de spreads/entre páginas y hardening posterior de rendimiento/escala para Documents grandes.
 
 Consulta el [contrato de Documents multiimagen](docs/document-imports.md) para límites, capabilities, idempotencia, retención, recuperación y semántica de fallos.
 
@@ -195,28 +192,28 @@ Consulta [SECURITY.es.md](SECURITY.es.md), [docs/document-imports.md](docs/docum
 
 ## Idiomas y funciones de estudio
 
-Cuatro ejes de idioma son deliberadamente independientes:
+Cuatro ejes siguen siendo conceptualmente independientes, aunque el diccionario local determinista ahora es únicamente inglés:
 
 | Eje | Soporte actual |
 | --- | --- |
 | Contenido del manga | Japonés (`ja`) |
 | Estudio / explicación contextual | Portugués de Brasil (`pt-BR`) o Inglés (`en`) |
-| Idioma solicitado del diccionario determinista | Inglés (`en`), Alemán (`de`) o Portugués de Brasil (`pt-BR`) |
+| Diccionario local determinista | únicamente Inglés (`en`) |
 | Locale de interfaz | Inglés (`en`) o Portugués de Brasil (`pt-BR`) |
 
-El alemán usa el pack JMdict local revisado cuando está disponible la forma canónica exacta y hace fallback por elemento a inglés en los demás casos. Una solicitud de diccionario `pt-BR` sigue marcada explícitamente como Portugués de Brasil, pero los significados deterministas de palabras usan actualmente fallback a inglés porque no existe un pack revisado de glosas JMdict portuguesas a nivel de palabra. Cambiar el idioma del diccionario reutiliza el análisis lingüístico canónico persistido y no vuelve a ejecutar OCR, adquisición léxica de Sudachi ni Gemini.
+El lector ya no expone un selector de idioma del diccionario. Las nuevas solicitudes de reproyección de diccionario aceptan únicamente inglés; valores no compatibles como `de` o `pt-BR` se rechazan en vez de convertirse silenciosamente a inglés. Los resultados históricos aún no expirados pueden conservar metadatos anteriores de idioma solicitado/efectivo/fallback, que siguen siendo legibles sin descargar el pack alemán retirado. Las opciones de idioma de estudio e interfaz no cambian.
 
-Consulta el [contrato de ejes de idioma](docs/study-languages.md) y el [contrato de packs JMdict](docs/jmdict-packs.md).
+Consulta el [contrato de ejes de idioma](docs/study-languages.md) y el [contrato de datos JMdict](docs/jmdict-packs.md).
 
 ## Funciones
 
 | Área | Capacidad |
 | --- | --- |
-| Carga | Imágenes standalone seguras, Documents multiimagen ordenados/acotados e importación PDF local endurecida con idempotencia y capabilities con alcance |
+| Carga | Carga segura standalone más Documents multiimagen ordenados/acotados con idempotencia y capabilities con alcance |
 | OCR | Subconjunto local de Manga Image Translator con modelos verificados por checksum |
-| Lingüística | Tokenización Sudachi y datos JMdict locales revisados en inglés/alemán sobre identidades léxicas canónicas independientes del idioma |
+| Lingüística | Tokenización Sudachi y datos JMdict locales revisados en inglés sobre identidades léxicas canónicas independientes del idioma |
 | Lector | Renderizado Blob autenticado de la imagen original, overlays SVG responsivos, furigana, zoom/ajuste, navegación multipágina y lectura de resultados parciales |
-| Idiomas | Preferencias independientes de UI, estudio/explicación y diccionario solicitado, con fallback presentado explícitamente |
+| Idiomas | Preferencias independientes de UI y estudio/explicación con significados locales deterministas en inglés |
 | Gemini | Explicaciones contextuales estructuradas opcionales en `pt-BR`/`en`, control de presupuesto, contexto textual mínimo y `store=False` |
 | Operación | Cola PostgreSQL, recuperación por leases, retención acotada, readiness, métricas y runtime Compose endurecido |
 
@@ -224,6 +221,7 @@ Consulta el [contrato de ejes de idioma](docs/study-languages.md) y el [contrato
 
 MangaSensei sigue siendo software pre-release. Además de las limitaciones OCR indicadas arriba:
 
+- la importación de PDF aún no está implementada;
 - los Documents son temporales, no una biblioteca persistente de manga;
 - thumbnails y orden de lectura consciente de spreads/entre páginas no están implementados;
 - el hardening posterior de rendimiento/escala para Documents grandes sigue aplazado en #105;
@@ -289,7 +287,6 @@ npm install
 uv run mangasensei models download
 uv run mangasensei models verify
 uv run mangasensei jmdict download
-uv run mangasensei jmdict download --language de
 ```
 
 Para ejecución directa en el host, crea `.env` desde `.env.example` y sigue sus comentarios para que la URL de base de datos del host use la misma contraseña generada. Docker Compose sigue siendo la ruta soportada más simple para ejecutar el stack completo.
@@ -332,13 +329,13 @@ FastAPI sirve documentación interactiva de la API en `/api/docs` cuando MangaSe
 | `POST` | `/api/v1/pages` | Sube una página japonesa y encola análisis |
 | `GET` | `/api/v1/pages/{page_id}` | Lee una Page standalone con su capability de lectura |
 | `GET` | `/api/v1/pages/{page_id}/image` | Devuelve la imagen original standalone protegida |
-| `POST` | `/api/v1/pages/{page_id}/reprocess` | Reprocesa un eje de idioma standalone |
+| `POST` | `/api/v1/pages/{page_id}/reprocess` | Reprocesa un eje de idioma standalone compatible |
 | `POST` | `/api/v1/documents` | Crea un Document multiimagen ordenado |
 | `GET` | `/api/v1/documents/{document_id}` | Lee hijos ordenados, estado agregado y progreso |
 | `GET` | `/api/v1/documents/{document_id}/progress` | Lee contadores completados/en proceso/con fallo/cancelados |
 | `GET` | `/api/v1/documents/{document_id}/pages/{page_id}` | Lee una StudyPage miembro |
 | `GET` | `/api/v1/documents/{document_id}/pages/{page_id}/image` | Devuelve la imagen original protegida de un miembro |
-| `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | Reprocesa un eje de idioma en una Page miembro |
+| `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | Reprocesa un eje de idioma compatible en una Page miembro |
 | `POST` | `/api/v1/documents/{document_id}/retry-failed` | Reintenta de forma idempotente Pages miembro elegibles con fallo y sin resultado legible |
 | `POST` | `/api/v1/documents/{document_id}/cancel` | Solicita cancelación cooperativa del trabajo activo del Document |
 | `PUT` | `/api/v1/documents/{document_id}/order` | Persiste el orden completo de miembros con concurrencia optimista |
@@ -352,7 +349,7 @@ Documentación útil:
 
 - [Imports de Document multiimagen](docs/document-imports.md)
 - [Contrato de estudio y ejes de idioma](docs/study-languages.md)
-- [Packs JMdict revisados](docs/jmdict-packs.md)
+- [Datos JMdict revisados](docs/jmdict-packs.md)
 - [Estrategia de pruebas](docs/testing.md)
 - [Versiones revisadas del stack](docs/versions.md)
 - [Política de Seguridad](SECURITY.es.md)

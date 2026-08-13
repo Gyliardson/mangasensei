@@ -14,8 +14,6 @@ class StudyLanguage(StrEnum):
 
 class DictionaryLanguage(StrEnum):
     ENGLISH = "en"
-    GERMAN = "de"
-    PORTUGUESE_BRAZIL = "pt-BR"
 
 
 CONTENT_LANGUAGE = ContentLanguage.JAPANESE

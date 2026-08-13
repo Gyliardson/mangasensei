@@ -44,17 +44,17 @@ Document child: ordinary Page -> ordinary page_analysis Job / Attempt -> StudyRe
 
 `completed` is the only import state that exposes a logical Document. The status response then returns the normal Document UUID plus freshly issued `read:document`, `read:document-image`, `reprocess:document` and `manage:document` capabilities. The SPA immediately reuses the existing Document reader/progress/recovery flow. A failed import returns a terminal stable PDF error code and no partial Document.
 
-### Renderer boundary
+### Renderer trust boundary
 
 The production renderer is a separate non-root Compose service with a distinct Unix identity. Coordinator/application processes run as `10001:10001`; the renderer runs as `10002:10002` and receives only supplementary group `10001` so it can read coordinator-published inputs and write specifically prepared renderer-output leaves. The coordinator owns the input/control root, request/source parents, renderer-output root, import parents and attempt parents. Those trusted parents are not renderer-writable. Only the pre-created attempt leaf and renderer-heartbeat leaf are writable by the renderer.
 
-The channels are separate mounts. The renderer mounts `/app/var/pdf-spool` read-only for source/request input and `/app/var/pdf-renderer-output` writable for manifests, rasters, failures and heartbeat. It does not mount `/app/var/storage`. The API mounts only the coordinator input/control channel; the privileged PDF importer mounts both channels plus application storage because it is the component that validates renderer output and publishes ordinary Page image blobs.
+The channels are separate mounts. The renderer mounts `/app/var/pdf-spool` read-only for source/request input and `/app/var/pdf-renderer-output` writable for manifests, rasters, failures and heartbeat. It does not mount `/app/var/storage`. The API mounts only the coordinator input/control channel; the privileged PDF importer mounts both channels plus application storage because it is the component that validates renderer output and publishes ordinary Page image blobs. The trusted `pdf-spool-init` service establishes the channel topology as UID/GID `10001:10001` and remains mounted as a network-isolated lifetime anchor for the bounded tmpfs volumes.
 
-Renderer output is therefore still attacker-controlled and is never trusted by pathname. Privileged consumption walks the renderer-output tree descriptor-relatively, refuses symlink traversal, opens the final file with `O_NOFOLLOW | O_NONBLOCK`, requires one regular link and a bounded size with `fstat`, and reads the bytes from that same validated file descriptor. Parent or final-path replacement after open cannot redirect the bytes being consumed. Cleanup uses descriptor-relative directory operations and unlinks renderer-authored symlinks instead of following them.
+Renderer output remains attacker-controlled and is never trusted by pathname. Privileged consumption walks the renderer-output tree descriptor-relatively using `dir_fd`/openat-style traversal, opens trusted directories with `O_DIRECTORY | O_NOFOLLOW`, opens final files with `O_RDONLY | O_NONBLOCK | O_NOFOLLOW`, requires a regular file, link count at most one and a bounded size using `fstat`, and reads bytes from that same validated file descriptor. Device/inode identity is revalidated after consumption and raster bytes are pinned before later validation/persistence. Parent or final-path replacement after open cannot redirect the bytes being consumed. Cleanup is descriptor-relative and unlinks renderer-authored symlinks instead of following them.
 
-The renderer has no database, capability pepper, OCR model, JMdict or Gemini configuration; no Docker socket; `network_mode: none`; `cap_drop: ALL`; `no-new-privileges`; a read-only root filesystem; bounded `/tmp`; one CPU; a 1 GiB memory limit; and a PID limit. PDF rendering is sequential and each request executes inside a disposable subprocess supervised by the renderer service, so a native crash, signal or wall-clock overrun cannot be mistaken for a successful manifest. These controls reduce renderer reach but do not make renderer output trusted; the importer remains responsible for validating every renderer-controlled byte before commit.
+The renderer has no database, capability pepper, OCR model, JMdict or Gemini configuration; no application-storage mount; no Docker socket; `network_mode: none`; `cap_drop: ALL`; `no-new-privileges`; a read-only root filesystem; bounded `/tmp`; one CPU; a 1 GiB memory limit; and a PID limit. PDF rendering is sequential and each request executes inside a disposable subprocess supervised by the renderer service, so a native crash, signal or wall-clock overrun cannot be mistaken for a successful manifest. These controls reduce renderer reach but do not make renderer output trusted; the importer remains responsible for validating every renderer-controlled byte before commit.
 
-The supported runtime is pinned to `pypdfium2 5.12.1` with bundled PDFium `152.0.7947.0` build `7947`. Startup verifies that the native library resolves from `pypdfium2_raw/libpdfium.so`, that the helper/build identity is exact and that the build does not enable V8/XFA. A system PDFium or source-build fallback is therefore not accepted silently. The renderer never initializes PDF form environments and uses `may_draw_forms=False`; annotations are not drawn. Password/encrypted PDFs are rejected in v1, and malformed/truncated documents fail closed.
+The supported runtime is pinned to `pypdfium2 5.12.1` with bundled PDFium `152.0.7947.0` build `7947`. Startup verifies that the native library resolves from `pypdfium2_raw/libpdfium.so`, that the helper/build identity is exact and that the build does not enable V8/XFA. A system PDFium or source-build fallback is not accepted silently. The renderer never initializes PDF form environments and uses `may_draw_forms=False`; annotations are not drawn. Password/encrypted PDFs are rejected in v1, and malformed/truncated documents fail closed.
 
 ### `pdfium-raster-v1` contract
 
@@ -91,7 +91,7 @@ Every produced PNG is opened from the untrusted output channel through the descr
 
 ### Atomicity, idempotency and cleanup
 
-The original PDF and intermediate rasters are transient spool material, not library objects. The coordinator owns database/storage credentials, lease/fencing state and the input/control topology. The renderer can only read those coordinator-published inputs and can write only inside designated untrusted output leaves. The privileged importer consumes those outputs through the descriptor-relative boundary described above. A source is deleted immediately after a terminal success/failure when cleanup succeeds, while queued/rendering sources have a fixed one-hour ceiling and expired/orphaned imports are reconciled. Normal Document/Page retention remains exactly 24 hours once the logical Document exists.
+The original PDF and intermediate rasters are transient spool material, not library objects. The coordinator owns database/storage credentials, lease/fencing state and the input/control topology. The renderer can only read coordinator-published inputs and can write only inside designated untrusted output leaves. The privileged importer consumes those outputs through the descriptor-relative boundary described above. A source is deleted immediately after a terminal success/failure when cleanup succeeds, while queued/rendering sources have a fixed one-hour ceiling and expired/orphaned imports are reconciled. Normal Document/Page retention remains exactly 24 hours once the logical Document exists.
 
 The PDF request digest binds source-PDF SHA-256, requested study language, source kind `pdf` and raster-contract version. Filenames are not content identity. Replaying the same key/request recovers the original import/result; the same key with materially different content or language conflicts. Lease recovery increments a fencing token, and stale renderer manifests cannot commit even if old output remains present.
 
@@ -101,14 +101,13 @@ Atomic commit happens only after all rasters validate. One PostgreSQL transactio
 
 The plaintext `Idempotency-Key` is never persisted. The persisted identity uses the existing peppered HMAC convention and a request digest that binds:
 
-- source kind (`images`);
+- source kind (`images` for direct multi-image creation, `pdf` for transient PDF import);
 - requested study language;
-- page count;
-- ordered image-content SHA-256 digests, including duplicate positions.
+- ordered image-content SHA-256 digests for direct-image creation, including duplicate positions, or source PDF SHA-256 plus raster-contract version for PDF import.
 
 Filenames are not part of request identity.
 
-The same key with the same ordered content and study language replays the same logical Document and reissues fresh valid document capability tokens without creating duplicate Documents, Pages, or jobs. Reusing the key with different content, order, count, or study language returns an idempotency conflict.
+The same key with the same material request replays the same logical operation without creating duplicate Documents, Pages, or jobs. Reusing the key with materially different content, order, count, language or PDF contract returns an idempotency conflict.
 
 ## Limits
 
@@ -147,7 +146,7 @@ A failed transaction cannot expose a half-created Document. Staged markers allow
 
 A newly created Document and every child Page share the exact same `created_at` and `expires_at` values. The lifetime is exactly 24 hours.
 
-Reading, navigation, retry, cancellation, reorder, study-language reprocessing, and dictionary-only reprojection do not extend retention. Existing retention cleanup removes expired Documents/Pages while preserving an immutable blob that is still referenced by another live Page. A `cancelled` job may later transition to `expired` as part of ordinary retention.
+Reading, navigation, retry, cancellation, reorder, study-language reprocessing, and English dictionary reprojection do not extend retention. Existing retention cleanup removes expired Documents/Pages while preserving an immutable blob that is still referenced by another live Page. A `cancelled` job may later transition to `expired` as part of ordinary retention.
 
 ## Document capabilities
 
@@ -204,35 +203,37 @@ Changing pages aborts obsolete client requests, revokes the previous Blob URL, a
 
 ## Language behavior
 
-UI locale (`en`/`pt-BR`), study language (`pt-BR`/`en`), requested dictionary language (`en`/`de`/`pt-BR`), furigana, and page-fit/zoom preferences remain independent browser preferences across page navigation.
+Content remains Japanese. UI locale (`en`/`pt-BR`) and study language (`pt-BR`/`en`) remain independent. The deterministic local dictionary is English-only; furigana and page-fit/zoom preferences remain browser-local presentation choices across page navigation.
 
 Persisted results remain page-scoped authority. A preference does not bulk-recompute the whole Document:
 
 - changing study language while viewing Page 7 uses the nested Document reprocess route for Page 7 only;
-- changing dictionary language while viewing Page 7 runs dictionary-only reprojection for Page 7 only;
-- opening a completed child whose persisted dictionary request differs from the browser preference lazily reprojects only that child.
+- the reader exposes no dictionary-language selector and does not initiate non-English dictionary reprojection;
+- an obsolete browser dictionary preference such as `de` normalizes to English rather than reactivating retired pack behavior.
 
-Dictionary-only reprojection delegates the existing dictionary projection job. It reuses the persisted canonical linguistic result and performs zero OCR reruns, zero new `LinguisticRun`, zero Sudachi lexical acquisition, and zero Gemini calls. The last completed result remains readable while reprojection runs.
+The protected API still permits an English dictionary-only reprojection. That path delegates the existing dictionary projection job, reuses the persisted canonical linguistic result, and performs zero OCR reruns, zero new `LinguisticRun`, zero Sudachi lexical acquisition, and zero Gemini calls. New non-English dictionary requests are rejected before a projection job/request is created.
 
-The existing dictionary fallback contract is unchanged: German uses reviewed local JMdict projections when available; `pt-BR` remains the requested language but currently uses explicit English deterministic fallback; Japanese source text retains `lang="ja"`, German meanings `lang="de"`, and English fallback `lang="en"`.
+Historical completed results may still contain older requested/effective/fallback dictionary-language and source metadata. Those persisted fields remain readable for upgrade safety and do not require downloading or loading the retired German pack. Japanese source text retains `lang="ja"`; historical meaning language annotations reflect the persisted effective language rather than rewriting old data.
 
 ## Nested reprocess route
 
 `POST /api/v1/documents/{documentId}/pages/{pageId}/reprocess` requires `reprocess:document`, verifies Document membership, then delegates the existing Page reprocess service.
 
-The JSON request accepts exactly one axis:
+The JSON request accepts exactly one supported axis. Study-language reprocessing uses:
 
 ```json
 {"studyLanguage":"en"}
 ```
 
-or:
+The retained dictionary projection API path accepts English only:
 
 ```json
-{"dictionaryLanguage":"de"}
+{"dictionaryLanguage":"en"}
 ```
 
-The Page one-active-job invariant, idempotency semantics, worker leases/fencing, study-language analysis, and dictionary-only projection behavior are unchanged.
+Values such as `de` or `pt-BR` are unsupported for new dictionary requests and fail the normal validation contract; they are not silently normalized to English. Supplying both study and dictionary axes is also invalid.
+
+The Page one-active-job invariant, idempotency semantics, worker leases/fencing, study-language analysis, and English dictionary-only projection behavior are unchanged.
 
 ## Retry failed pages
 

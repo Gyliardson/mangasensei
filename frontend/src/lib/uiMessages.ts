@@ -1,5 +1,5 @@
 import type { JobStatus } from "./api";
-import type { DictionaryLanguage } from "./dictionaryLanguage";
+import type { HistoricalDictionaryLanguage } from "./dictionaryLanguage";
 import {
   documentMessagesFor,
   type DocumentUiMessages,
@@ -22,8 +22,7 @@ export interface UiMessages extends DocumentUiMessages {
   readonly studyLanguageLabel: string;
   readonly studyLanguageNote: string;
   readonly studyLanguageName: (language: StudyLanguage) => string;
-  readonly dictionaryLanguageLabel: string;
-  readonly dictionaryLanguageName: (language: DictionaryLanguage | "de") => string;
+  readonly dictionaryLanguageName: (language: HistoricalDictionaryLanguage) => string;
   readonly selectImage: string;
   readonly fileDropHint: string;
   readonly pageImageAria: string;
@@ -38,7 +37,6 @@ export interface UiMessages extends DocumentUiMessages {
   readonly selectImageFirst: string;
   readonly unexpectedProcessingError: string;
   readonly studyLanguageUpdateFailed: string;
-  readonly dictionaryLanguageUpdateFailed: string;
   readonly jobStatus: (status: JobStatus | null) => string;
   readonly apiError: (code: string) => string;
   readonly processedPage: string;
@@ -52,8 +50,6 @@ export interface UiMessages extends DocumentUiMessages {
   readonly newPage: string;
   readonly updatingStudyLanguage: (target: string, current: string) => string;
   readonly retainedStudyLanguage: (current: string) => string;
-  readonly updatingDictionaryLanguage: (target: string, current: string) => string;
-  readonly retainedDictionaryLanguage: (current: string) => string;
   readonly pagePresentation: string;
   readonly pageFit: string;
   readonly fitWidth: string;
@@ -127,7 +123,6 @@ const en: UiMessages = {
   studyLanguageLabel: "Study language",
   studyLanguageNote: "Controls contextual explanations; the analyzed content remains Japanese.",
   studyLanguageName: (language) => language === "en" ? "English" : "Portuguese (Brazil)",
-  dictionaryLanguageLabel: "Dictionary language",
   dictionaryLanguageName: (language) => {
     if (language === "de") return "German";
     if (language === "pt-BR") return "Portuguese (Brazil)";
@@ -147,7 +142,6 @@ const en: UiMessages = {
   selectImageFirst: "Select an image before continuing.",
   unexpectedProcessingError: "Processing could not be completed.",
   studyLanguageUpdateFailed: "The study language could not be updated.",
-  dictionaryLanguageUpdateFailed: "The dictionary language could not be updated.",
   jobStatus: (status) => {
     const labels: Partial<Record<JobStatus, string>> = {
       pending: "Waiting for worker",
@@ -171,8 +165,6 @@ const en: UiMessages = {
   newPage: "New page",
   updatingStudyLanguage: (target, current) => `Updating explanations to ${target}. The displayed result remains in ${current} until the new analysis finishes.`,
   retainedStudyLanguage: (current) => `The result in ${current} was kept.`,
-  updatingDictionaryLanguage: (target, current) => `Updating dictionary meanings to ${target}. The completed ${current} dictionary result remains visible until reprojection finishes.`,
-  retainedDictionaryLanguage: (current) => `The completed dictionary result in ${current} was kept.`,
   pagePresentation: "Page presentation",
   pageFit: "Page fit",
   fitWidth: "Width",
@@ -219,7 +211,6 @@ const ptBR: UiMessages = {
   studyLanguageLabel: "Idioma de estudo",
   studyLanguageNote: "Define explicações contextuais; o conteúdo analisado continua japonês.",
   studyLanguageName: (language) => language === "en" ? "Inglês" : "Português (Brasil)",
-  dictionaryLanguageLabel: "Idioma do dicionário",
   dictionaryLanguageName: (language) => {
     if (language === "de") return "Alemão";
     if (language === "pt-BR") return "Português (Brasil)";
@@ -239,7 +230,6 @@ const ptBR: UiMessages = {
   selectImageFirst: "Selecione uma imagem antes de continuar.",
   unexpectedProcessingError: "O processamento não pôde ser concluído.",
   studyLanguageUpdateFailed: "Não foi possível atualizar o idioma de estudo.",
-  dictionaryLanguageUpdateFailed: "Não foi possível atualizar o idioma do dicionário.",
   jobStatus: (status) => {
     const labels: Partial<Record<JobStatus, string>> = {
       pending: "Aguardando worker",
@@ -263,8 +253,6 @@ const ptBR: UiMessages = {
   newPage: "Nova página",
   updatingStudyLanguage: (target, current) => `Atualizando explicações para ${target}. O resultado exibido continua em ${current} até a nova análise concluir.`,
   retainedStudyLanguage: (current) => `O resultado em ${current} foi mantido.`,
-  updatingDictionaryLanguage: (target, current) => `Atualizando os significados do dicionário para ${target}. O resultado concluído em ${current} continua visível até a reprojeção terminar.`,
-  retainedDictionaryLanguage: (current) => `O resultado concluído do dicionário em ${current} foi mantido.`,
   pagePresentation: "Apresentação da página",
   pageFit: "Ajuste da página",
   fitWidth: "Largura",

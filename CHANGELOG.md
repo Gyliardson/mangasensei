@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - MangaSensei-owned CC BY 4.0 public demo corpus with four original SVG/PNG pages, pinned OFL Japanese fonts, versioned source-intent ground truth, provenance/integrity manifests and deterministic render/contract tooling.
 - Bounded ordered multi-image Document import with creation idempotency, one independent Page/job per image, separate document-scoped read/image/reprocess/manage capabilities, truthful aggregate terminal states and page-count progress, partial-result reader navigation, bounded/idempotent failed-page retry, cooperative fenced cancellation, persisted optimistic-concurrency post-create reorder, current-child language reprocessing, and real full-stack multipage browser coverage.
-- Hardened local PDF import with a transient fenced import resource, pinned PDFium raster contract, no-network isolated renderer process, explicit resource/time/temp-storage limits, all-raster image revalidation, atomic Document/Page/Job commit, idempotent recovery, transient source cleanup, and real isolated-renderer browser coverage.
+- Hardened local PDF import with a transient fenced import resource, split coordinator-owned input/control and untrusted renderer-output channels, distinct non-root renderer identity, descriptor-relative same-fd output consumption, pinned PDFium raster contract, no-network isolated renderer, explicit resource/time/temp-storage limits, all-raster image revalidation, atomic Document/Page/Job commit, idempotent recovery, transient source cleanup, exploit-shaped filesystem regression coverage, and real isolated-renderer browser coverage.
 - Licensed real-manga OCR fixture corpus with documented provenance and integrity metadata.
 - Reviewed real-model OCR regressions for known-good short vertical dialogue on licensed manga pages.
 - Layered licensed OCR assurance with manifest integrity checks, repeated short-text inference and a deeper full-corpus catastrophic-output guard.
@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The deterministic local JMdict product surface is now English-only: German pack acquisition/runtime selection and the reader dictionary-language control are retired, the legacy browser dictionary-preference key is deleted rather than replaced, unsupported new dictionary requests are rejected, and historical persisted language metadata remains readable for upgrade safety.
 - Public README presentation now follows a visitor-first flow with explicit pre-release status, a Docker-first Quick Start, scoped OCR validation and known limitations, and synchronized English/Portuguese/Japanese/Spanish structure.
 - The clean Compose data-contract gate now creates `.env` from the documented template and completes one safe synthetic local-only analysis through the production stack before teardown.
 - Linguistic runs now persist the loaded dictionary version and digest instead of a placeholder.

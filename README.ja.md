@@ -71,7 +71,7 @@ repository の placeholder をそのまま使ったり、`.env` を commit し�
 docker compose up --detach --build
 ```
 
-fresh install では application build に加え、migration、checksum-pinned OCR model、レビュー済み英語・ドイツ語 JMdict data の one-shot bootstrap が実行され、その後 worker が ready になります。**初回 bootstrap には network access が必要です。** Container layer、OCR model artifact、JMdict source data を取得するためです。取得した artifact は以後ローカル Docker volume に保持され、通常のローカル処理に使われます。
+fresh install では application build に加え、migration、checksum-pinned OCR model、レビュー済み英語 JMdict data の one-shot bootstrap が実行され、その後 worker が ready になります。**初回 bootstrap には network access が必要です。** Container layer、OCR model artifact、JMdict source data を取得するためです。取得した artifact は以後ローカル Docker volume に保持され、通常のローカル処理に使われます。
 
 `GOOGLE_API_KEY` が空なら Gemini は無効です。それでも日本語 OCR、Sudachi、決定論的 JMdict vocabulary は利用でき、AI の文脈 translation/explanation だけが存在しない場合があります。
 
@@ -88,12 +88,12 @@ PowerShell では:
 Invoke-RestMethod http://127.0.0.1:8000/ready
 ```
 
-その後 **http://127.0.0.1:8000** を開き、JPEG・PNG・WebP または 1 つの PDF を解析します。複数画像は選択順を保持し、PDF は bounded な local render/import を完了してから同じ通常の順序付き Document になります。
+その後 **http://127.0.0.1:8000** を開き、JPEG・PNG・WebP の漫画ページを解析します。複数の対応画像を選択して、一時的な順序付き Document を作成することもできます。
 
 bootstrap が失敗した場合:
 
 ```sh
-docker compose logs models jmdict migrate api pdf-renderer pdf-importer worker
+docker compose logs models jmdict migrate api worker
 ```
 
 ### 4. Stop / reset
@@ -116,7 +116,7 @@ docker compose down --volumes --remove-orphans
 
 通常の読解 session はシンプルです。
 
-1. 対応画像 1 枚、順序付きの複数画像、または 1 つの PDF を選択する。
+1. 対応画像 1 枚、または順序付きの複数画像を選択する。
 2. MangaSensei は元画像を保持し、各 Page をローカル OCR・言語解析へ queue する。
 3. 完了した Page を responsive reader で開き、study overlay は source image と分離して表示する。
 4. OCR region を選び、日本語 text、ふりがな、token、決定論的 dictionary vocabulary を確認する。
@@ -132,14 +132,11 @@ mobile reader も responsive です。
 
 ## Multipage workflow
 
-[#105](https://github.com/Gyliardson/mangasensei/issues/105) の Slice B / C / D は、漫画 volume 全体を 1 個の巨大 OCR job にせず、順序付き複数画像 Document、partial result/recovery、hardened local PDF import を提供します。
+[#105](https://github.com/Gyliardson/mangasensei/issues/105) の Slice B / C は、漫画 volume 全体を 1 個の巨大 OCR job にせず、順序付き複数画像 Document、partial result、recovery control を提供します。
 
 **現在利用可能:**
 
 - 複数 JPEG・PNG・WebP を選択し、upload 前に確認・並べ替えする。
-- 1 つの PDF を bounded asynchronous local render/import に送り、全 raster 検証後だけ通常の Document を commit する。
-- 1 つの PDF を bounded asynchronous local render/import に送り、全 raster 検証後だけ通常の Document を commit する。
-- 1 つの PDF を bounded asynchronous local render/import に送り、全 raster 検証後だけ通常の Document を commit する。
 - 画面上の upload 前の順序を Document の canonical initial order として保持する。
 - 各 Page を独立した OCR / study / job 単位のままにする。
 - processing / completed / completed-with-errors / cancelled の正確な aggregate state と、completed / processing / failed / cancelled Page 件数を表示する。
@@ -148,10 +145,10 @@ mobile reader も responsive です。
 - すでに完了した sibling を書き換えず、active Document processing を cooperative に cancel する。
 - optimistic concurrency を使って作成後の Page order を persisted に更新する。
 - direct page selection と Previous / Next で移動する。
-- study language / dictionary language の reprocess は current Page のみ行う。
+- reader からの reprocess は current Page の study language のみ行う。protected API は英語のみの dictionary reprojection path を保持する。
 - Document と全 child Page が同一の正確な 24 時間 retention boundary を共有する。
 
-**#105 で引き続き未実装:** thumbnail、persistent manga library、spread-aware / cross-page reading-order semantics、後続の large-document/performance hardening。
+**#105 で引き続き未実装:** hardened PDF import、thumbnail、persistent manga library、spread-aware / cross-page reading-order semantics、後続の large-document/performance hardening。
 
 詳細は [multi-image Document contract](docs/document-imports.md) を参照してください。
 
@@ -195,28 +192,28 @@ MangaSensei は現在、汎用的な OCR accuracy percentage を公開してい�
 
 ## Language / study features
 
-4 つの言語軸は独立しています。
+4 つの言語軸は概念上独立したままですが、決定論的なローカル dictionary は現在英語のみです。
 
 | Axis | 現在の support |
 | --- | --- |
 | 漫画 content | 日本語 (`ja`) |
 | Study / contextual explanation | ブラジルポルトガル語 (`pt-BR`) または英語 (`en`) |
-| Requested deterministic dictionary language | 英語 (`en`)、ドイツ語 (`de`)、ブラジルポルトガル語 (`pt-BR`) |
+| Deterministic local dictionary | 英語 (`en`) のみ |
 | UI locale | 英語 (`en`) またはブラジルポルトガル語 (`pt-BR`) |
 
-ドイツ語は exact canonical form が reviewed local JMdict pack にある場合に使われ、それ以外は item ごとに英語へ fallback します。`pt-BR` dictionary request は requested language として保持されますが、reviewed word-level Portuguese JMdict gloss pack がないため、deterministic word meaning は現在英語 fallback です。dictionary language の変更は persisted canonical linguistic analysis を再利用し、OCR、Sudachi lexical acquisition、Gemini を再実行しません。
+reader は dictionary-language selector を提供しません。新しい dictionary reprojection request は英語のみを受け付け、`de` や `pt-BR` など未対応値を英語へ暗黙変換せず reject します。古い未期限切れ result は過去の requested/effective/fallback metadata を保持している場合がありますが、廃止したドイツ語 pack を download せず安全に読み取れます。Study language と UI locale の選択肢は変わりません。
 
-詳細は [language-axis contract](docs/study-languages.md) と [JMdict pack contract](docs/jmdict-packs.md) を参照してください。
+詳細は [language-axis contract](docs/study-languages.md) と [JMdict data contract](docs/jmdict-packs.md) を参照してください。
 
 ## Features
 
 | Area | Capability |
 | --- | --- |
-| Upload | 安全な standalone image、bounded ordered multi-image Document、idempotency/scoped capability を持つ hardened local PDF import |
+| Upload | 安全な standalone image upload と、idempotency/scoped capability を持つ bounded ordered multi-image Document |
 | OCR | checksum-verified model artifact を使う local Manga Image Translator subset |
-| Linguistics | language-neutral canonical lexical identity 上の Sudachi tokenization と reviewed local English/German JMdict data |
+| Linguistics | language-neutral canonical lexical identity 上の Sudachi tokenization と reviewed local English JMdict data |
 | Reader | authenticated original-image Blob、responsive SVG overlay、ふりがな、zoom/fit、multipage navigation、partial-result reading |
-| Languages | UI / study-explanation / requested dictionary preferences を独立管理し fallback を明示 |
+| Languages | UI / study-explanation preference を独立管理し、deterministic local dictionary meaning は英語 |
 | Gemini | optional `pt-BR`/`en` structured contextual explanation、budget tracking、minimal text context、`store=False` |
 | Operations | PostgreSQL queue、lease recovery、bounded retention、readiness、metrics、hardened Compose runtime |
 
@@ -224,6 +221,7 @@ MangaSensei は現在、汎用的な OCR accuracy percentage を公開してい�
 
 MangaSensei は pre-release software です。上記 OCR limitation に加えて:
 
+- PDF import は未実装です。
 - Document は temporary で、persistent manga library ではありません。
 - thumbnail と spread-aware/cross-page reading order は未実装です。
 - large-document/performance の追加 hardening は #105 の後続 work として未実装です。
@@ -289,7 +287,6 @@ npm install
 uv run mangasensei models download
 uv run mangasensei models verify
 uv run mangasensei jmdict download
-uv run mangasensei jmdict download --language de
 ```
 
 host で直接動かす場合は `.env.example` から `.env` を作り、その comment に従って host database URL の password も同じ生成値に合わせます。完全な stack を動かす最も簡単な supported path は Docker Compose です。
@@ -332,13 +329,13 @@ MangaSensei 起動中は FastAPI の interactive API docs を `/api/docs` で利
 | `POST` | `/api/v1/pages` | 日本語漫画 Page 1 枚を upload し解析を queue |
 | `GET` | `/api/v1/pages/{page_id}` | read capability で standalone Page を取得 |
 | `GET` | `/api/v1/pages/{page_id}/image` | protected standalone original image を取得 |
-| `POST` | `/api/v1/pages/{page_id}/reprocess` | standalone Page の言語軸 1 つを reprocess |
+| `POST` | `/api/v1/pages/{page_id}/reprocess` | standalone Page の対応する言語軸 1 つを reprocess |
 | `POST` | `/api/v1/documents` | ordered multi-image Document を作成 |
 | `GET` | `/api/v1/documents/{document_id}` | ordered child summary、aggregate status、progress を取得 |
 | `GET` | `/api/v1/documents/{document_id}/progress` | completed/processing/failed/cancelled counters を取得 |
 | `GET` | `/api/v1/documents/{document_id}/pages/{page_id}` | member StudyPage を取得 |
 | `GET` | `/api/v1/documents/{document_id}/pages/{page_id}/image` | protected member original image を取得 |
-| `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | member Page の言語軸 1 つを reprocess |
+| `POST` | `/api/v1/documents/{document_id}/pages/{page_id}/reprocess` | member Page の対応する言語軸 1 つを reprocess |
 | `POST` | `/api/v1/documents/{document_id}/retry-failed` | eligible な unreadable failed member Page を idempotent に retry |
 | `POST` | `/api/v1/documents/{document_id}/cancel` | active Document work の cooperative cancellation を request |
 | `PUT` | `/api/v1/documents/{document_id}/order` | optimistic concurrency で完全な member order を persisted に更新 |
@@ -352,7 +349,7 @@ MangaSensei 起動中は FastAPI の interactive API docs を `/api/docs` で利
 
 - [Multi-image Document imports](docs/document-imports.md)
 - [Study / language-axis contract](docs/study-languages.md)
-- [Reviewed JMdict packs](docs/jmdict-packs.md)
+- [Reviewed JMdict data](docs/jmdict-packs.md)
 - [Testing strategy](docs/testing.md)
 - [Reviewed stack versions](docs/versions.md)
 - [Security policy](SECURITY.ja.md)
@@ -368,4 +365,4 @@ attribution、integrity reference、source detail は [`THIRD_PARTY_NOTICES.md`]
 
 ## License
 
-Copyright (C) 2026 Gyliardson Keitison. MangaSensei は [GPL-3.0-only](LICENSE) でライセンスされています。Third-party component/data にはそれぞれの notice/terms が適用されます。
+Copyright (C) 2026 Gyliardson Keitison. MangaSensei は [GPL-3.0-only](LICENSE) でライセンスされています。Third-party component/data にはそれぞれの notice/terms が適用されます.

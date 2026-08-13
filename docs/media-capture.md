@@ -95,7 +95,7 @@ The canonical story inventory is [`frontend/e2e/media/scenarios.json`](../fronte
 - `core-workflow` — upload -> processing -> completed reader, PNG + short WebM screencast;
 - `multipage-partial` — one readable page while a sibling processes;
 - `multipage-navigation` — two readable pages and Next navigation, PNG + WebM;
-- `dictionary-language-switch` — deterministic English -> German dictionary reprojection, PNG + WebM.
+- `study-language-switch` — study English -> Brazilian Portuguese while deterministic dictionary vocabulary remains English and no dictionary-language selector is exposed, PNG + WebM.
 
 These are fixture presentation stories. They must not be described as measured OCR output.
 

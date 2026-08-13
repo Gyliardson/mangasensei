@@ -59,12 +59,9 @@ function renderReader() {
       imageUrl="fixture-image"
       uiLocale="pt-BR"
       preferredStudyLanguage={studyPage.studyLanguage}
-      preferredDictionaryLanguage="en"
       languageMutation={null}
       studyLanguageError={null}
-      dictionaryLanguageError={null}
       onStudyLanguageChange={vi.fn()}
-      onDictionaryLanguageChange={vi.fn()}
       onReset={vi.fn()}
     />,
   );
@@ -82,7 +79,7 @@ describe("ReaderWorkspace viewport controls", () => {
 
     const studyControls = screen.getByRole("group", { name: "Preferências de estudo" });
     expect(within(studyControls).getByRole("combobox", { name: "Idioma de estudo" })).toBeVisible();
-    expect(within(studyControls).getByRole("combobox", { name: "Idioma do dicionário" })).toBeVisible();
+    expect(within(studyControls).queryByRole("combobox", { name: "Idioma do dicionário" })).not.toBeInTheDocument();
     expect(within(studyControls).getByRole("combobox", { name: "Exibição de furigana" })).toBeVisible();
 
     const navigation = screen.getByRole("group", { name: "Navegação" });

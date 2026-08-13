@@ -35,7 +35,7 @@ from tests.integration.test_dictionary_projection_flow import (
 
 class _FailingProvider:
     def is_supported_language(self, language: str) -> bool:
-        return language in {"en", "de"}
+        return language == "en"
 
     def get_pack(self, language: str) -> object:
         raise LookupError(f"fixture pack unavailable: {language}")
@@ -90,7 +90,7 @@ async def test_failed_dictionary_projection_keeps_prior_result_and_retention_cas
                 "X-Page-Token": data["capabilities"]["reprocessPage"],
                 "Idempotency-Key": "dictionary-flow-failure",
             },
-            json={"dictionaryLanguage": "de"},
+            json={"dictionaryLanguage": "en"},
         )
         assert request.status_code == 202
         assert await worker.run_once()

@@ -21,7 +21,7 @@ const expected = new Set([
   "core-workflow",
   "multipage-partial",
   "multipage-navigation",
-  "dictionary-language-switch",
+  "study-language-switch",
 ]);
 const ids = catalog.scenarios.map((scenario) => scenario.id);
 assert.equal(new Set(ids).size, ids.length, "scenario ids must be unique");
@@ -33,7 +33,12 @@ for (const scenario of catalog.scenarios) {
   assert.ok(scenario.profiles.every((profile) => profile === "desktop" || profile === "mobile"));
   assert.ok(scenario.formats.length > 0);
   assert.ok(scenario.formats.every((format) => format === "png" || format === "webm"));
-  const examplePath = path.posix.join(catalog.sourceId, scenario.id, scenario.profiles[0], "master.png");
+  const examplePath = path.posix.join(
+    catalog.sourceId,
+    scenario.id,
+    scenario.profiles[0],
+    "master.png",
+  );
   assert.equal(examplePath.includes(".."), false);
   assert.equal(/token|secret|key/i.test(examplePath), false);
 }

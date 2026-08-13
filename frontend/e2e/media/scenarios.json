@@ -34,10 +34,10 @@
       "state": "two-readable-pages-navigation"
     },
     {
-      "id": "dictionary-language-switch",
+      "id": "study-language-switch",
       "profiles": ["desktop"],
       "formats": ["png", "webm"],
-      "state": "dictionary-english-to-german"
+      "state": "study-english-to-portuguese-dictionary-remains-english"
     }
   ]
 }
