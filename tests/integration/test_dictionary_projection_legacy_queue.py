@@ -28,8 +28,8 @@ from mangasensei.infrastructure.database.study_models import StudyResultRecord
 from tests.integration.test_dictionary_projection_flow import (
     CountingOcr,
     CountingTokenizer,
-    _Provider,
     _image,
+    _Provider,
     _settings,
     _worker,
 )
@@ -96,7 +96,9 @@ async def test_preupgrade_pending_german_projection_completes_via_english_fallba
                 )
             ).scalar_one()
             result = (
-                await session.execute(select(StudyResultRecord).order_by(StudyResultRecord.id.desc()))
+                await session.execute(
+                    select(StudyResultRecord).order_by(StudyResultRecord.id.desc())
+                )
             ).scalars().first()
             assert result is not None
             linguistic_run_id = result.linguistic_run_id
@@ -157,7 +159,9 @@ async def test_preupgrade_pending_german_projection_completes_via_english_fallba
         assert completed_data["resultAvailable"] is True
         assert completed_data["requestedDictionaryLanguage"] == "de"
         assert completed_data["fallbackDictionaryLanguage"] == "en"
-        assert {source["productLanguage"] for source in completed_data["dictionarySources"]} == {"en"}
+        assert {
+            source["productLanguage"] for source in completed_data["dictionarySources"]
+        } == {"en"}
         projected_vocabulary = completed_data["regions"][0]["vocabulary"]
         assert projected_vocabulary
         assert all(
