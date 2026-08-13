@@ -104,6 +104,10 @@ class _ClaimedImport:
     study_language: StudyLanguage
 
 
+class _PdfImportLeaseLost(RuntimeError):
+    """The claimed import no longer has live lease authority."""
+
+
 class PdfImportService:
     """Streams bounded PDF source bytes and persists only transient import state."""
 
@@ -542,13 +546,22 @@ class PdfImportCoordinator:
             self._spool.write_model_atomic(
                 self._spool.request_path(claim.public_id, claim.fencing_token), request
             )
-        except (OSError, PdfSpoolError, ValidationError):
+        except OSError as exc:
+            code: PdfImportErrorCode = (
+                "pdf_temp_storage_exhausted" if exc.errno == errno.ENOSPC else "pdf_invalid"
+            )
+            await self._terminal_failure(claim, code)
+            return
+        except (PdfSpoolError, ValidationError):
             await self._terminal_failure(claim, "pdf_invalid")
             return
 
         outcome = await self._wait_for_renderer(claim)
         if isinstance(outcome, str):
             await self._terminal_failure(claim, outcome)
+            return
+        if not await self._renew_lease(claim):
+            self._cleanup_stale_attempt(claim)
             return
         try:
             images = self._validate_manifest(claim, outcome)
@@ -557,6 +570,9 @@ class PdfImportCoordinator:
             return
         except (PdfSpoolError, ValidationError, ValueError):
             await self._terminal_failure(claim, "pdf_manifest_invalid")
+            return
+        if not await self._renew_lease(claim):
+            self._cleanup_stale_attempt(claim)
             return
         await self._commit_document(claim, outcome, images)
 
@@ -651,14 +667,18 @@ class PdfImportCoordinator:
             raise PdfSpoolError("manifest aggregate mismatch")
         return tuple(images)
 
-    async def _commit_document(
-        self,
-        claim: _ClaimedImport,
-        manifest: PdfRasterManifest,
-        images: tuple[ValidatedImage, ...],
-    ) -> None:
-        pending_writes: list[PendingStorageWrite] = []
-        committed = False
+    def _owns_live_lease(
+        self, record: DocumentImportRecord, claim: _ClaimedImport, now: datetime
+    ) -> bool:
+        return (
+            record.status == "rendering"
+            and record.fencing_token == claim.fencing_token
+            and record.lease_owner == self._worker_id
+            and record.lease_until is not None
+            and record.lease_until > now
+        )
+
+    async def _renew_lease(self, claim: _ClaimedImport) -> bool:
         async with self._sessions.begin() as session:
             record = (
                 await session.execute(
@@ -666,75 +686,100 @@ class PdfImportCoordinator:
                     .where(DocumentImportRecord.id == claim.internal_id)
                     .with_for_update()
                 )
-            ).scalar_one()
-            if (
-                record.status != "rendering"
-                or record.fencing_token != claim.fencing_token
-                or record.lease_owner != self._worker_id
-            ):
-                return
-
-            for digest in sorted({bytes.fromhex(image.sha256) for image in images}):
-                await acquire_image_blob_lock(session, digest)
-
-            document = DocumentRecord(
-                source_kind="pdf",
-                upload_key_id=record.upload_key_id,
-                upload_idempotency_digest=record.upload_idempotency_digest,
-                request_digest=record.request_digest,
-                created_at=record.created_at,
-                expires_at=record.expires_at,
-            )
-            session.add(document)
+            ).scalar_one_or_none()
+            now = datetime.now(UTC)
+            if record is None or not self._owns_live_lease(record, claim, now):
+                return False
+            record.lease_until = now + timedelta(seconds=self._settings.pdf_import_lease_seconds)
             await session.flush()
+            return True
 
-            for ordinal, image in enumerate(images):
-                blob, pending = await stage_image_blob(
-                    session,
-                    storage=self._storage,
-                    image=image,
-                )
-                pending_writes.append(pending)
-                page = PageRecord(
-                    image_blob_id=blob.id,
-                    document_id=document.id,
-                    ordinal=ordinal,
-                    original_filename=f"page-{ordinal + 1:06d}.png",
-                    upload_key_id=None,
-                    upload_idempotency_digest=None,
-                    request_digest=bytes.fromhex(image.sha256),
+    def _cleanup_stale_attempt(self, claim: _ClaimedImport) -> None:
+        with suppress(OSError, PdfSpoolError):
+            self._spool.remove_attempt(claim.public_id, claim.fencing_token)
+
+    async def _commit_document(
+        self,
+        claim: _ClaimedImport,
+        manifest: PdfRasterManifest,
+        images: tuple[ValidatedImage, ...],
+    ) -> None:
+        pending_writes: list[PendingStorageWrite] = []
+        try:
+            async with self._sessions.begin() as session:
+                record = (
+                    await session.execute(
+                        select(DocumentImportRecord)
+                        .where(DocumentImportRecord.id == claim.internal_id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                now = datetime.now(UTC)
+                if record is None or not self._owns_live_lease(record, claim, now):
+                    raise _PdfImportLeaseLost
+
+                for digest in sorted({bytes.fromhex(image.sha256) for image in images}):
+                    await acquire_image_blob_lock(session, digest)
+
+                document = DocumentRecord(
+                    source_kind="pdf",
+                    upload_key_id=record.upload_key_id,
+                    upload_idempotency_digest=record.upload_idempotency_digest,
+                    request_digest=record.request_digest,
                     created_at=record.created_at,
                     expires_at=record.expires_at,
                 )
-                session.add(page)
+                session.add(document)
                 await session.flush()
-                session.add(
-                    JobRecord(
-                        page_id=page.id,
-                        idempotency_digest=self._child_job_digest(
-                            record.upload_idempotency_digest, ordinal
-                        ),
-                        request_digest=page.request_digest,
-                        study_language=claim.study_language.value,
+
+                for ordinal, image in enumerate(images):
+                    blob, pending = await stage_image_blob(
+                        session,
+                        storage=self._storage,
+                        image=image,
                     )
-                )
+                    pending_writes.append(pending)
+                    page = PageRecord(
+                        image_blob_id=blob.id,
+                        document_id=document.id,
+                        ordinal=ordinal,
+                        original_filename=f"page-{ordinal + 1:06d}.png",
+                        upload_key_id=None,
+                        upload_idempotency_digest=None,
+                        request_digest=bytes.fromhex(image.sha256),
+                        created_at=record.created_at,
+                        expires_at=record.expires_at,
+                    )
+                    session.add(page)
+                    await session.flush()
+                    session.add(
+                        JobRecord(
+                            page_id=page.id,
+                            idempotency_digest=self._child_job_digest(
+                                record.upload_idempotency_digest, ordinal
+                            ),
+                            request_digest=page.request_digest,
+                            study_language=claim.study_language.value,
+                        )
+                    )
 
-            record.status = "completed"
-            record.document_id = document.id
-            record.page_count = manifest.page_count
-            record.renderer_pypdfium2 = manifest.renderer.pypdfium2
-            record.renderer_pdfium = manifest.renderer.pdfium
-            record.renderer_pillow = manifest.renderer.pillow
-            record.finished_at = datetime.now(UTC)
-            record.lease_owner = None
-            record.lease_until = None
-            await session.flush()
-            committed = True
-
-        if not committed:
-            with suppress(OSError, PdfSpoolError):
-                self._spool.remove_attempt(claim.public_id, claim.fencing_token)
+                now = datetime.now(UTC)
+                if not self._owns_live_lease(record, claim, now):
+                    raise _PdfImportLeaseLost
+                record.status = "completed"
+                record.document_id = document.id
+                record.page_count = manifest.page_count
+                record.renderer_pypdfium2 = manifest.renderer.pypdfium2
+                record.renderer_pdfium = manifest.renderer.pdfium
+                record.renderer_pillow = manifest.renderer.pillow
+                record.finished_at = now
+                record.lease_owner = None
+                record.lease_until = None
+                await session.flush()
+        except _PdfImportLeaseLost:
+            self._cleanup_stale_attempt(claim)
             return
+
         for pending in pending_writes:
             with suppress(OSError):
                 await self._storage.confirm(pending)
@@ -750,23 +795,18 @@ class PdfImportCoordinator:
                     .with_for_update()
                 )
             ).scalar_one_or_none()
-            if (
-                record is not None
-                and record.status == "rendering"
-                and record.fencing_token == claim.fencing_token
-                and record.lease_owner == self._worker_id
-            ):
+            now = datetime.now(UTC)
+            if record is not None and self._owns_live_lease(record, claim, now):
                 record.status = "failed"
                 record.error_code = code
-                record.finished_at = datetime.now(UTC)
+                record.finished_at = now
                 record.lease_owner = None
                 record.lease_until = None
                 changed = True
         if changed:
             await self._cleanup_terminal_source(claim.public_id)
         else:
-            with suppress(OSError, PdfSpoolError):
-                self._spool.remove_attempt(claim.public_id, claim.fencing_token)
+            self._cleanup_stale_attempt(claim)
 
     async def _cleanup_terminal_source(self, import_id: UUID) -> None:
         try:
