@@ -1,0 +1,73 @@
+name: PDFium Provenance Evidence
+
+on:
+  push:
+    branches:
+      - feat/105-hardened-pdf-import
+    paths:
+      - ".github/workflows/pdfium-provenance-evidence.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect reviewed PyPI wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify official wheel digests and record native PDFium digests
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import urllib.request
+          import zipfile
+          from pathlib import Path
+
+          expected = {
+              "pypdfium2-5.12.1-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": {
+                  "platform": "Linux",
+                  "machine": "x86_64",
+                  "wheel_sha256": "e10cbf41b21233ec5e20adfc170cf60edd77abead86a97dc708fff55a8a886c7",
+              },
+              "pypdfium2-5.12.1-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl": {
+                  "platform": "Linux",
+                  "machine": "aarch64",
+                  "wheel_sha256": "6eabf028ad8e7bc7811c9acf3a72718c180569b624b844d2c6cc974609784275",
+              },
+          }
+          with urllib.request.urlopen("https://pypi.org/pypi/pypdfium2/5.12.1/json", timeout=30) as response:
+              release = json.load(response)
+          by_filename = {item["filename"]: item for item in release["urls"]}
+          evidence = []
+          out = Path("/tmp/pdfium-provenance")
+          out.mkdir()
+          for filename, contract in expected.items():
+              item = by_filename[filename]
+              assert item["digests"]["sha256"] == contract["wheel_sha256"]
+              wheel = out / filename
+              with urllib.request.urlopen(item["url"], timeout=60) as response:
+                  payload = response.read()
+              assert hashlib.sha256(payload).hexdigest() == contract["wheel_sha256"]
+              wheel.write_bytes(payload)
+              with zipfile.ZipFile(wheel) as archive:
+                  native = archive.read("pypdfium2_raw/libpdfium.so")
+              native_sha256 = hashlib.sha256(native).hexdigest()
+              entry = {**contract, "filename": filename, "native_sha256": native_sha256}
+              evidence.append(entry)
+              print(json.dumps(entry, sort_keys=True))
+          Path("/tmp/pdfium-provenance/evidence.json").write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + "\n"
+          )
+          lock = Path("uv.lock").read_text()
+          for contract in expected.values():
+              assert contract["wheel_sha256"] in lock
+          PY
+      - name: Upload reviewed artifact evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pdfium-reviewed-wheel-provenance
+          path: /tmp/pdfium-provenance/evidence.json
+          if-no-files-found: error
