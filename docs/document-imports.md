@@ -81,7 +81,7 @@ A failed transaction cannot expose a half-created Document. Staged markers allow
 
 A newly created Document and every child Page share the exact same `created_at` and `expires_at` values. The lifetime is exactly 24 hours.
 
-Reading, navigation, retry, cancellation, reorder, study-language reprocessing, and dictionary-only reprojection do not extend retention. Existing retention cleanup removes expired Documents/Pages while preserving an immutable blob that is still referenced by another live Page. A `cancelled` job may later transition to `expired` as part of ordinary retention.
+Reading, navigation, retry, cancellation, reorder, study-language reprocessing, and English dictionary reprojection do not extend retention. Existing retention cleanup removes expired Documents/Pages while preserving an immutable blob that is still referenced by another live Page. A `cancelled` job may later transition to `expired` as part of ordinary retention.
 
 ## Document capabilities
 
@@ -138,35 +138,37 @@ Changing pages aborts obsolete client requests, revokes the previous Blob URL, a
 
 ## Language behavior
 
-UI locale (`en`/`pt-BR`), study language (`pt-BR`/`en`), requested dictionary language (`en`/`de`/`pt-BR`), furigana, and page-fit/zoom preferences remain independent browser preferences across page navigation.
+Content remains Japanese. UI locale (`en`/`pt-BR`) and study language (`pt-BR`/`en`) remain independent. The deterministic local dictionary is English-only; furigana and page-fit/zoom preferences remain browser-local presentation choices across page navigation.
 
 Persisted results remain page-scoped authority. A preference does not bulk-recompute the whole Document:
 
 - changing study language while viewing Page 7 uses the nested Document reprocess route for Page 7 only;
-- changing dictionary language while viewing Page 7 runs dictionary-only reprojection for Page 7 only;
-- opening a completed child whose persisted dictionary request differs from the browser preference lazily reprojects only that child.
+- the reader exposes no dictionary-language selector and does not initiate non-English dictionary reprojection;
+- an obsolete browser dictionary preference such as `de` normalizes to English rather than reactivating retired pack behavior.
 
-Dictionary-only reprojection delegates the existing dictionary projection job. It reuses the persisted canonical linguistic result and performs zero OCR reruns, zero new `LinguisticRun`, zero Sudachi lexical acquisition, and zero Gemini calls. The last completed result remains readable while reprojection runs.
+The protected API still permits an English dictionary-only reprojection. That path delegates the existing dictionary projection job, reuses the persisted canonical linguistic result, and performs zero OCR reruns, zero new `LinguisticRun`, zero Sudachi lexical acquisition, and zero Gemini calls. New non-English dictionary requests are rejected before a projection job/request is created.
 
-The existing dictionary fallback contract is unchanged: German uses reviewed local JMdict projections when available; `pt-BR` remains the requested language but currently uses explicit English deterministic fallback; Japanese source text retains `lang="ja"`, German meanings `lang="de"`, and English fallback `lang="en"`.
+Historical completed results may still contain older requested/effective/fallback dictionary-language and source metadata. Those persisted fields remain readable for upgrade safety and do not require downloading or loading the retired German pack. Japanese source text retains `lang="ja"`; historical meaning language annotations reflect the persisted effective language rather than rewriting old data.
 
 ## Nested reprocess route
 
 `POST /api/v1/documents/{documentId}/pages/{pageId}/reprocess` requires `reprocess:document`, verifies Document membership, then delegates the existing Page reprocess service.
 
-The JSON request accepts exactly one axis:
+The JSON request accepts exactly one supported axis. Study-language reprocessing uses:
 
 ```json
 {"studyLanguage":"en"}
 ```
 
-or:
+The retained dictionary projection API path accepts English only:
 
 ```json
-{"dictionaryLanguage":"de"}
+{"dictionaryLanguage":"en"}
 ```
 
-The Page one-active-job invariant, idempotency semantics, worker leases/fencing, study-language analysis, and dictionary-only projection behavior are unchanged.
+Values such as `de` or `pt-BR` are unsupported for new dictionary requests and fail the normal validation contract; they are not silently normalized to English. Supplying both study and dictionary axes is also invalid.
+
+The Page one-active-job invariant, idempotency semantics, worker leases/fencing, study-language analysis, and English dictionary-only projection behavior are unchanged.
 
 ## Retry failed pages
 

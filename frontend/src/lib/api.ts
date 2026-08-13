@@ -1,4 +1,4 @@
-import type { DictionaryLanguage } from "./dictionaryLanguage";
+import type { HistoricalDictionaryLanguage } from "./dictionaryLanguage";
 import type { StudyLanguage } from "./studyLanguage";
 
 export type JobStatus =
@@ -102,7 +102,7 @@ export interface ReprocessData {
   readonly jobId: string;
   readonly status: JobStatus;
   readonly studyLanguage: StudyLanguage;
-  readonly requestedDictionaryLanguage?: DictionaryLanguage;
+  readonly requestedDictionaryLanguage?: HistoricalDictionaryLanguage;
   readonly created: boolean;
 }
 
@@ -159,7 +159,7 @@ export interface StudyPage {
   readonly studyLanguage: StudyLanguage;
   /** Legacy English-only StudyResult field. */
   readonly dictionaryLanguage: "en";
-  readonly requestedDictionaryLanguage?: DictionaryLanguage;
+  readonly requestedDictionaryLanguage?: HistoricalDictionaryLanguage;
   readonly fallbackDictionaryLanguage?: "en";
   readonly dictionarySources?: readonly DictionarySourceReference[];
   readonly expiresAt: string;
@@ -343,59 +343,10 @@ export async function reprocessStudyLanguage(
   return parseEnvelope<ReprocessData>(response);
 }
 
-export async function reprocessDictionaryLanguage(
-  upload: UploadData,
-  dictionaryLanguage: DictionaryLanguage,
-  signal: AbortSignal,
-): Promise<ReprocessData> {
-  const response = await fetch(`/api/v1/pages/${encodeURIComponent(upload.pageId)}/reprocess`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Idempotency-Key": createIdempotencyKey("dictionary-reprocess"),
-      "X-Page-Token": upload.capabilities.reprocessPage,
-    },
-    body: JSON.stringify({ dictionaryLanguage }),
-    signal,
-  });
-  return parseEnvelope<ReprocessData>(response);
-}
-
 export async function reprocessDocumentStudyLanguage(
   access: DocumentUploadData,
   pageId: string,
   studyLanguage: StudyLanguage,
-  signal: AbortSignal,
-): Promise<ReprocessData> {
-  return reprocessDocumentPage(
-    access,
-    pageId,
-    { studyLanguage },
-    "document-study-reprocess",
-    signal,
-  );
-}
-
-export async function reprocessDocumentDictionaryLanguage(
-  access: DocumentUploadData,
-  pageId: string,
-  dictionaryLanguage: DictionaryLanguage,
-  signal: AbortSignal,
-): Promise<ReprocessData> {
-  return reprocessDocumentPage(
-    access,
-    pageId,
-    { dictionaryLanguage },
-    "document-dictionary-reprocess",
-    signal,
-  );
-}
-
-async function reprocessDocumentPage(
-  access: DocumentUploadData,
-  pageId: string,
-  payload: { readonly studyLanguage: StudyLanguage } | { readonly dictionaryLanguage: DictionaryLanguage },
-  namespace: "document-study-reprocess" | "document-dictionary-reprocess",
   signal: AbortSignal,
 ): Promise<ReprocessData> {
   const response = await fetch(
@@ -404,10 +355,10 @@ async function reprocessDocumentPage(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Idempotency-Key": createIdempotencyKey(namespace),
+        "Idempotency-Key": createIdempotencyKey("document-study-reprocess"),
         "X-Document-Token": access.capabilities.reprocessDocument,
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ studyLanguage }),
       signal,
     },
   );
@@ -517,9 +468,7 @@ type IdempotencyNamespace =
   | "document-upload"
   | "document-retry-failed"
   | "study-reprocess"
-  | "dictionary-reprocess"
-  | "document-study-reprocess"
-  | "document-dictionary-reprocess";
+  | "document-study-reprocess";
 
 function createIdempotencyKey(namespace: IdempotencyNamespace): string {
   if (typeof crypto.randomUUID === "function") {

@@ -202,11 +202,21 @@ async def test_nested_dictionary_reprojection_creates_no_ocr_sudachi_or_gemini_w
                 "X-Document-Token": reprocess_token,
                 "Idempotency-Key": "nested-dictionary-reprojection",
             },
+            json={"dictionaryLanguage": "en"},
+        )
+        unsupported = await client.post(
+            f"/api/v1/documents/{seeded.document_id}/pages/{seeded.page_id}/reprocess",
+            headers={
+                "X-Document-Token": reprocess_token,
+                "Idempotency-Key": "nested-dictionary-unsupported",
+            },
             json={"dictionaryLanguage": "de"},
         )
 
     assert response.status_code == 202
-    assert response.json()["data"]["requestedDictionaryLanguage"] == "de"
+    assert response.json()["data"]["requestedDictionaryLanguage"] == "en"
+    assert unsupported.status_code == 422
+    assert unsupported.json()["error"]["code"] == "invalid_request"
     async with sessions() as session:
         page = (
             await session.execute(select(PageRecord).where(PageRecord.public_id == seeded.page_id))
@@ -220,6 +230,9 @@ async def test_nested_dictionary_reprojection_creates_no_ocr_sudachi_or_gemini_w
             )
         ).scalar_one()
         request = await session.get(DictionaryProjectionRequestRecord, projection_job.id)
+        projection_request_count = await session.scalar(
+            select(func.count()).select_from(DictionaryProjectionRequestRecord)
+        )
         after = {
             "ocr": await session.scalar(select(func.count()).select_from(OcrRunRecord)),
             "linguistic": await session.scalar(
@@ -235,7 +248,8 @@ async def test_nested_dictionary_reprojection_creates_no_ocr_sudachi_or_gemini_w
 
     assert projection_job.job_kind == "dictionary_language_reprocess"
     assert request is not None
-    assert request.requested_dictionary_language == "de"
+    assert request.requested_dictionary_language == "en"
+    assert projection_request_count == 1
     assert after == before
     await engine.dispose()
 
@@ -260,7 +274,7 @@ async def test_nested_reprocess_requires_exactly_one_language_axis(
         both = await client.post(
             url,
             headers={**headers, "Idempotency-Key": "nested-invalid-axis-both"},
-            json={"studyLanguage": "en", "dictionaryLanguage": "de"},
+            json={"studyLanguage": "en", "dictionaryLanguage": "en"},
         )
 
     assert neither.status_code == 422

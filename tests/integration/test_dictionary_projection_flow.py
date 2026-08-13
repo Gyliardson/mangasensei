@@ -22,6 +22,7 @@ from mangasensei.infrastructure.database.analysis_models import (
 from mangasensei.infrastructure.database.dictionary_projection_models import (
     DictionaryProjectionItemRecord,
     DictionaryProjectionRecord,
+    DictionaryProjectionRequestRecord,
 )
 from mangasensei.infrastructure.database.lexical_models import LexicalMatchRecord
 from mangasensei.infrastructure.database.session import create_database
@@ -144,29 +145,15 @@ class _FixturePack:
     source: JmdictGlossSourceReference
 
     def lookup_identity(self, identity: LexicalFormIdentity) -> JmdictGlossLookup:
-        if self.language == "en":
-            meanings = {
-                "jmdict-cat": ("cat",),
-                "jmdict-dog": ("dog",),
-                "jmdict-go": ("to go",),
-                "jmdict-catdog": ("cat-dog compound",),
-            }[identity.entry_id]
-            status = JmdictGlossLookupStatus.FOUND
-        elif identity.entry_id in {"jmdict-cat", "jmdict-catdog"}:
-            meanings = {
-                "jmdict-cat": ("Katze",),
-                "jmdict-catdog": ("Katzenhund",),
-            }[identity.entry_id]
-            status = JmdictGlossLookupStatus.FOUND
-        elif identity.entry_id == "jmdict-go":
-            meanings = ()
-            status = JmdictGlossLookupStatus.FORM_NOT_FOUND
-        else:
-            meanings = ()
-            status = JmdictGlossLookupStatus.ENTRY_NOT_FOUND
+        meanings = {
+            "jmdict-cat": ("cat",),
+            "jmdict-dog": ("dog",),
+            "jmdict-go": ("to go",),
+            "jmdict-catdog": ("cat-dog compound",),
+        }[identity.entry_id]
         return JmdictGlossLookup(
             identity=identity,
-            status=status,
+            status=JmdictGlossLookupStatus.FOUND,
             meanings=meanings,
             source=self.source,
         )
@@ -175,33 +162,24 @@ class _FixturePack:
 class _Provider:
     def __init__(self) -> None:
         self.loads: list[str] = []
-        self._packs = {
-            "en": _FixturePack(
-                "en",
-                JmdictGlossSourceReference(
-                    dataset="JMdict",
-                    language="en",
-                    version=_VERSION,
-                    digest_sha256=_EN_DIGEST.hex(),
-                ),
+        self._pack = _FixturePack(
+            "en",
+            JmdictGlossSourceReference(
+                dataset="JMdict",
+                language="en",
+                version=_VERSION,
+                digest_sha256=_EN_DIGEST.hex(),
             ),
-            "de": _FixturePack(
-                "de",
-                JmdictGlossSourceReference(
-                    dataset="JMdict",
-                    language="de",
-                    version=_VERSION,
-                    digest_sha256=hashlib.sha256(b"projection-de").hexdigest(),
-                ),
-            ),
-        }
+        )
 
     def is_supported_language(self, language: str) -> bool:
-        return language in self._packs
+        return language == "en"
 
     def get_pack(self, language: str) -> _FixturePack:
+        if language != "en":
+            raise LookupError(language)
         self.loads.append(language)
-        return self._packs[language]
+        return self._pack
 
 
 def _hiragana(reading: str) -> str:
@@ -243,7 +221,7 @@ def _worker(
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independent(
+async def test_english_dictionary_reprojection_is_local_durable_idempotent_and_axis_independent(
     clean_postgres_url: str, tmp_path: Path
 ) -> None:
     app = create_app(_settings(clean_postgres_url, tmp_path))
@@ -296,6 +274,30 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             json={"dictionaryLanguage": "en"},
         )
         assert english_request.status_code == 202
+        english_job_id = english_request.json()["data"]["jobId"]
+        assert (
+            english_request.json()["data"]["requestedDictionaryLanguage"] == "en"
+        )
+
+        duplicate = await client.post(
+            f"/api/v1/pages/{upload_data['pageId']}/reprocess",
+            headers={
+                "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
+                "Idempotency-Key": "dictionary-flow-english",
+            },
+            json={"dictionaryLanguage": "en"},
+        )
+        assert duplicate.status_code == 200
+        assert duplicate.json()["data"]["jobId"] == english_job_id
+        assert duplicate.json()["data"]["created"] is False
+
+        pending = await client.get(
+            f"/api/v1/pages/{upload_data['pageId']}",
+            headers={"X-Page-Token": upload_data["capabilities"]["readPage"]},
+        )
+        assert pending.json()["data"]["resultAvailable"] is True
+        assert pending.json()["data"]["requestedDictionaryLanguage"] == "en"
+
         assert await worker.run_once()
         english_page = (
             await client.get(
@@ -314,88 +316,17 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             for item in english_page["regions"][0]["vocabulary"]
         )
 
-        de_request = await client.post(
-            f"/api/v1/pages/{upload_data['pageId']}/reprocess",
-            headers={
-                "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "dictionary-flow-german",
-            },
-            json={"dictionaryLanguage": "de"},
-        )
-        assert de_request.status_code == 202
-        de_job_id = de_request.json()["data"]["jobId"]
-        assert de_request.json()["data"]["studyLanguage"] == "en"
-
-        duplicate = await client.post(
-            f"/api/v1/pages/{upload_data['pageId']}/reprocess",
-            headers={
-                "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "dictionary-flow-german",
-            },
-            json={"dictionaryLanguage": "de"},
-        )
-        assert duplicate.status_code == 200
-        assert duplicate.json()["data"]["jobId"] == de_job_id
-        assert duplicate.json()["data"]["created"] is False
-
-        pending = await client.get(
-            f"/api/v1/pages/{upload_data['pageId']}",
-            headers={"X-Page-Token": upload_data["capabilities"]["readPage"]},
-        )
-        assert pending.json()["data"]["resultAvailable"] is True
-        assert pending.json()["data"]["requestedDictionaryLanguage"] == "en"
-
-        assert await worker.run_once()
-        de_page = (
-            await client.get(
-                f"/api/v1/pages/{upload_data['pageId']}",
-                headers={"X-Page-Token": upload_data["capabilities"]["readPage"]},
+        for language in ("de", "pt-BR", "es"):
+            invalid = await client.post(
+                f"/api/v1/pages/{upload_data['pageId']}/reprocess",
+                headers={
+                    "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
+                    "Idempotency-Key": f"dictionary-flow-invalid-{language}",
+                },
+                json={"dictionaryLanguage": language},
             )
-        ).json()["data"]
-        by_id = {item["id"]: item for item in de_page["regions"][0]["vocabulary"]}
-        assert de_page["studyLanguage"] == "en"
-        assert de_page["dictionaryLanguage"] == "en"
-        assert de_page["requestedDictionaryLanguage"] == "de"
-        assert de_page["fallbackDictionaryLanguage"] == "en"
-        assert by_id["jmdict-cat"]["meanings"] == ["Katze"]
-        assert by_id["jmdict-cat"]["effectiveLanguage"] == "de"
-        assert by_id["jmdict-cat"]["fallbackUsed"] is False
-        assert by_id["jmdict-dog"]["meanings"] == ["dog"]
-        assert by_id["jmdict-dog"]["effectiveLanguage"] == "en"
-        assert by_id["jmdict-dog"]["fallbackReason"] == "requested_entry_not_found"
-        assert by_id["jmdict-go"]["meanings"] == ["to go"]
-        assert by_id["jmdict-go"]["fallbackReason"] == "requested_form_not_found"
-        assert by_id["jmdict-catdog"]["meanings"] == ["Katzenhund"]
-        assert {source["productLanguage"] for source in de_page["dictionarySources"]} == {
-            "de",
-            "en",
-        }
-
-        pt_request = await client.post(
-            f"/api/v1/pages/{upload_data['pageId']}/reprocess",
-            headers={
-                "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "dictionary-flow-portuguese",
-            },
-            json={"dictionaryLanguage": "pt-BR"},
-        )
-        assert pt_request.status_code == 202
-        assert await worker.run_once()
-        pt_page = (
-            await client.get(
-                f"/api/v1/pages/{upload_data['pageId']}",
-                headers={"X-Page-Token": upload_data["capabilities"]["readPage"]},
-            )
-        ).json()["data"]
-        assert pt_page["studyLanguage"] == "en"
-        assert pt_page["requestedDictionaryLanguage"] == "pt-BR"
-        assert {source["productLanguage"] for source in pt_page["dictionarySources"]} == {"en"}
-        assert all(
-            item["effectiveLanguage"] == "en"
-            and item["fallbackUsed"] is True
-            and item["fallbackReason"] == "unsupported_requested_language"
-            for item in pt_page["regions"][0]["vocabulary"]
-        )
+            assert invalid.status_code == 422
+            assert invalid.json()["error"]["code"] == "invalid_request"
 
         study_request = await client.post(
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
@@ -414,26 +345,18 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
             )
         ).json()["data"]
         assert after_study["studyLanguage"] == "pt-BR"
-        assert after_study["requestedDictionaryLanguage"] == "pt-BR"
+        assert after_study["requestedDictionaryLanguage"] == "en"
 
-        invalid = await client.post(
-            f"/api/v1/pages/{upload_data['pageId']}/reprocess",
-            headers={
-                "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
-                "Idempotency-Key": "dictionary-flow-invalid-language",
-            },
-            json={"dictionaryLanguage": "es"},
-        )
-        assert invalid.status_code == 422
         both = await client.post(
             f"/api/v1/pages/{upload_data['pageId']}/reprocess",
             headers={
                 "X-Page-Token": upload_data["capabilities"]["reprocessPage"],
                 "Idempotency-Key": "dictionary-flow-both-axes",
             },
-            json={"studyLanguage": "en", "dictionaryLanguage": "de"},
+            json={"studyLanguage": "en", "dictionaryLanguage": "en"},
         )
         assert both.status_code == 422
+        assert both.json()["error"]["code"] == "invalid_request"
 
     _, sessions = create_database(clean_postgres_url)
     async with sessions() as session:
@@ -449,6 +372,9 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
         )
         projection_count = await session.scalar(
             select(func.count()).select_from(DictionaryProjectionRecord)
+        )
+        projection_request_count = await session.scalar(
+            select(func.count()).select_from(DictionaryProjectionRequestRecord)
         )
         projection_item_count = await session.scalar(
             select(func.count()).select_from(DictionaryProjectionItemRecord)
@@ -470,8 +396,9 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
     assert linguistic_run_count == 1
     assert gemini_call_count == 0
     assert study_result_count == 2
-    assert projection_count == 3
-    assert projection_item_count == 12
+    assert projection_count == 1
+    assert projection_request_count == 1
+    assert projection_item_count == 4
     assert {identity[1] for identity in identities} >= {
         "jmdict-cat",
         "jmdict-dog",
@@ -480,5 +407,6 @@ async def test_dictionary_reprojection_is_local_durable_mixed_and_axis_independe
     }
     assert ocr.calls == 1
     assert tokenizer.calls == 1
-    assert "de" in provider.loads
+    assert provider.loads
+    assert set(provider.loads) == {"en"}
     await engine.dispose()

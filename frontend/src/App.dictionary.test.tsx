@@ -1,9 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
-import { DICTIONARY_LANGUAGE_PREFERENCE_KEY } from "./lib/dictionaryLanguage";
+import { LEGACY_DICTIONARY_LANGUAGE_PREFERENCE_KEY } from "./lib/dictionaryLanguage";
 import { UI_LOCALE_PREFERENCE_KEY } from "./lib/uiLocale";
 
 function uploadData() {
@@ -24,8 +24,7 @@ function uploadData() {
   };
 }
 
-function page(requested: "en" | "de" | "pt-BR" = "en") {
-  const german = requested === "de";
+function historicalPage() {
   return {
     pageId: "page-001",
     status: "completed",
@@ -33,12 +32,12 @@ function page(requested: "en" | "de" | "pt-BR" = "en") {
     contentLanguage: "ja",
     studyLanguage: "pt-BR",
     dictionaryLanguage: "en",
-    requestedDictionaryLanguage: requested,
+    requestedDictionaryLanguage: "de",
     fallbackDictionaryLanguage: "en",
     dictionarySources: [{
-      ref: german ? "jmdict-de" : "jmdict-en",
+      ref: "jmdict-en",
       dataset: "JMdict",
-      productLanguage: german ? "de" : "en",
+      productLanguage: "en",
       sourceVersion: "fixture",
       normalizedDigestSha256: "b".repeat(64),
     }],
@@ -67,19 +66,19 @@ function page(requested: "en" | "de" | "pt-BR" = "en") {
         surface: "猫",
         lemma: "猫",
         reading: "ネコ",
-        meanings: [german ? "Katze" : "cat"],
+        meanings: ["cat"],
         source: "JMdict",
-        effectiveLanguage: german ? "de" : "en",
-        fallbackUsed: false,
-        fallbackReason: null,
-        sourceRef: german ? "jmdict-de" : "jmdict-en",
+        effectiveLanguage: "en",
+        fallbackUsed: true,
+        fallbackReason: "unsupported_requested_language",
+        sourceRef: "jmdict-en",
         jlpt: null,
       }],
     }],
   };
 }
 
-function successfulBaseFetch(current: () => "en" | "de" | "pt-BR") {
+function successfulBaseFetch() {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === "/api/v1/pages" && init?.method === "POST") {
@@ -90,7 +89,7 @@ function successfulBaseFetch(current: () => "en" | "de" | "pt-BR") {
       return Response.json({ success: true, data: { status: "completed", resultAvailable: true, error: null }, error: null });
     }
     if (url === "/api/v1/pages/page-001") {
-      return Response.json({ success: true, data: page(current()), error: null });
+      return Response.json({ success: true, data: historicalPage(), error: null });
     }
     return new Response(null, { status: 404 });
   });
@@ -104,97 +103,46 @@ async function uploadAndOpen() {
   );
   await user.click(screen.getByRole("button", { name: "Analisar página" }));
   expect(await screen.findByText("cat")).toHaveAttribute("lang", "en");
-  return user;
 }
 
-describe("App dictionary language", () => {
+describe("App English-only dictionary compatibility", () => {
   afterEach(() => {
     window.localStorage.clear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
-  it("switches English to German through dictionary-only reprojection", async () => {
-    window.localStorage.setItem(UI_LOCALE_PREFERENCE_KEY, "pt-BR");
-    let requested: "en" | "de" = "en";
-    const base = successfulBaseFetch(() => requested);
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith("/reprocess")) {
-        expect(JSON.parse(String(init?.body))).toEqual({ dictionaryLanguage: "de" });
-        expect(String(init?.body)).not.toContain("studyLanguage");
-        requested = "de";
-        return Response.json({ success: true, data: { jobId: "job-de", status: "pending", studyLanguage: "pt-BR", requestedDictionaryLanguage: "de", created: true }, error: null }, { status: 202 });
+  it.each([
+    ["absent", undefined],
+    ["English", "en"],
+    ["German", "de"],
+    ["Portuguese", "pt-BR"],
+    ["malformed", "not-a-language"],
+  ] as const)(
+    "retires a %s legacy dictionary preference without issuing dictionary reprojection",
+    async (_label, legacyValue) => {
+      window.localStorage.setItem(UI_LOCALE_PREFERENCE_KEY, "pt-BR");
+      if (legacyValue !== undefined) {
+        window.localStorage.setItem(LEGACY_DICTIONARY_LANGUAGE_PREFERENCE_KEY, legacyValue);
       }
-      return base(input, init);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn(() => "blob:image"), revokeObjectURL: vi.fn() });
-    render(<App />);
+      const fetchMock = successfulBaseFetch();
+      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn(() => "blob:image"), revokeObjectURL: vi.fn() });
+      render(<App />);
 
-    const user = await uploadAndOpen();
-    const dictionary = screen.getByRole("combobox", { name: "Idioma do dicionário" });
-    expect(dictionary).toHaveValue("en");
-    await user.selectOptions(dictionary, "de");
+      expect(window.localStorage.getItem(LEGACY_DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBeNull();
+      await uploadAndOpen();
 
-    expect(await screen.findByText("Katze")).toHaveAttribute("lang", "de");
-    expect(screen.getByText("Dicionário solicitado: Alemão")).toBeVisible();
-    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBe("de");
-  });
-
-  it("keeps the completed result visible and rolls back the preference when reprojection fails", async () => {
-    window.localStorage.setItem(UI_LOCALE_PREFERENCE_KEY, "pt-BR");
-    const base = successfulBaseFetch(() => "en");
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).endsWith("/reprocess")) {
-        return Response.json({ success: false, data: null, error: { code: "processing_failed", message: "failed" } }, { status: 409 });
-      }
-      return base(input, init);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn(() => "blob:image"), revokeObjectURL: vi.fn() });
-    render(<App />);
-
-    const user = await uploadAndOpen();
-    await user.selectOptions(screen.getByRole("combobox", { name: "Idioma do dicionário" }), "de");
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("O processamento da página falhou.");
-    expect(screen.getByText("cat")).toHaveAttribute("lang", "en");
-    expect(screen.getByRole("combobox", { name: "Idioma do dicionário" })).toHaveValue("en");
-    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBe("en");
-  });
-
-  it("shows the initial completed English result while honoring a stored German preference", async () => {
-    window.localStorage.setItem(UI_LOCALE_PREFERENCE_KEY, "pt-BR");
-    window.localStorage.setItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY, "de");
-    let requested: "en" | "de" = "en";
-    let resolveReprocess!: (response: Response) => void;
-    const reprocessResponse = new Promise<Response>((resolve) => { resolveReprocess = resolve; });
-    const base = successfulBaseFetch(() => requested);
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).endsWith("/reprocess")) {
-        expect(JSON.parse(String(init?.body))).toEqual({ dictionaryLanguage: "de" });
-        return reprocessResponse;
-      }
-      return base(input, init);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn(() => "blob:image"), revokeObjectURL: vi.fn() });
-    render(<App />);
-
-    const user = userEvent.setup();
-    await user.upload(screen.getByLabelText("Imagem da página"), new File(["image"], "page.png", { type: "image/png" }));
-    await user.click(screen.getByRole("button", { name: "Analisar página" }));
-
-    expect(await screen.findByText("cat")).toHaveAttribute("lang", "en");
-    expect(screen.getByText(/resultado concluído em Inglês continua visível/)).toBeVisible();
-    expect(screen.getByRole("combobox", { name: "Idioma do dicionário" })).toHaveValue("de");
-    expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toBeDisabled();
-
-    requested = "de";
-    resolveReprocess(Response.json({ success: true, data: { jobId: "job-de", status: "pending", studyLanguage: "pt-BR", requestedDictionaryLanguage: "de", created: true }, error: null }, { status: 202 }));
-
-    await waitFor(() => expect(screen.getByText("Katze")).toHaveAttribute("lang", "de"));
-    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBe("de");
-  });
+      expect(screen.queryByRole("combobox", { name: "Idioma do dicionário" })).not.toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("pt-BR");
+      expect(screen.getByText("Dicionário solicitado: Alemão")).toBeVisible();
+      expect(screen.getByText("Fallback em inglês")).toBeVisible();
+      expect(window.localStorage.getItem(LEGACY_DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBeNull();
+      expect(
+        fetchMock.mock.calls.some(([input, init]) =>
+          String(input).endsWith("/reprocess")
+          && (init as RequestInit | undefined)?.method === "POST"),
+      ).toBe(false);
+    },
+  );
 });

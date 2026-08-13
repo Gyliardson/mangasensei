@@ -75,12 +75,9 @@ describe("ReaderWorkspace lexical identity", () => {
         imageUrl="fixture-image"
         uiLocale="pt-BR"
         preferredStudyLanguage="pt-BR"
-        preferredDictionaryLanguage="en"
         languageMutation={null}
         studyLanguageError={null}
-        dictionaryLanguageError={null}
         onStudyLanguageChange={noop}
-        onDictionaryLanguageChange={noop}
         onReset={noop}
       />,
     );
