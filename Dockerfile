@@ -17,7 +17,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv==0.12.3
 COPY pyproject.toml uv.lock README.md ./
 COPY backend/src ./backend/src
-RUN uv sync --frozen --no-dev --extra ocr --no-editable
+RUN uv sync --frozen --no-dev --extra ocr --no-editable --no-build-package pypdfium2
 
 
 FROM python:3.11-slim-bookworm@sha256:d29f48a31a8b408ed19272ca1e7b10ebae13b240a27e862d3d4217c528e2e0c3 AS runtime
