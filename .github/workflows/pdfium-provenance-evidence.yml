@@ -71,3 +71,11 @@ jobs:
           name: pdfium-reviewed-wheel-provenance
           path: /tmp/pdfium-provenance/evidence.json
           if-no-files-found: error
+      - name: Export exact source snapshot
+        run: tar --exclude=.git -czf /tmp/mangasensei-source.tgz .
+      - name: Upload exact source snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: review-fix-source
+          path: /tmp/mangasensei-source.tgz
+          if-no-files-found: error
