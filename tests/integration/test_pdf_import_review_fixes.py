@@ -12,6 +12,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+import mangasensei.application.pdf_imports as pdf_imports_application
 from mangasensei.api.app import create_app
 from mangasensei.application.pdf_imports import PdfImportCoordinator, _ClaimedImport
 from mangasensei.config import Settings
@@ -187,6 +188,86 @@ async def test_expired_pdf_import_lease_cannot_commit_document(
             assert record.lease_owner == "expired-owner"
             assert record.lease_until is not None
             assert record.lease_until < datetime.now(UTC)
+            assert record.document_id is None
+            assert record.finished_at is None
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_pdf_import_lease_loss_during_document_staging_rolls_back_commit(
+    clean_postgres_url: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(clean_postgres_url, tmp_path)
+    import_id = await _admit_pdf(settings, idempotency_key="mid-staging-expiry-001")
+    engine, sessions = create_database(settings.require_database_url())
+    spool = PdfSpool(settings.pdf_spool_root)
+    coordinator = _coordinator(settings, sessions, worker_id="stale-owner", spool=spool)
+    recovery = _coordinator(settings, sessions, worker_id="winner", spool=spool)
+    winner_attempt = spool.prepare_attempt_dir(import_id, 2)
+    original_stage_image_blob = pdf_imports_application.stage_image_blob
+    staging_hook_reached = False
+
+    async def expire_lease_after_real_blob_staging(
+        session: AsyncSession,
+        *,
+        storage: LocalFilesystemStorage,
+        image: ValidatedImage,
+    ):
+        nonlocal staging_hook_reached
+        staged = await original_stage_image_blob(session, storage=storage, image=image)
+        record = (await session.execute(select(DocumentImportRecord))).scalar_one()
+        now = datetime.now(UTC)
+        assert record.status == "rendering"
+        assert record.fencing_token == 1
+        assert record.lease_owner == "stale-owner"
+        assert record.lease_until is not None
+        assert record.lease_until > now
+        assert await session.scalar(select(func.count(DocumentRecord.id))) == 1
+        record.lease_until = now - timedelta(seconds=1)
+        await session.flush()
+        staging_hook_reached = True
+        return staged
+
+    monkeypatch.setattr(
+        pdf_imports_application,
+        "stage_image_blob",
+        expire_lease_after_real_blob_staging,
+    )
+    try:
+        await _run_actual_render_boundary(settings, coordinator)
+        assert staging_hook_reached
+
+        async with sessions() as session:
+            assert await session.scalar(select(func.count(DocumentRecord.id))) == 0
+            assert await session.scalar(select(func.count(PageRecord.id))) == 0
+            assert await session.scalar(select(func.count(JobRecord.id))) == 0
+            record = (await session.execute(select(DocumentImportRecord))).scalar_one()
+            assert record.public_id == import_id
+            assert record.status == "rendering"
+            assert record.fencing_token == 1
+            assert record.lease_owner == "stale-owner"
+            assert record.lease_until is not None
+            assert record.lease_until < datetime.now(UTC)
+            assert record.document_id is None
+            assert record.finished_at is None
+
+        assert not spool.attempt_dir(import_id, 1).exists()
+        assert winner_attempt.is_dir()
+
+        recovery_claim = await recovery._claim()
+        assert recovery_claim is not None
+        assert recovery_claim.public_id == import_id
+        assert recovery_claim.fencing_token == 2
+        assert winner_attempt.is_dir()
+        async with sessions() as session:
+            record = (await session.execute(select(DocumentImportRecord))).scalar_one()
+            assert record.status == "rendering"
+            assert record.fencing_token == 2
+            assert record.lease_owner == "winner"
             assert record.document_id is None
             assert record.finished_at is None
     finally:
