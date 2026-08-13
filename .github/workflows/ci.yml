@@ -334,11 +334,11 @@ jobs:
             -e MANGASENSEI_ENVIRONMENT=test \
             -e MANGASENSEI_PDF_SPOOL_ROOT=/app/var/pdf-spool \
             mangasensei:pdf-fullstack mangasensei pdf-renderer >/dev/null
+          # Post-Slice-D clean full-stack verification observed 157 HTTP responses from
+          # this API process. 240 leaves 83 requests (53%) headroom even against that
+          # conservative upper bound. This override is test-only; production stays 120/min.
           sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
             setpriv --reuid=10001 --regid=10001 --clear-groups \
-            # Post-Slice-D clean full-stack verification observed 157 HTTP responses from
-            # this API process. 240 leaves 83 requests (53%) headroom even against that
-            # conservative upper bound. This override is test-only; production stays 120/min.
             env MANGASENSEI_API_RATE_LIMIT_PER_MINUTE=240 \
             "${harness_python}" -c \
             'from mangasensei.cli import main; raise SystemExit(main(["api", "--host", "127.0.0.1", "--port", "8000"]))' \
