@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PDF_RASTER_CONTRACT_VERSION: Final[Literal["pdfium-raster-v1"]] = "pdfium-raster-v1"
 PDF_RENDER_DPI = 200
@@ -70,6 +70,15 @@ class PdfRendererProvenance(_ProtocolModel):
     pdfium_flags: tuple[str, ...]
     pillow: str
     native_library: str
+
+    @model_validator(mode="after")
+    def validate_native_artifact(self) -> PdfRendererProvenance:
+        from mangasensei.pdf_imports.native_provenance import validate_bundled_pdfium_native
+
+        expected_path = validate_bundled_pdfium_native()
+        if self.native_library != expected_path:
+            raise ValueError("unexpected bundled PDFium native-library path")
+        return self
 
 
 class PdfRasterManifest(_ProtocolModel):
