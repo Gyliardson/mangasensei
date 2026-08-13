@@ -209,37 +209,55 @@ async def test_pdf_import_lease_loss_during_document_staging_rolls_back_commit(
     recovery = _coordinator(settings, sessions, worker_id="winner", spool=spool)
     winner_attempt = spool.prepare_attempt_dir(import_id, 2)
     original_stage_image_blob = pdf_imports_application.stage_image_blob
+    real_datetime = datetime
+    lease_deadline: datetime | None = None
+    clock_advanced = False
     staging_hook_reached = False
 
-    async def expire_lease_after_real_blob_staging(
+    class _CommitClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if not clock_advanced:
+                return real_datetime.now(tz)
+            assert lease_deadline is not None
+            advanced = lease_deadline + timedelta(seconds=1)
+            if tz is None:
+                return advanced.replace(tzinfo=None)
+            return advanced.astimezone(tz)
+
+    async def advance_clock_after_real_blob_staging(
         session: AsyncSession,
         *,
         storage: LocalFilesystemStorage,
         image: ValidatedImage,
     ):
-        nonlocal staging_hook_reached
+        nonlocal clock_advanced, lease_deadline, staging_hook_reached
         staged = await original_stage_image_blob(session, storage=storage, image=image)
         record = (await session.execute(select(DocumentImportRecord))).scalar_one()
-        now = datetime.now(UTC)
+        now = real_datetime.now(UTC)
         assert record.status == "rendering"
         assert record.fencing_token == 1
         assert record.lease_owner == "stale-owner"
         assert record.lease_until is not None
         assert record.lease_until > now
         assert await session.scalar(select(func.count(DocumentRecord.id))) == 1
-        record.lease_until = now - timedelta(seconds=1)
-        await session.flush()
+        lease_deadline = record.lease_until
+        clock_advanced = True
         staging_hook_reached = True
         return staged
 
+    monkeypatch.setattr(pdf_imports_application, "datetime", _CommitClock)
     monkeypatch.setattr(
         pdf_imports_application,
         "stage_image_blob",
-        expire_lease_after_real_blob_staging,
+        advance_clock_after_real_blob_staging,
     )
     try:
         await _run_actual_render_boundary(settings, coordinator)
         assert staging_hook_reached
+        assert clock_advanced
+        assert lease_deadline is not None
+        assert lease_deadline < _CommitClock.now(UTC)
 
         async with sessions() as session:
             assert await session.scalar(select(func.count(DocumentRecord.id))) == 0
@@ -250,8 +268,7 @@ async def test_pdf_import_lease_loss_during_document_staging_rolls_back_commit(
             assert record.status == "rendering"
             assert record.fencing_token == 1
             assert record.lease_owner == "stale-owner"
-            assert record.lease_until is not None
-            assert record.lease_until < datetime.now(UTC)
+            assert record.lease_until == lease_deadline
             assert record.document_id is None
             assert record.finished_at is None
 
