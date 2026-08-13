@@ -9,7 +9,6 @@ import {
   type DocumentUploadData,
   type StudyPage,
 } from "../../lib/api";
-import type { DictionaryLanguage } from "../../lib/dictionaryLanguage";
 import type { StudyLanguage } from "../../lib/studyLanguage";
 import type { UiLocale } from "../../lib/uiLocale";
 import { DocumentReader } from "./DocumentReader";
@@ -20,7 +19,6 @@ const apiMocks = vi.hoisted(() => ({
   fetchDocumentProtectedImage: vi.fn(),
   fetchDocumentSnapshot: vi.fn(),
   reorderDocument: vi.fn(),
-  reprocessDocumentDictionaryLanguage: vi.fn(),
   reprocessDocumentStudyLanguage: vi.fn(),
   retryFailedDocumentPages: vi.fn(),
 }));
@@ -43,17 +41,13 @@ vi.mock("./ReaderWorkspace", () => ({
     page,
     languageMutation,
     studyLanguageError,
-    dictionaryLanguageError,
     onStudyLanguageChange,
-    onDictionaryLanguageChange,
     onReset,
   }: {
     page: StudyPage;
-    languageMutation: "study" | "dictionary" | null;
+    languageMutation: "study" | null;
     studyLanguageError: string | null;
-    dictionaryLanguageError: string | null;
     onStudyLanguageChange: (language: StudyLanguage) => void;
-    onDictionaryLanguageChange: (language: DictionaryLanguage) => void;
     onReset: () => void;
   }) => (
     <div>
@@ -62,9 +56,7 @@ vi.mock("./ReaderWorkspace", () => ({
       <div data-testid="reader-dictionary">{page.requestedDictionaryLanguage ?? "en"}</div>
       <div data-testid="reader-mutation">{languageMutation ?? "none"}</div>
       {studyLanguageError ? <div data-testid="study-error">{studyLanguageError}</div> : null}
-      {dictionaryLanguageError ? <div data-testid="dictionary-error">{dictionaryLanguageError}</div> : null}
       <button type="button" onClick={() => onStudyLanguageChange("en")}>change-study</button>
-      <button type="button" onClick={() => onDictionaryLanguageChange("de")}>change-dictionary</button>
       <button type="button" onClick={onReset}>reset-reader</button>
     </div>
   ),
@@ -130,9 +122,7 @@ function studyPage(pageId: string, overrides: Partial<StudyPage> = {}): StudyPag
 interface RenderOptions {
   readonly uiLocale?: UiLocale;
   readonly preferredStudyLanguage?: StudyLanguage;
-  readonly preferredDictionaryLanguage?: DictionaryLanguage;
   readonly onPreferredStudyLanguageChange?: (language: StudyLanguage) => void;
-  readonly onPreferredDictionaryLanguageChange?: (language: DictionaryLanguage) => void;
   readonly onReset?: () => void;
 }
 
@@ -142,9 +132,7 @@ function renderReader(document: DocumentUploadData, options: RenderOptions = {})
       access={document}
       uiLocale={options.uiLocale ?? "en"}
       preferredStudyLanguage={options.preferredStudyLanguage ?? "pt-BR"}
-      preferredDictionaryLanguage={options.preferredDictionaryLanguage ?? "en"}
       onPreferredStudyLanguageChange={options.onPreferredStudyLanguageChange ?? vi.fn()}
-      onPreferredDictionaryLanguageChange={options.onPreferredDictionaryLanguageChange ?? vi.fn()}
       onReset={options.onReset ?? vi.fn()}
     />,
   );
@@ -638,11 +626,11 @@ describe("DocumentReader", () => {
       { totalPages: 2, completedPages: 2, processingPages: 0, failedPages: 0 },
     );
 
-    renderReader(document, { preferredDictionaryLanguage: "en" });
+    renderReader(document);
 
     expect(await screen.findByTestId("reader-dictionary")).toHaveTextContent("de");
-    expect(apiMocks.reprocessDocumentDictionaryLanguage).not.toHaveBeenCalled();
     expect(apiMocks.fetchDocumentPage).toHaveBeenCalledTimes(1);
+    expect(apiMocks.reprocessDocumentStudyLanguage).not.toHaveBeenCalled();
   });
 
   it("reprocesses study language only for the current child", async () => {
@@ -670,41 +658,6 @@ describe("DocumentReader", () => {
     });
     expect(onPreferredStudyLanguageChange).toHaveBeenLastCalledWith("en");
     expect(await screen.findByTestId("reader-study")).toHaveTextContent("en");
-  });
-
-  it("ignores retired dictionary mutation callbacks for the current child", async () => {
-    const user = userEvent.setup();
-    const onPreferredDictionaryLanguageChange = vi.fn();
-    const document = access(
-      [{ pageId: "page-a", ordinal: 0, status: "completed", resultAvailable: true }],
-      { totalPages: 1, completedPages: 1, processingPages: 0, failedPages: 0 },
-    );
-    renderReader(document, { onPreferredDictionaryLanguageChange });
-    await screen.findByTestId("reader-page");
-
-    await user.click(screen.getByRole("button", { name: "change-dictionary" }));
-
-    expect(apiMocks.reprocessDocumentDictionaryLanguage).not.toHaveBeenCalled();
-    expect(onPreferredDictionaryLanguageChange).not.toHaveBeenCalled();
-    expect(screen.getByTestId("reader-dictionary")).toHaveTextContent("en");
-    expect(screen.getByTestId("reader-mutation")).toHaveTextContent("none");
-  });
-
-  it("does not surface dictionary mutation errors after the retired action is ignored", async () => {
-    const user = userEvent.setup();
-    apiMocks.reprocessDocumentDictionaryLanguage.mockRejectedValue(new Error("projection failed"));
-    const document = access(
-      [{ pageId: "page-a", ordinal: 0, status: "completed", resultAvailable: true }],
-      { totalPages: 1, completedPages: 1, processingPages: 0, failedPages: 0 },
-    );
-    renderReader(document);
-    await screen.findByTestId("reader-page");
-
-    await user.click(screen.getByRole("button", { name: "change-dictionary" }));
-
-    expect(apiMocks.reprocessDocumentDictionaryLanguage).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("dictionary-error")).not.toBeInTheDocument();
-    expect(screen.getByTestId("reader-dictionary")).toHaveTextContent("en");
   });
 
   it("renders localized Portuguese document navigation without changing page semantics", () => {

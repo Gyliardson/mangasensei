@@ -117,7 +117,7 @@ async function uploadFixture(page: import("@playwright/test").Page) {
   await expect(page.getByRole("button", { name: "Região 1: 猫犬" })).toBeVisible();
 }
 
-test("normalizes a stale German preference without exposing or requesting German dictionary data", async ({ page }) => {
+test("deletes a stale German preference without exposing or requesting German dictionary data", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("mangasensei.ui.locale", "pt-BR");
     localStorage.setItem("mangasensei.dictionary.language", "de");
@@ -132,7 +132,7 @@ test("normalizes a stale German preference without exposing or requesting German
   await expect(page.getByText("Dicionário solicitado: Inglês")).toBeVisible();
   await expect(page.getByText("cat", { exact: true })).toHaveAttribute("lang", "en");
   await expect(page.getByText("dog", { exact: true })).toHaveAttribute("lang", "en");
-  expect(await page.evaluate(() => localStorage.getItem("mangasensei.dictionary.language"))).toBe("en");
+  expect(await page.evaluate(() => localStorage.getItem("mangasensei.dictionary.language"))).toBeNull();
   expect(reprocessPayloads).toEqual([]);
 
   const accessibility = await new AxeBuilder({ page }).analyze();

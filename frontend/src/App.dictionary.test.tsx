@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
-import { DICTIONARY_LANGUAGE_PREFERENCE_KEY } from "./lib/dictionaryLanguage";
+import { LEGACY_DICTIONARY_LANGUAGE_PREFERENCE_KEY } from "./lib/dictionaryLanguage";
 import { UI_LOCALE_PREFERENCE_KEY } from "./lib/uiLocale";
 
 function uploadData() {
@@ -24,7 +24,7 @@ function uploadData() {
   };
 }
 
-function page() {
+function historicalPage() {
   return {
     pageId: "page-001",
     status: "completed",
@@ -32,7 +32,7 @@ function page() {
     contentLanguage: "ja",
     studyLanguage: "pt-BR",
     dictionaryLanguage: "en",
-    requestedDictionaryLanguage: "en",
+    requestedDictionaryLanguage: "de",
     fallbackDictionaryLanguage: "en",
     dictionarySources: [{
       ref: "jmdict-en",
@@ -69,8 +69,8 @@ function page() {
         meanings: ["cat"],
         source: "JMdict",
         effectiveLanguage: "en",
-        fallbackUsed: false,
-        fallbackReason: null,
+        fallbackUsed: true,
+        fallbackReason: "unsupported_requested_language",
         sourceRef: "jmdict-en",
         jlpt: null,
       }],
@@ -89,7 +89,7 @@ function successfulBaseFetch() {
       return Response.json({ success: true, data: { status: "completed", resultAvailable: true, error: null }, error: null });
     }
     if (url === "/api/v1/pages/page-001") {
-      return Response.json({ success: true, data: page(), error: null });
+      return Response.json({ success: true, data: historicalPage(), error: null });
     }
     return new Response(null, { status: 404 });
   });
@@ -112,24 +112,37 @@ describe("App English-only dictionary compatibility", () => {
     vi.restoreAllMocks();
   });
 
-  it("normalizes a stored German preference to English without issuing dictionary reprojection", async () => {
-    window.localStorage.setItem(UI_LOCALE_PREFERENCE_KEY, "pt-BR");
-    window.localStorage.setItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY, "de");
-    const fetchMock = successfulBaseFetch();
-    vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn(() => "blob:image"), revokeObjectURL: vi.fn() });
-    render(<App />);
+  it.each([
+    ["absent", undefined],
+    ["English", "en"],
+    ["German", "de"],
+    ["Portuguese", "pt-BR"],
+    ["malformed", "not-a-language"],
+  ] as const)(
+    "retires a %s legacy dictionary preference without issuing dictionary reprojection",
+    async (_label, legacyValue) => {
+      window.localStorage.setItem(UI_LOCALE_PREFERENCE_KEY, "pt-BR");
+      if (legacyValue !== undefined) {
+        window.localStorage.setItem(LEGACY_DICTIONARY_LANGUAGE_PREFERENCE_KEY, legacyValue);
+      }
+      const fetchMock = successfulBaseFetch();
+      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn(() => "blob:image"), revokeObjectURL: vi.fn() });
+      render(<App />);
 
-    await uploadAndOpen();
+      expect(window.localStorage.getItem(LEGACY_DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBeNull();
+      await uploadAndOpen();
 
-    expect(screen.queryByRole("combobox", { name: "Idioma do dicionário" })).not.toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("pt-BR");
-    expect(screen.getByText("Dicionário solicitado: Inglês")).toBeVisible();
-    expect(window.localStorage.getItem(DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBe("en");
-    expect(
-      fetchMock.mock.calls.some(([input, init]) =>
-        String(input).endsWith("/reprocess")
-        && (init as RequestInit | undefined)?.method === "POST"),
-    ).toBe(false);
-  });
+      expect(screen.queryByRole("combobox", { name: "Idioma do dicionário" })).not.toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toHaveValue("pt-BR");
+      expect(screen.getByText("Dicionário solicitado: Alemão")).toBeVisible();
+      expect(screen.getByText("Fallback em inglês")).toBeVisible();
+      expect(window.localStorage.getItem(LEGACY_DICTIONARY_LANGUAGE_PREFERENCE_KEY)).toBeNull();
+      expect(
+        fetchMock.mock.calls.some(([input, init]) =>
+          String(input).endsWith("/reprocess")
+          && (init as RequestInit | undefined)?.method === "POST"),
+      ).toBe(false);
+    },
+  );
 });

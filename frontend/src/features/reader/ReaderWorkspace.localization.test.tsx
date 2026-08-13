@@ -62,12 +62,9 @@ function workspace(uiLocale: "en" | "pt-BR") {
       imageUrl="fixture-image"
       uiLocale={uiLocale}
       preferredStudyLanguage="pt-BR"
-      preferredDictionaryLanguage="en"
       languageMutation={null}
       studyLanguageError={null}
-      dictionaryLanguageError={null}
       onStudyLanguageChange={vi.fn()}
-      onDictionaryLanguageChange={vi.fn()}
       onReset={vi.fn()}
     />
   );

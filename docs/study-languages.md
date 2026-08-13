@@ -25,11 +25,12 @@ Study language remains an explicit, validated browser-local preference. Missing,
 inaccessible study-language storage falls back to `pt-BR`. UI locale remains independently
 selectable in the application chrome.
 
-The reader no longer exposes a dictionary-language selector. Retired browser values for the old
-`de` / `pt-BR` dictionary preference normalize back to English and are not used to acquire another
-JMdict pack.
+The reader no longer exposes or persists an independent dictionary-language preference. On upgrade,
+any legacy browser value under the retired dictionary-language key is best-effort deleted, including
+old `en`, `de`, `pt-BR`, or malformed values. Current deterministic dictionary behavior is simply
+English and migration never creates a dictionary reprojection request.
 
-Browser storage is a convenience for future requests. Persisted completed page data remains
+Browser storage is a convenience for future study/UI requests. Persisted completed page data remains
 authoritative for what is currently displayed. Stopping client polling is not backend cancellation;
 a queued job may continue.
 
@@ -104,5 +105,5 @@ Tests must preserve the separation between:
 
 The dedicated JMdict contract validates the pinned English source, normalized metadata, runtime
 provider, clean production Compose bootstrap, and one local-only analysis. Frontend tests verify that
-retired dictionary-language preferences do not reappear as a reader choice while study-language and
-UI-locale controls remain functional.
+the retired dictionary-language key is removed rather than reintroduced as a preference while
+study-language and UI-locale controls remain functional.

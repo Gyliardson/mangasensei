@@ -7,7 +7,6 @@ import {
   type DocumentUploadData,
   type StudyPage,
 } from "../../lib/api";
-import type { DictionaryLanguage } from "../../lib/dictionaryLanguage";
 import type { StudyLanguage } from "../../lib/studyLanguage";
 import { DocumentReader } from "./DocumentReader";
 
@@ -15,7 +14,6 @@ const apiMocks = vi.hoisted(() => ({
   fetchDocumentPage: vi.fn(),
   fetchDocumentProtectedImage: vi.fn(),
   fetchDocumentSnapshot: vi.fn(),
-  reprocessDocumentDictionaryLanguage: vi.fn(),
   reprocessDocumentStudyLanguage: vi.fn(),
 }));
 const pollingMocks = vi.hoisted(() => ({
@@ -40,7 +38,7 @@ vi.mock("./ReaderWorkspace", () => ({
     onStudyLanguageChange,
   }: {
     page: StudyPage;
-    languageMutation: "study" | "dictionary" | null;
+    languageMutation: "study" | null;
     studyLanguageError: string | null;
     onStudyLanguageChange: (language: StudyLanguage) => void;
   }) => (
@@ -108,7 +106,6 @@ function renderReader(
   access: DocumentUploadData,
   options: {
     preferredStudyLanguage?: StudyLanguage;
-    preferredDictionaryLanguage?: DictionaryLanguage;
     onStudy?: (language: StudyLanguage) => void;
   } = {},
 ) {
@@ -117,9 +114,7 @@ function renderReader(
       access={access}
       uiLocale="en"
       preferredStudyLanguage={options.preferredStudyLanguage ?? "pt-BR"}
-      preferredDictionaryLanguage={options.preferredDictionaryLanguage ?? "en"}
       onPreferredStudyLanguageChange={options.onStudy ?? vi.fn()}
-      onPreferredDictionaryLanguageChange={vi.fn()}
       onReset={vi.fn()}
     />,
   );
@@ -131,7 +126,6 @@ beforeEach(() => {
   apiMocks.fetchDocumentProtectedImage.mockImplementation(async (_access, pageId: string) => `blob:${pageId}`);
   apiMocks.fetchDocumentSnapshot.mockImplementation(async (access: DocumentUploadData) => access);
   apiMocks.reprocessDocumentStudyLanguage.mockResolvedValue(undefined);
-  apiMocks.reprocessDocumentDictionaryLanguage.mockResolvedValue(undefined);
   pollingMocks.waitForDocumentPageResult.mockImplementation(async (_access, pageId: string) => studyPage(pageId));
   vi.stubGlobal("URL", { ...URL, revokeObjectURL: vi.fn() });
 });
@@ -146,14 +140,10 @@ describe("DocumentReader mutation guards", () => {
     apiMocks.fetchDocumentPage.mockResolvedValue(
       studyPage("page-a", { studyLanguage: "en", requestedDictionaryLanguage: "de" }),
     );
-    renderReader(documentAccess(), {
-      preferredStudyLanguage: "en",
-      preferredDictionaryLanguage: "en",
-    });
+    renderReader(documentAccess(), { preferredStudyLanguage: "en" });
 
     expect(await screen.findByTestId("reader-page")).toHaveTextContent("page-a");
     expect(screen.getByTestId("dictionary-requested")).toHaveTextContent("de");
-    expect(apiMocks.reprocessDocumentDictionaryLanguage).not.toHaveBeenCalled();
     expect(apiMocks.reprocessDocumentStudyLanguage).not.toHaveBeenCalled();
   });
 
@@ -166,7 +156,6 @@ describe("DocumentReader mutation guards", () => {
     await user.click(screen.getByRole("button", { name: "study-en" }));
 
     expect(apiMocks.reprocessDocumentStudyLanguage).not.toHaveBeenCalled();
-    expect(apiMocks.reprocessDocumentDictionaryLanguage).not.toHaveBeenCalled();
   });
 
   it("serializes study mutations while a child reprocess is active", async () => {

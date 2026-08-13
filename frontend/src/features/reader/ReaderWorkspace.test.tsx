@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StudyPage, StudyRegion } from "../../lib/api";
-import type { DictionaryLanguage } from "../../lib/dictionaryLanguage";
 import { ReaderWorkspace } from "./ReaderWorkspace";
 import { FURIGANA_PREFERENCE_KEY } from "./furiganaPreference";
 
@@ -48,12 +47,9 @@ function renderWorkspace(
   studyPage: StudyPage,
   options: {
     readonly preferredStudyLanguage?: StudyPage["studyLanguage"];
-    readonly preferredDictionaryLanguage?: DictionaryLanguage;
-    readonly languageMutation?: "study" | "dictionary" | null;
+    readonly languageMutation?: "study" | null;
     readonly studyLanguageError?: string | null;
-    readonly dictionaryLanguageError?: string | null;
     readonly onStudyLanguageChange?: (language: StudyPage["studyLanguage"]) => void;
-    readonly onDictionaryLanguageChange?: (language: DictionaryLanguage) => void;
     readonly onReset?: () => void;
   } = {},
 ) {
@@ -63,12 +59,9 @@ function renderWorkspace(
       imageUrl="fixture-image"
       uiLocale="pt-BR"
       preferredStudyLanguage={options.preferredStudyLanguage ?? studyPage.studyLanguage}
-      preferredDictionaryLanguage={options.preferredDictionaryLanguage ?? studyPage.requestedDictionaryLanguage ?? "en"}
       languageMutation={options.languageMutation ?? null}
       studyLanguageError={options.studyLanguageError ?? null}
-      dictionaryLanguageError={options.dictionaryLanguageError ?? null}
       onStudyLanguageChange={options.onStudyLanguageChange ?? vi.fn()}
-      onDictionaryLanguageChange={options.onDictionaryLanguageChange ?? vi.fn()}
       onReset={options.onReset ?? vi.fn()}
     />,
   );
@@ -195,12 +188,9 @@ describe("ReaderWorkspace", () => {
         imageUrl="fixture-image"
         uiLocale="pt-BR"
         preferredStudyLanguage="en"
-        preferredDictionaryLanguage="en"
         languageMutation="study"
         studyLanguageError={null}
-        dictionaryLanguageError={null}
         onStudyLanguageChange={onStudyLanguageChange}
-        onDictionaryLanguageChange={vi.fn()}
         onReset={vi.fn()}
       />,
     );
@@ -212,12 +202,10 @@ describe("ReaderWorkspace", () => {
   });
 
   it("does not expose a dictionary-language mutation control", () => {
-    const onDictionaryLanguageChange = vi.fn();
-    renderWorkspace(page([region("dictionary", "猫", 0)]), { onDictionaryLanguageChange });
+    renderWorkspace(page([region("dictionary", "猫", 0)]));
 
     expect(screen.queryByRole("combobox", { name: "Idioma do dicionário" })).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Idioma de estudo" })).toBeVisible();
     expect(screen.getByRole("combobox", { name: "Exibição de furigana" })).toBeVisible();
-    expect(onDictionaryLanguageChange).not.toHaveBeenCalled();
   });
 });

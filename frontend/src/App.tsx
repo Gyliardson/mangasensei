@@ -25,11 +25,7 @@ import {
   uploadPage,
   waitForPage,
 } from "./lib/api";
-import {
-  type DictionaryLanguage,
-  loadDictionaryLanguagePreference,
-  saveDictionaryLanguagePreference,
-} from "./lib/dictionaryLanguage";
+import { migrateLegacyDictionaryLanguagePreference } from "./lib/dictionaryLanguage";
 import { documentMessagesFor, type DocumentUiMessages } from "./lib/documentUiMessages";
 import {
   type StudyLanguage,
@@ -69,16 +65,15 @@ export function App() {
   const [preferredStudyLanguage, setPreferredStudyLanguage] = useState<StudyLanguage>(() =>
     loadStudyLanguagePreference(),
   );
-  const [preferredDictionaryLanguage] = useState<DictionaryLanguage>(() => {
-    const normalized = loadDictionaryLanguagePreference();
-    saveDictionaryLanguagePreference(normalized);
-    return normalized;
-  });
   const [languageMutation, setLanguageMutation] = useState<LanguageMutation>(null);
   const [studyLanguageErrorCode, setStudyLanguageErrorCode] = useState<string | null>(null);
   const operation = useRef<AbortController | null>(null);
   const messages = messagesFor(uiLocale);
   const documentMessages = documentMessagesFor(uiLocale);
+
+  useEffect(() => {
+    migrateLegacyDictionaryLanguagePreference();
+  }, []);
 
   useEffect(() => () => operation.current?.abort(), []);
 
@@ -186,7 +181,6 @@ export function App() {
       setPage(result);
       setPreferredStudyLanguage(result.studyLanguage);
       saveStudyLanguagePreference(result.studyLanguage);
-      saveDictionaryLanguagePreference("en");
       setPhase("complete");
       operation.current = null;
     } catch (caught) {
@@ -244,9 +238,7 @@ export function App() {
           access={documentAccess}
           uiLocale={uiLocale}
           preferredStudyLanguage={preferredStudyLanguage}
-          preferredDictionaryLanguage={preferredDictionaryLanguage}
           onPreferredStudyLanguageChange={setPreferredStudyLanguage}
-          onPreferredDictionaryLanguageChange={() => undefined}
           onReset={reset}
         />
         <Footer />
@@ -263,12 +255,9 @@ export function App() {
           imageUrl={imageUrl}
           uiLocale={uiLocale}
           preferredStudyLanguage={preferredStudyLanguage}
-          preferredDictionaryLanguage={preferredDictionaryLanguage}
           languageMutation={languageMutation}
           studyLanguageError={studyLanguageError}
-          dictionaryLanguageError={null}
           onStudyLanguageChange={changeStudyLanguage}
-          onDictionaryLanguageChange={() => undefined}
           onReset={reset}
         />
         <Footer />

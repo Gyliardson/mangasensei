@@ -4,7 +4,6 @@ import {
   ApiError,
   type UploadData,
   fetchProtectedImage,
-  reprocessDictionaryLanguage,
   reprocessStudyLanguage,
   uploadPage,
   waitForPage,
@@ -92,54 +91,6 @@ describe("API client", () => {
       "X-Page-Token": "reprocess-token",
     });
     expect(options.body).toBe(JSON.stringify({ studyLanguage: "en" }));
-  });
-
-  it("reprojects dictionary language without sending a study-language axis", async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-      envelope(
-        {
-          jobId: "job-003",
-          status: "pending",
-          studyLanguage: "pt-BR",
-          requestedDictionaryLanguage: "de",
-          created: true,
-        },
-        202,
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal("crypto", {
-      randomUUID: vi.fn(() => "00000000-0000-4000-8000-000000000003"),
-      getRandomValues: vi.fn(),
-    });
-
-    await expect(
-      reprocessDictionaryLanguage(upload, "de", new AbortController().signal),
-    ).resolves.toMatchObject({ requestedDictionaryLanguage: "de", created: true });
-
-    const options = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect(options.headers).toEqual({
-      "Content-Type": "application/json",
-      "Idempotency-Key": "dictionary-reprocess-00000000-0000-4000-8000-000000000003",
-      "X-Page-Token": "reprocess-token",
-    });
-    expect(options.body).toBe(JSON.stringify({ dictionaryLanguage: "de" }));
-    expect(String(options.body)).not.toContain("studyLanguage");
-  });
-
-  it("propagates dictionary reprojection errors", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({
-        success: false,
-        data: null,
-        error: { code: "analysis_in_progress", message: "busy" },
-      }, { status: 409 })),
-    );
-
-    await expect(
-      reprocessDictionaryLanguage(upload, "pt-BR", new AbortController().signal),
-    ).rejects.toEqual(new ApiError("analysis_in_progress"));
   });
 
   it("uses cryptographic bytes when randomUUID is unavailable", async () => {

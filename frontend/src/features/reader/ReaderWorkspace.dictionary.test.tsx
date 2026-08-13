@@ -55,12 +55,9 @@ function renderPage(studyPage: StudyPage) {
       imageUrl="fixture-image"
       uiLocale="en"
       preferredStudyLanguage="en"
-      preferredDictionaryLanguage={studyPage.requestedDictionaryLanguage ?? "en"}
       languageMutation={null}
       studyLanguageError={null}
-      dictionaryLanguageError={null}
       onStudyLanguageChange={vi.fn()}
-      onDictionaryLanguageChange={vi.fn()}
       onReset={vi.fn()}
     />,
   );

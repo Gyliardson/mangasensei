@@ -5,7 +5,6 @@ import {
   fetchDocumentPage,
   fetchDocumentProtectedImage,
   fetchDocumentSnapshot,
-  reprocessDocumentDictionaryLanguage,
   reprocessDocumentStudyLanguage,
   uploadDocument,
 } from "./api";
@@ -138,40 +137,23 @@ describe("document API client", () => {
     });
   });
 
-  it("uses reprocessDocument for current-child study and dictionary mutations", async () => {
+  it("uses reprocessDocument only for the supported current-child study mutation", async () => {
     vi.stubGlobal("crypto", {
-      randomUUID: vi
-        .fn()
-        .mockReturnValueOnce("study-key")
-        .mockReturnValueOnce("dictionary-key"),
+      randomUUID: vi.fn().mockReturnValue("study-key"),
       getRandomValues: vi.fn(),
     });
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        envelope(
-          { jobId: "study-job", status: "pending", studyLanguage: "en", created: true },
-          202,
-        ),
-      )
-      .mockResolvedValueOnce(
-        envelope(
-          {
-            jobId: "dictionary-job",
-            status: "pending",
-            studyLanguage: "en",
-            requestedDictionaryLanguage: "de",
-            created: true,
-          },
-          202,
-        ),
-      );
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      envelope(
+        { jobId: "study-job", status: "pending", studyLanguage: "en", created: true },
+        202,
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const signal = new AbortController().signal;
 
     await reprocessDocumentStudyLanguage(access, "page-b", "en", signal);
-    await reprocessDocumentDictionaryLanguage(access, "page-b", "de", signal);
 
+    expect(fetchMock).toHaveBeenCalledOnce();
     const study = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(study.headers).toEqual({
       "Content-Type": "application/json",
@@ -179,14 +161,6 @@ describe("document API client", () => {
       "X-Document-Token": "reprocess-document-token",
     });
     expect(study.body).toBe(JSON.stringify({ studyLanguage: "en" }));
-
-    const dictionary = fetchMock.mock.calls[1]?.[1] as RequestInit;
-    expect(dictionary.headers).toEqual({
-      "Content-Type": "application/json",
-      "Idempotency-Key": "document-dictionary-reprocess-dictionary-key",
-      "X-Document-Token": "reprocess-document-token",
-    });
-    expect(dictionary.body).toBe(JSON.stringify({ dictionaryLanguage: "de" }));
-    expect(String(dictionary.body)).not.toContain("studyLanguage");
+    expect(String(study.body)).not.toContain("dictionaryLanguage");
   });
 });

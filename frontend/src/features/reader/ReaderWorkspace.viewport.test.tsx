@@ -59,12 +59,9 @@ function renderReader() {
       imageUrl="fixture-image"
       uiLocale="pt-BR"
       preferredStudyLanguage={studyPage.studyLanguage}
-      preferredDictionaryLanguage="en"
       languageMutation={null}
       studyLanguageError={null}
-      dictionaryLanguageError={null}
       onStudyLanguageChange={vi.fn()}
-      onDictionaryLanguageChange={vi.fn()}
       onReset={vi.fn()}
     />,
   );

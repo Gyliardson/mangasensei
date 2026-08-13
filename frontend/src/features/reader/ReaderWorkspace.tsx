@@ -8,7 +8,7 @@ import type {
   StudyToken,
   VocabularyItem,
 } from "../../lib/api";
-import type { DictionaryLanguage } from "../../lib/dictionaryLanguage";
+import type { HistoricalDictionaryLanguage } from "../../lib/dictionaryLanguage";
 import {
   type StudyLanguage,
   isStudyLanguage,
@@ -43,12 +43,9 @@ interface ReaderWorkspaceProps {
   readonly imageUrl: string;
   readonly uiLocale: UiLocale;
   readonly preferredStudyLanguage: StudyLanguage;
-  readonly preferredDictionaryLanguage: DictionaryLanguage;
-  readonly languageMutation: "study" | "dictionary" | null;
+  readonly languageMutation: "study" | null;
   readonly studyLanguageError: string | null;
-  readonly dictionaryLanguageError: string | null;
   readonly onStudyLanguageChange: (language: StudyLanguage) => void;
-  readonly onDictionaryLanguageChange: (language: DictionaryLanguage) => void;
   readonly onReset: () => void;
 }
 
@@ -57,10 +54,8 @@ export function ReaderWorkspace({
   imageUrl,
   uiLocale,
   preferredStudyLanguage,
-  preferredDictionaryLanguage,
   languageMutation,
   studyLanguageError,
-  dictionaryLanguageError,
   onStudyLanguageChange,
   onReset,
 }: ReaderWorkspaceProps) {
@@ -216,23 +211,9 @@ export function ReaderWorkspace({
             )}
           </p>
         ) : null}
-        {languageMutation === "dictionary" && preferredDictionaryLanguage !== persistedDictionaryLanguage ? (
-          <p className="study-language-feedback" role="status">
-            {messages.updatingDictionaryLanguage(
-              messages.dictionaryLanguageName(preferredDictionaryLanguage),
-              messages.dictionaryLanguageName(persistedDictionaryLanguage),
-            )}
-          </p>
-        ) : null}
         {studyLanguageError ? (
           <p className="study-language-feedback study-language-error" role="alert">
             {studyLanguageError} {messages.retainedStudyLanguage(messages.studyLanguageName(page.studyLanguage))}
-          </p>
-        ) : null}
-        {dictionaryLanguageError ? (
-          <p className="study-language-feedback study-language-error" role="alert">
-            {dictionaryLanguageError}{" "}
-            {messages.retainedDictionaryLanguage(messages.dictionaryLanguageName(persistedDictionaryLanguage))}
           </p>
         ) : null}
 
@@ -386,7 +367,7 @@ function StudyPanel({
   readonly region: StudyRegion | undefined;
   readonly furiganaMode: FuriganaMode;
   readonly studyLanguage: StudyLanguage;
-  readonly requestedDictionaryLanguage: DictionaryLanguage;
+  readonly requestedDictionaryLanguage: HistoricalDictionaryLanguage;
   readonly dictionarySources: readonly DictionarySourceReference[];
   readonly messages: UiMessages;
 }) {

@@ -15,7 +15,6 @@ import {
   reprocessDocumentStudyLanguage,
   retryFailedDocumentPages,
 } from "../../lib/api";
-import type { DictionaryLanguage } from "../../lib/dictionaryLanguage";
 import {
   documentNeedsPolling,
   waitForDocumentPageResult,
@@ -34,9 +33,7 @@ interface DocumentReaderProps {
   readonly access: DocumentUploadData;
   readonly uiLocale: UiLocale;
   readonly preferredStudyLanguage: StudyLanguage;
-  readonly preferredDictionaryLanguage: DictionaryLanguage;
   readonly onPreferredStudyLanguageChange: (language: StudyLanguage) => void;
-  readonly onPreferredDictionaryLanguageChange: (language: DictionaryLanguage) => void;
   readonly onReset: () => void;
 }
 
@@ -55,7 +52,6 @@ export function DocumentReader({
   access,
   uiLocale,
   preferredStudyLanguage,
-  preferredDictionaryLanguage,
   onPreferredStudyLanguageChange,
   onReset,
 }: DocumentReaderProps) {
@@ -417,12 +413,9 @@ export function DocumentReader({
         imageUrl={imageUrl}
         uiLocale={uiLocale}
         preferredStudyLanguage={preferredStudyLanguage}
-        preferredDictionaryLanguage={preferredDictionaryLanguage}
         languageMutation={languageMutation}
         studyLanguageError={studyLanguageError}
-        dictionaryLanguageError={null}
         onStudyLanguageChange={(language) => void changeStudyLanguage(language)}
-        onDictionaryLanguageChange={() => undefined}
         onReset={onReset}
       />
     </>
