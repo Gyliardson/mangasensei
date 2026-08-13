@@ -17,6 +17,10 @@ from mangasensei.infrastructure.database.dictionary_projection_models import (
     DictionaryProjectionRequestRecord,
     DictionaryProjectionSourceRecord,
 )
+from mangasensei.infrastructure.database.document_import_models import (
+    DocumentImportCapabilityRecord,
+    DocumentImportRecord,
+)
 from mangasensei.infrastructure.database.document_models import (
     DocumentCapabilityRecord,
     DocumentRecord,
@@ -43,6 +47,8 @@ __all__ = [
     "DictionaryProjectionRequestRecord",
     "DictionaryProjectionSourceRecord",
     "DocumentCapabilityRecord",
+    "DocumentImportCapabilityRecord",
+    "DocumentImportRecord",
     "DocumentRecord",
     "GeminiAnalysisRecord",
     "GeminiCallRecord",

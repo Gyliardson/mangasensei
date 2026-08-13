@@ -27,7 +27,7 @@ class DocumentRecord(Base):
     __tablename__ = "documents"
     __table_args__ = (
         UniqueConstraint("upload_key_id", "upload_idempotency_digest"),
-        CheckConstraint("source_kind IN ('images')", name="source_kind"),
+        CheckConstraint("source_kind IN ('images','pdf')", name="source_kind"),
         CheckConstraint("order_revision > 0", name="order_revision_positive"),
         CheckConstraint("expires_at = created_at + interval '24 hours'", name="retention_exact"),
         CheckConstraint(

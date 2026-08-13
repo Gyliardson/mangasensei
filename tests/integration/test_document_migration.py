@@ -33,7 +33,7 @@ def test_document_schema_preserves_standalone_and_child_idempotency_contracts(
     assert document_columns["request_digest"]["nullable"] is True
     with engine.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert revision == "f6a3c2d91b47"
+    assert revision == "a3f9d712c640"
 
     digest = hashlib.sha256(b"slice-b-idempotency-contract").digest()
     with engine.begin() as connection:

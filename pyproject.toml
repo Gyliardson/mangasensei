@@ -20,6 +20,7 @@ dependencies = [
   "psycopg[binary,pool]==3.3.4",
   "pydantic==2.13.4",
   "pydantic-settings==2.15.0",
+  "pypdfium2==5.12.1",
   "python-multipart==0.0.32",
   "sqlalchemy==2.0.51",
   "sudachidict-core==20260723",
@@ -124,5 +125,12 @@ exclude = ["backend/src/mangasensei/ocr/vendor"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["google.genai.*", "numpy.*", "sudachipy.*"]
+module = [
+  "google.genai.*",
+  "numpy.*",
+  "pypdfium2",
+  "pypdfium2.*",
+  "pypdfium2_raw",
+  "sudachipy.*",
+]
 ignore_missing_imports = true

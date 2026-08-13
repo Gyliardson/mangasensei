@@ -51,6 +51,43 @@ Runtime and development dependencies are pinned in [`uv.lock`](uv.lock) and
 [`package-lock.json`](package-lock.json). Their licenses are not reproduced in this
 notice file; consult each upstream package distribution for its license terms.
 
+### pypdfium2 / bundled PDFium
+
+Hardened local PDF import pins `pypdfium2 5.12.1` and supports only the reviewed Linux x86_64 and Linux aarch64 binary wheels. Each contains the Python wrapper, the `pypdfium2_raw` module, and bundled `pypdfium2_raw/libpdfium.so` for PDFium `152.0.7947.0` (build `7947`). The pypdfium2 project is dual-licensed under Apache-2.0 or BSD-3-Clause terms; bundled native components retain their own licenses.
+
+The exact installed x86_64 wheel and the reviewed x86_64/aarch64 wheel artifacts are inspected by the PDF Import CI gate. The x86_64 wheel's authoritative native notice bundle is:
+
+`pypdfium2-5.12.1.dist-info/licenses/data/linux_x64/BUILD_LICENSES/`
+
+That directory contains exactly these 16 notice files in the selected wheel:
+
+- `abseil.txt` — Apache License 2.0;
+- `agg23.txt` — Anti-Grain Geometry 2.3 permissive notice;
+- `fast_float.txt` — MIT License;
+- `freetype.txt` — FreeType Project License;
+- `icu.txt` — Unicode License v3;
+- `lcms.txt` — Little CMS permissive/MIT-style notice;
+- `libjpeg_turbo.ijg` and `libjpeg_turbo.md` — libjpeg-turbo/IJG and BSD-style terms documented by the project;
+- `libopenjpeg.txt` — BSD 2-Clause License;
+- `libpng.txt` — PNG Reference Library License version 2 and historical notices;
+- `libtiff.txt` — libtiff permissive notice;
+- `llvm-libc.txt` — Apache License 2.0 with LLVM Exceptions;
+- `pdfium-binaries.txt` — pdfium-binaries permissive notice;
+- `pdfium.txt` — PDFium BSD-style notice;
+- `simdutf.txt` — MIT License;
+- `zlib.txt` — zlib License.
+
+The complete files in each reviewed wheel are authoritative; this summary does not replace them. CI archives the installed x86_64 bundle plus the license files extracted from both reviewed Linux wheel artifacts as the `pdfium-build-licenses` artifact when validating the PDF import boundary.
+
+Production installation forbids source-building `pypdfium2`. Runtime provenance rejects unsupported OS/architecture, a helper version other than `5.12.1`, a PDFium build other than `7947`, a V8/XFA build, a symlinked/missing/out-of-package native library, or an unexpected native digest. The reviewed native SHA-256 values are Linux x86_64 `61c9f745c6296a1050599a99a1ed985036411b591a11bd2a41bafe530ecb4f33` and Linux aarch64 `f5c8d54a498e2112fbcf53e866c4a5635e9839db3a36d88c4772e5384dabeac6`. CI also verifies the corresponding published wheel SHA-256 values from locked metadata before extracting the native library.
+
+`ldd` on that exact `libpdfium.so` resolves only the Linux runtime libraries `libpthread.so.0`, `libm.so.6`, `libgcc_s.so.1`, `libc.so.6`, and the ELF loader; no library is unresolved and no system PDFium is dynamically linked. These runtime libraries are supplied by the pinned Debian/Python base image rather than bundled inside the pypdfium2 wheel.
+
+References:
+
+- [pypdfium2 project](https://github.com/pypdfium2-team/pypdfium2)
+- [pypdfium2 licensing documentation](https://pypdfium2.readthedocs.io/en/stable/python_api.html)
+
 ### OpenCV Python Headless
 
 The local OCR runtime uses the headless OpenCV Python wheel pinned in `uv.lock`. The `opencv-python` packaging scripts are MIT-licensed, OpenCV itself is Apache-2.0, and the binary wheels include additional third-party components documented by the upstream distribution. The headless package is used because MangaSensei does not require OpenCV GUI functions in its server or worker runtime.

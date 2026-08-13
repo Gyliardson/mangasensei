@@ -39,6 +39,8 @@ def migrated_postgres_url(postgres_url: str) -> str:
 
 
 _MANGASENSEI_TABLES = (
+    "document_import_capabilities",
+    "document_imports",
     "documents",
     "document_capabilities",
     "pages",

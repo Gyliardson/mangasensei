@@ -71,7 +71,7 @@ export interface DocumentProgress {
 
 export interface DocumentSnapshot {
   readonly documentId: string;
-  readonly sourceKind: "images";
+  readonly sourceKind: "images" | "pdf";
   readonly expiresAt: string;
   readonly orderRevision: number;
   readonly status: DocumentAggregateStatus;

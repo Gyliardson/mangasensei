@@ -26,7 +26,12 @@ from mangasensei.linguistics.jmdict_packs import (
 )
 from mangasensei.ocr.models.downloader import download_models, verify_models
 from mangasensei.ocr.models.manifest import ModelIntegrityError
-from mangasensei.runtime import run_retention_process, run_worker_process
+from mangasensei.runtime import (
+    run_pdf_import_process,
+    run_pdf_renderer_process,
+    run_retention_process,
+    run_worker_process,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,6 +44,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     worker = subcommands.add_parser("worker", help="run the analysis worker")
     worker.add_argument("--once", action="store_true")
+
+    pdf_importer = subcommands.add_parser("pdf-importer", help="coordinate bounded PDF imports")
+    pdf_importer.add_argument("--once", action="store_true")
+
+    pdf_renderer = subcommands.add_parser(
+        "pdf-renderer", help="run the isolated local PDFium renderer"
+    )
+    pdf_renderer.add_argument("--once", action="store_true")
 
     retention = subcommands.add_parser("retention", help="remove expired pages")
     retention.add_argument("--once", action="store_true")
@@ -54,9 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
         "download", help="download, normalize and verify a reviewed JMdict pack"
     )
     jmdict_download.add_argument("--language", default=DEFAULT_DICTIONARY_LANGUAGE)
-    jmdict_verify = jmdict_commands.add_parser(
-        "verify", help="verify a reviewed local JMdict pack"
-    )
+    jmdict_verify = jmdict_commands.add_parser("verify", help="verify a reviewed local JMdict pack")
     jmdict_verify.add_argument("--language", default=DEFAULT_DICTIONARY_LANGUAGE)
 
     migrate = subcommands.add_parser("migrate", help="upgrade the database schema")
@@ -80,6 +91,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "worker":
             logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
             asyncio.run(run_worker_process(settings, once=args.once))
+        elif args.command == "pdf-importer":
+            logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+            asyncio.run(run_pdf_import_process(settings, once=args.once))
+        elif args.command == "pdf-renderer":
+            logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+            run_pdf_renderer_process(settings, once=args.once)
         elif args.command == "retention":
             asyncio.run(run_retention_process(settings, once=args.once))
         elif args.command == "models" and args.models_command == "download":

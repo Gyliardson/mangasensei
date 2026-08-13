@@ -1,6 +1,6 @@
 # Version Matrix
 
-Verified on 2026-08-09 using official documentation, package registries and reviewed artifact manifests.
+Verified on 2026-08-12 using official documentation, package registries, selected locked distributions and reviewed artifact manifests.
 
 | Area | Component | Version | Notes |
 | --- | --- | --- | --- |
@@ -11,6 +11,8 @@ Verified on 2026-08-09 using official documentation, package registries and revi
 | ORM | SQLAlchemy | 2.0.51 | Async PostgreSQL dialect |
 | Migrations | Alembic | 1.19.0 | Reversible initial schema |
 | Database | PostgreSQL | 18.4 | Official container image |
+| PDF wrapper | pypdfium2 | 5.12.1 | Hardened PDF import supports only reviewed Linux x86_64/aarch64 binary wheels; production installation forbids building this package from source |
+| PDF renderer | PDFium | 152.0.7947.0 (build 7947) | Bundled by reviewed Linux wheels; runtime checks OS/arch, package path, native SHA-256, build and non-V8/XFA flags before rendering |
 | Gemini | google-genai | 2.17.0 | Structured JSON output through current SDK |
 | UI | React | 19.2.8 | SPA |
 | Language | TypeScript | 7.0.2 | CLI type checking only |
@@ -26,6 +28,8 @@ Verified on 2026-08-09 using official documentation, package registries and revi
 Python packages are locked by `uv.lock`. JavaScript packages are locked by
 `package-lock.json`. Model artifacts use a separate checksum manifest because
 they cannot be redistributed with the application.
+
+The hardened PDF renderer intentionally supports only Linux `x86_64` and Linux `aarch64`. For `pypdfium2`, the production Docker build uses uv's package-scoped `--no-build-package pypdfium2` policy, so resolution fails rather than building that package from its source distribution when a binary wheel is unavailable. Runtime provenance then requires helper `5.12.1`, PDFium build `7947`, no V8/XFA flags, a real `pypdfium2_raw/libpdfium.so` inside the installed package, and the reviewed native SHA-256 for the exact OS/architecture. Unsupported platforms or a different native digest fail before rendering. CI independently verifies the published wheel SHA-256 and extracted native-library SHA-256 for both reviewed Linux wheels and archives their bundled license evidence. The persisted `pdfium-raster-v1` protocol is unchanged. See [Third-Party Notices](../THIRD_PARTY_NOTICES.md).
 
 The reviewed English JMdict pack is registered in
 [`backend/src/mangasensei/linguistics/jmdict_packs.json`](../backend/src/mangasensei/linguistics/jmdict_packs.json), with source and normalized integrity metadata in its manifest. English is the only active deterministic local dictionary language.

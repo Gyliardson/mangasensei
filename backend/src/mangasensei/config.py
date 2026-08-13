@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     database_url: str | None = None
     storage_root: Path = Path("var/storage")
+    pdf_spool_root: Path = Path("var/pdf-spool")
     model_cache: Path = Path("var/models")
     jmdict_path: Path = Path("var/data/jmdict.json")
     frontend_dist: Path | None = Path("frontend/dist")
@@ -38,6 +39,22 @@ class Settings(BaseSettings):
         ge=25_000_000,
         le=5_000_000_000,
     )
+    max_pdf_bytes: int = Field(default=256 * 1024 * 1024, gt=0, le=256 * 1024 * 1024)
+    max_pdf_pages: int = Field(default=200, ge=1, le=200)
+    max_pdf_raster_bytes: int = Field(
+        default=512 * 1024 * 1024,
+        ge=12 * 1024 * 1024,
+        le=512 * 1024 * 1024,
+    )
+    max_pdf_spool_bytes: int = Field(
+        default=768 * 1024 * 1024,
+        ge=256 * 1024 * 1024,
+        le=768 * 1024 * 1024,
+    )
+    pdf_renderer_timeout_seconds: int = Field(default=180, ge=30, le=180)
+    pdf_import_lease_seconds: int = Field(default=240, ge=210, le=600)
+    pdf_source_ttl_seconds: int = Field(default=3600, frozen=True)
+    pdf_import_poll_seconds: float = Field(default=0.25, gt=0, le=5)
     api_rate_limit_per_minute: int = Field(default=120, ge=1, le=10_000)
     upload_rate_limit_per_minute: int = Field(default=10, ge=1, le=1_000)
     reprocess_rate_limit_per_minute: int = Field(default=6, ge=1, le=1_000)

@@ -16,4 +16,10 @@ class DocumentCapabilityScope(StrEnum):
     MANAGE_DOCUMENT = "manage:document"
 
 
-CapabilityScopeValue = CapabilityScope | DocumentCapabilityScope
+class DocumentImportCapabilityScope(StrEnum):
+    READ_DOCUMENT_IMPORT = "read:document-import"
+
+
+CapabilityScopeValue = (
+    CapabilityScope | DocumentCapabilityScope | DocumentImportCapabilityScope
+)
