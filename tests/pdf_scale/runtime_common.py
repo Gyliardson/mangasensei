@@ -274,6 +274,46 @@ print(json.dumps({
             raise AssertionError("spool snapshot was not a JSON object")
         return value
 
+    def spool_attempt_summary(self, import_id: str) -> dict[str, Any]:
+        script = r'''
+import json
+from pathlib import Path
+import sys
+
+import_id = sys.argv[1]
+input_root = Path("/app/var/pdf-spool")
+output_root = Path("/app/var/pdf-renderer-output")
+requests = sorted(path.name for path in (input_root / "requests").glob(f"{import_id}.*.request.json"))
+output_import = output_root / "imports" / import_id
+results = []
+if output_import.is_dir():
+    for attempt in sorted(output_import.glob("attempt-*"), key=lambda path: path.name):
+        if not attempt.is_dir():
+            continue
+        results.append({
+            "attempt": attempt.name,
+            "manifest": (attempt / "manifest.json").is_file(),
+            "failure": (attempt / "failure.json").is_file(),
+            "pageFiles": sum(1 for path in attempt.glob("page-*.png") if path.is_file()),
+        })
+print(json.dumps({"requests": requests, "attempts": results}))
+'''
+        raw = self.compose(
+            "exec",
+            "-T",
+            "pdf-spool-init",
+            "python",
+            "-c",
+            script,
+            import_id,
+            capture=True,
+            check=False,
+        )
+        value = json.loads(raw or "{}")
+        if not isinstance(value, dict):
+            raise AssertionError("spool attempt summary was not a JSON object")
+        return value
+
     def ordered_raster_sha256(self, import_id: str, fence: int) -> str:
         path = f"/app/var/pdf-renderer-output/imports/{import_id}/attempt-{fence}"
         script = r'''

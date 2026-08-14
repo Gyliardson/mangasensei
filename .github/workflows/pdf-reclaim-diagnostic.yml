@@ -1,0 +1,71 @@
+name: PDF Reclaim Diagnostic E3
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pdf-reclaim-diagnostic.yml"
+      - "tests/pdf_scale/reclaim_diagnostic.py"
+      - "tests/pdf_scale/runtime_common.py"
+      - "tests/pdf_scale/scale_scenarios.py"
+      - "tests/pdf_scale/compose.e3.yml"
+      - "backend/src/mangasensei/application/pdf_imports.py"
+      - "backend/src/mangasensei/pdf_imports/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pdf-reclaim-diagnostic-e3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    name: Diagnose fence-2 renderer progress
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      MANGASENSEI_E3_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      POSTGRES_PASSWORD: pdf-reclaim-diagnostic
+      MANGASENSEI_CAPABILITY_PEPPERS: '["pdf-reclaim-diagnostic-pepper-000000001"]'
+      MANGASENSEI_VERSION: dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.MANGASENSEI_E3_SOURCE_SHA }}
+
+      - name: Verify exact source SHA
+        run: test "$(git rev-parse HEAD)" = "${MANGASENSEI_E3_SOURCE_SHA}"
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install exact locked runtime
+        run: uv sync --frozen --no-build-package pypdfium2
+
+      - name: Build reviewed production image
+        run: docker build --build-arg MANGASENSEI_VERSION="$(cat VERSION)" -t mangasensei:dev .
+
+      - name: Run focused reclaim diagnostic
+        run: >-
+          uv run python -m tests.pdf_scale.reclaim_diagnostic
+          --root "${RUNNER_TEMP}/pdf-reclaim-diagnostic"
+          --source-sha "${MANGASENSEI_E3_SOURCE_SHA}"
+
+      - name: Upload sanitized diagnostic JSON
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pdf-reclaim-diagnostic-e3
+          path: ${{ runner.temp }}/pdf-reclaim-diagnostic/reclaim-diagnostic.json
+          if-no-files-found: error
+
+      - name: Cleanup diagnostic Compose state
+        if: always()
+        run: >-
+          COMPOSE_PROJECT_NAME=mangasensei_e3_reclaim_diagnostic
+          docker compose -f compose.yaml -f tests/pdf_scale/compose.e3.yml
+          down -v --remove-orphans || true
