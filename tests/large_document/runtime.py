@@ -132,7 +132,7 @@ def _worker_process(log_path: str) -> None:
 async def _wait_for_marker(path: Path, *, timeout_seconds: float) -> None:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        if path.is_file():
+        if await asyncio.to_thread(path.is_file):
             return
         await asyncio.sleep(0.05)
     raise TimeoutError("browser did not persist the document marker after admission")
