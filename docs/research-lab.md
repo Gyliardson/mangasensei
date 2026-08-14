@@ -15,7 +15,7 @@ Official platform references:
 - [GitHub Actions: events that trigger workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
 - [GitHub Actions: `GITHUB_TOKEN`](https://docs.github.com/en/actions/concepts/security/github_token)
 - [GitHub Actions: workflow token permissions](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token)
-- [GitHub Actions: concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflow-runs/control-workflow-concurrency)
+- [GitHub Actions: concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
 - [GitHub Actions: workflow artifacts](https://docs.github.com/en/actions/tutorials/store-and-share-data)
 - [GitHub-hosted runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 - [ChatGPT Scheduled Tasks](https://help.openai.com/en/articles/10291617-scheduled-tasks-in-chatgpt)
