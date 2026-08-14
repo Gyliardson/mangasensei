@@ -66,6 +66,20 @@ The aggregate projection diagnostic records SQL statement count and Job rows loa
 
 The queue probe uses the real PostgreSQL claim/recovery path for a 200-job Document A followed by standalone work, a small Document, and an expired/recovered retry. Its full claim sequence and ownership are evidence only. It intentionally does not assert a fairness quantum or modify queue ordering/indexes; scheduling policy remains deferred to Slice E4.
 
+## Slice E2 bounded retention
+
+Slice E2 hardens the existing 24-hour retention janitor so cleanup work is bounded by Page rows rather than by a bounded number of parent Documents with unbounded child fan-out.
+
+For `RetentionJanitor.run_once(batch_size=N)`, the janitor selects at most `N` retention-eligible Pages. A standalone Page is eligible when its own `expires_at` has passed; a Document-owned Page is eligible when its parent Document has expired, even if that child Page has a later `expires_at`. The selected Page rows are ordered deterministically and locked with PostgreSQL `FOR UPDATE SKIP LOCKED` before Gemini abandoned-call reconciliation and direct Page deletion.
+
+Expired Documents are physically deleted only after they contain zero Pages, and that empty-Document cleanup is separately bounded. A large expired Document can therefore drain over several janitor cycles instead of cascading all child Pages in one transaction. This does not extend access lifetime: document authorization already rejects an expired Document while remaining child rows are still being physically drained.
+
+Image-blob cleanup is also bounded to at most `N` `_delete_if_unreferenced()` attempts per cycle. Blobs made newly orphaned by the selected Page batch are prioritized, remaining budget can service older orphan backlog, and the existing digest lock, reference re-check, `deleting` state, upload serialization, and filesystem-before-final-row-delete protocol remain unchanged. If the process exits after Page deletion commits but before filesystem cleanup, the orphan ImageBlob remains discoverable by a later janitor cycle.
+
+Stale `RateLimitBucketRecord` cleanup keeps the existing one-day eligibility threshold but now selects and deletes at most `N` oldest buckets per cycle with row locking. Active/current buckets and configured request rate-limit semantics are unchanged. Pending storage-write reconciliation was already limited by the same `batch_size` and remains bounded.
+
+These changes keep the retention/access contract at exactly 24 hours while making the load-bearing cleanup classes `O(batch_size)` instead of `O(batch_size * pages_per_document)`.
+
 ## Explicit non-goals
 
-This harness does not implement retention bounded-work changes (E2), PDF resource/restart changes (E3), queue fairness policy (E4), or final Compose acceptance (E5). It does not run the 480 MiB pressure workload, production OCR models, Gemini, or copyrighted manga content. It does not change production upload/security/capability/retention/queue semantics.
+The E1 harness does not run the 480 MiB pressure workload, production OCR models, Gemini, or copyrighted manga content. Slice E2 does not change production upload/security/capability semantics beyond bounded physical cleanup, and it does not change PDF resource policy, queue fairness, or Compose resource ceilings. Slice E3 (PDF resource/restart hardening), E4 (queue fairness policy), and E5 (final Compose/resource acceptance) remain deferred.
