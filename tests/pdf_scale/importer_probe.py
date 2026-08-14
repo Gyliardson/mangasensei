@@ -16,7 +16,7 @@ from mangasensei.pdf_imports.spool import PdfSpool
 from mangasensei.storage.images import ImageValidator, ValidatedImage
 from mangasensei.storage.local import LocalFilesystemStorage
 
-_EVENTS = Path("/tmp/mangasensei-e3-importer.jsonl")
+_EVENTS = Path("/app/var/pdf-spool/e3-importer-probe.jsonl")
 
 
 def _record(value: dict[str, Any]) -> None:

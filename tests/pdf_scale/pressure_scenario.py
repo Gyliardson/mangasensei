@@ -14,12 +14,7 @@ from tests.pdf_scale.pressure_producer import (
     PAGE_COUNT,
     PROFILE_NAME,
 )
-from tests.pdf_scale.runtime_common import (
-    ComposeHarness,
-    sha256_file,
-    wait_until,
-    write_json,
-)
+from tests.pdf_scale.runtime_common import ComposeHarness, sha256_file, write_json
 from tests.pdf_scale.scale_scenarios import (
     admit,
     probe_timings,

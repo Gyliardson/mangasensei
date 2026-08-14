@@ -82,12 +82,56 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.MANGASENSEI_E3_SOURCE_SHA }}
+          fetch-depth: 0
 
       - name: Verify exact source SHA
         run: |
           actual_sha="$(git rev-parse HEAD)"
           test "${actual_sha}" = "${MANGASENSEI_E3_SOURCE_SHA}"
           echo "PDF Scale E3 source SHA: ${actual_sha}"
+
+      - name: Diagnose changed-commit secret-scan metadata
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          version=8.29.1
+          archive="${RUNNER_TEMP}/gitleaks-${version}.tar.gz"
+          install_dir="${RUNNER_TEMP}/gitleaks-${version}"
+          curl --fail --silent --show-error --location \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+            --output "${archive}"
+          echo "e4eb209d04e20339d77122a3bdf9cd41351255cfb27ebcb75e85325e04f88924  ${archive}" \
+            | sha256sum --check --strict
+          mkdir "${install_dir}"
+          tar -xzf "${archive}" -C "${install_dir}" gitleaks
+          report="${RUNNER_TEMP}/e3-gitleaks.json"
+          set +e
+          "${install_dir}/gitleaks" git --redact --no-banner \
+            --log-opts="--no-merges --first-parent ${PR_BASE_SHA}..HEAD" \
+            --report-format json --report-path "${report}" .
+          scan_status=$?
+          set -e
+          if test "${scan_status}" -ne 0 && test "${scan_status}" -ne 1; then
+            echo "Gitleaks diagnostic failed with status ${scan_status}." >&2
+            exit "${scan_status}"
+          fi
+          python - "${report}" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          report = Path(sys.argv[1])
+          findings = json.loads(report.read_text()) if report.is_file() else []
+          print(f"sanitized gitleaks finding count: {len(findings)}")
+          for finding in findings:
+              safe = {
+                  key: finding.get(key)
+                  for key in ("RuleID", "Description", "File", "StartLine", "Fingerprint")
+              }
+              print(json.dumps(safe, sort_keys=True))
+          PY
+          rm -f "${report}"
 
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:

@@ -47,7 +47,8 @@ def load_raster_contract() -> dict[str, Any]:
     assert value["width"] == 80
     assert value["height"] == 120
     raw_pages = value["pages"]
-    assert isinstance(raw_pages, list) and len(raw_pages) == PAGE_COUNT
+    assert isinstance(raw_pages, list)
+    assert len(raw_pages) == PAGE_COUNT
     pages = [
         {
             "ordinal": ordinal,

@@ -86,7 +86,9 @@ def main() -> int:
     provenance = renderer_provenance()
     requests = sorted(spool.requests.glob("*.request.json"))
     if len(requests) != 1:
-        raise AssertionError(f"pressure producer expected exactly one render request, got {len(requests)}")
+        raise AssertionError(
+            f"pressure producer expected exactly one render request, got {len(requests)}"
+        )
     request = PdfRenderRequest.model_validate(spool.read_json(requests[0]))
     if request.source_sha256 != args.source_sha:
         raise AssertionError("pressure request source identity drift")

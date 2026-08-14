@@ -8,10 +8,6 @@ import time
 from pathlib import Path
 from uuid import UUID
 
-from mangasensei.config import Settings
-from mangasensei.pdf_imports.contracts import PdfRasterManifest, PdfRenderRequest
-from mangasensei.pdf_imports.spool import PdfSpool
-
 from generator import (
     EXPECTED_SOURCE_SHA256,
     PAGE_COUNT,
@@ -20,6 +16,9 @@ from generator import (
     generate_pdf,
     source_manifest,
 )
+from mangasensei.config import Settings
+from mangasensei.pdf_imports.contracts import PdfRasterManifest, PdfRenderRequest
+from mangasensei.pdf_imports.spool import PdfSpool
 
 CALIBRATION_IMPORT_ID = UUID("00000000-0000-4000-8000-000000000105")
 

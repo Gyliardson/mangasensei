@@ -6,8 +6,10 @@ import os
 import shutil
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
+from uuid import UUID
 
 import httpx
 
@@ -86,7 +88,7 @@ class ComposeHarness:
         self.wait_http_health(60)
 
     def start_importer(self) -> None:
-        self.compose("up", "-d", "--no-build", "pdf-importer")
+        self.compose("up", "-d", "--no-deps", "--no-build", "pdf-importer")
         self.wait_healthy("pdf-importer", 90)
 
     def wait_healthy(self, service: str, timeout: float) -> None:
@@ -143,7 +145,9 @@ class ComposeHarness:
         container_id = self.service_id("pdf-renderer")
         while time.monotonic() < deadline:
             if self.manifest_exists(import_id, fence):
-                raise AssertionError("renderer finished before crash coordination captured child process")
+                raise AssertionError(
+                    "renderer finished before crash coordination captured child process"
+                )
             top = self.docker(
                 "top",
                 container_id,
@@ -291,7 +295,7 @@ print(digest.hexdigest())
         )
 
     def db_state(self, import_id: str) -> dict[str, Any]:
-        sql = f"""
+        sql = """
 SELECT json_build_object(
   'documents', (SELECT count(*) FROM mangasensei.documents),
   'pages', (SELECT count(*) FROM mangasensei.pages),
@@ -306,9 +310,9 @@ SELECT json_build_object(
   'sourceCleaned', source_cleaned_at IS NOT NULL
 )::text
 FROM mangasensei.document_imports
-WHERE public_id = '{import_id}'::uuid;
+WHERE public_id = :'import_id'::uuid;
 """
-        raw = self.psql(sql)
+        raw = self.psql(sql, variables={"import_id": self._uuid_text(import_id)})
         if not raw:
             raise AssertionError(f"missing DocumentImport {import_id}")
         value = json.loads(raw)
@@ -317,7 +321,7 @@ WHERE public_id = '{import_id}'::uuid;
         return value
 
     def page_digests(self, import_id: str) -> list[dict[str, Any]]:
-        sql = f"""
+        sql = """
 SELECT COALESCE(
   json_agg(
     json_build_object(
@@ -332,16 +336,18 @@ FROM mangasensei.pages p
 JOIN mangasensei.documents d ON d.id = p.document_id
 WHERE d.id = (
   SELECT document_id FROM mangasensei.document_imports
-  WHERE public_id = '{import_id}'::uuid
+  WHERE public_id = :'import_id'::uuid
 );
 """
-        value = json.loads(self.psql(sql))
+        value = json.loads(
+            self.psql(sql, variables={"import_id": self._uuid_text(import_id)})
+        )
         if not isinstance(value, list):
             raise AssertionError("page digest query was not a list")
         return value
 
     def image_blob_summary(self, import_id: str) -> dict[str, Any]:
-        sql = f"""
+        sql = """
 SELECT json_build_object(
   'count', count(*),
   'totalBytes', COALESCE(sum(b.byte_size), 0),
@@ -353,27 +359,29 @@ FROM mangasensei.image_blobs b
 JOIN mangasensei.pages p ON p.image_blob_id = b.id
 WHERE p.document_id = (
   SELECT document_id FROM mangasensei.document_imports
-  WHERE public_id = '{import_id}'::uuid
+  WHERE public_id = :'import_id'::uuid
 );
 """
-        value = json.loads(self.psql(sql))
+        value = json.loads(
+            self.psql(sql, variables={"import_id": self._uuid_text(import_id)})
+        )
         if not isinstance(value, dict):
             raise AssertionError("image blob summary was not a JSON object")
         return value
 
     def document_source_kind(self, import_id: str) -> str:
-        sql = f"""
+        sql = """
 SELECT d.source_kind
 FROM mangasensei.documents d
 WHERE d.id = (
   SELECT document_id FROM mangasensei.document_imports
-  WHERE public_id = '{import_id}'::uuid
+  WHERE public_id = :'import_id'::uuid
 );
 """
-        return self.psql(sql)
+        return self.psql(sql, variables={"import_id": self._uuid_text(import_id)})
 
-    def psql(self, sql: str) -> str:
-        return self.compose(
+    def psql(self, sql: str, *, variables: dict[str, str] | None = None) -> str:
+        command = [
             "exec",
             "-T",
             "postgres",
@@ -383,19 +391,20 @@ WHERE d.id = (
             "-d",
             "mangasensei",
             "-tA",
-            "-c",
-            sql,
-            capture=True,
-        )
+        ]
+        for key, value in sorted((variables or {}).items()):
+            command.extend(("-v", f"{key}={value}"))
+        command.extend(("-c", sql))
+        return self.compose(*command, capture=True)
 
     def expire_import_lease(self, import_id: str) -> None:
-        sql = f"""
+        sql = """
 UPDATE mangasensei.document_imports
 SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second'
-WHERE public_id = '{import_id}'::uuid
+WHERE public_id = :'import_id'::uuid
   AND status = 'rendering';
 """
-        self.psql(sql)
+        self.psql(sql, variables={"import_id": self._uuid_text(import_id)})
 
     def storage_bytes(self) -> int:
         script = (
@@ -480,29 +489,35 @@ WHERE public_id = '{import_id}'::uuid
         return raw or None
 
     def copy_importer_probe(self, destination: Path) -> list[dict[str, Any]]:
-        container_id = self.service_id("pdf-importer")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        completed = subprocess.run(  # noqa: S603
-            [
-                _DOCKER,
-                "cp",
-                f"{container_id}:/tmp/mangasensei-e3-importer.jsonl",
-                str(destination),
-            ],
-            env=self.env,
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+        script = (
+            "from pathlib import Path; "
+            "p=Path('/app/var/pdf-spool/e3-importer-probe.jsonl'); "
+            "print(p.read_text() if p.is_file() else '', end='')"
         )
-        if completed.returncode != 0:
+        raw = self.compose(
+            "exec",
+            "-T",
+            "pdf-importer",
+            "python",
+            "-c",
+            script,
+            capture=True,
+            check=False,
+        )
+        if not raw:
             return []
+        destination.write_text(raw + "\n", encoding="utf-8")
         events = []
-        for line in destination.read_text(encoding="utf-8").splitlines():
+        for line in raw.splitlines():
             value = json.loads(line)
             if isinstance(value, dict):
                 events.append(value)
         return events
+
+    @staticmethod
+    def _uuid_text(value: str) -> str:
+        return str(UUID(value))
 
 
 def write_json(path: Path, value: Any) -> None:

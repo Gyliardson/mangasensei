@@ -24,7 +24,9 @@ def test_pdf_scale_stdlib_v1_regenerates_exact_frozen_source() -> None:
     assert first == second
     assert len(first) == EXPECTED_SOURCE_BYTES == 46_282
     assert hashlib.sha256(first).hexdigest() == EXPECTED_SOURCE_SHA256
-    assert EXPECTED_SOURCE_SHA256 == "cb181b41e45a46e138b7188d87d54620e4c1738dd654f3e6cb7eadc854ef2cf5"
+    assert EXPECTED_SOURCE_SHA256 == (
+        "cb181b41e45a46e138b7188d87d54620e4c1738dd654f3e6cb7eadc854ef2cf5"
+    )
     manifest = source_manifest(first)
     assert manifest["serializer"] == WORKLOAD_VERSION == "pdf-scale-stdlib-v1"
     assert manifest["pageCount"] == PAGE_COUNT == 200
