@@ -38,8 +38,8 @@ def test_pdf_scale_stdlib_v1_has_no_implicit_serializer_features() -> None:
     assert b"\r" not in content
     assert content.count(b"/Type /Page ") == PAGE_COUNT
     assert content.count(b"/Resources << >>") == PAGE_COUNT
-    assert content.count(b"stream\n") == PAGE_COUNT
-    assert content.count(b"endstream\n") == PAGE_COUNT
+    assert content.count(b"\nstream\n") == PAGE_COUNT
+    assert content.count(b"\nendstream\n") == PAGE_COUNT
     for forbidden in (
         b"/Font",
         b"/XObject",
