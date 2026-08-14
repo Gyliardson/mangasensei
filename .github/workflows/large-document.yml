@@ -1,0 +1,7 @@
+name: Large Document E1
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
