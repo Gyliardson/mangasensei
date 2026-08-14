@@ -181,9 +181,9 @@ async def _serve(root: Path) -> None:
     await _assert_fresh_database(settings)
 
     marker = Path(_required_env("MANGASENSEI_LARGE_DOCUMENT_MARKER"))
-    marker.unlink(missing_ok=True)
+    await asyncio.to_thread(marker.unlink, missing_ok=True)
     metrics_path = root / "runtime-http.jsonl"
-    metrics_path.unlink(missing_ok=True)
+    await asyncio.to_thread(metrics_path.unlink, missing_ok=True)
     app = RequestMetricsMiddleware(create_app(settings), metrics_path)
     server = uvicorn.Server(
         uvicorn.Config(
