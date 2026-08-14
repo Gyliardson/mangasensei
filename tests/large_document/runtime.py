@@ -98,12 +98,17 @@ async def _assert_fresh_database(settings: Settings) -> None:
                 "pages": int(
                     await session.scalar(select(func.count()).select_from(PageRecord)) or 0
                 ),
-                "jobs": int(await session.scalar(select(func.count()).select_from(JobRecord)) or 0),
+                "jobs": int(
+                    await session.scalar(select(func.count()).select_from(JobRecord)) or 0
+                ),
                 "imageBlobs": int(
                     await session.scalar(select(func.count()).select_from(ImageBlobRecord)) or 0
                 ),
                 "rateLimitBuckets": int(
-                    await session.scalar(select(func.count()).select_from(RateLimitBucketRecord)) or 0
+                    await session.scalar(
+                        select(func.count()).select_from(RateLimitBucketRecord)
+                    )
+                    or 0
                 ),
             }
     finally:
@@ -116,9 +121,12 @@ def _worker_process(log_path: str) -> None:
     from tests.large_document.worker import main as worker_main
 
     path = Path(log_path)
-    with path.open("w", encoding="utf-8") as stream:
-        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
-            asyncio.run(worker_main())
+    with (
+        path.open("w", encoding="utf-8") as stream,
+        contextlib.redirect_stdout(stream),
+        contextlib.redirect_stderr(stream),
+    ):
+        asyncio.run(worker_main())
 
 
 async def _wait_for_marker(path: Path, *, timeout_seconds: float) -> None:
