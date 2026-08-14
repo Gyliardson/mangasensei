@@ -8,9 +8,11 @@ The harness keeps three classes separate:
 
 1. **Presentation fixture capture (A)** — executable now. It uses safe synthetic browser/API fixtures to exercise real frontend rendering and interactions. These outputs are presentation artifacts, **not OCR accuracy evidence**.
 2. **Full-stack application-flow capture (B)** — the existing [`frontend/playwright.fullstack.config.ts`](../frontend/playwright.fullstack.config.ts) remains the integration proof for browser -> backend -> persistence/worker -> browser. The media foundation does not duplicate that harness or claim its deterministic worker output is real local OCR.
-3. **Real-local-OCR public-corpus capture (C)** — deferred until the public demo corpus is merged, reviewed and frozen. Add a reviewed source adapter for that corpus; do not repurpose private/licensed manga fixtures as publication defaults.
+3. **Real-local-OCR publication capture (C)** — requires a reviewed source adapter/runtime path that processes real source bytes through the current application and records reproducible provenance. MangaSensei Public Demo Corpus v1 remains the project-owned canonical presentation/ground-truth dataset. The committed Black Jack fixtures are a separate **third-party authorized real-manga pressure corpus** and may be used for a specifically reviewed publication capture under Sato Manga Works' published secondary-use terms; they are not private MangaSensei data and are not relicensed as project-owned/CC-BY/GPL material.
 
-The current executable source ID is `synthetic-v1`. Any other `MANGASENSEI_MEDIA_SOURCE` value fails closed until a reviewed adapter is implemented.
+The current executable source ID remains `synthetic-v1`. Any other `MANGASENSEI_MEDIA_SOURCE` value fails closed until a reviewed adapter is implemented. Rights clearance for a source does not make that adapter exist and does not authorize fabricating or injecting OCR results into a presentation capture.
+
+For Black Jack specifically, the rights review supports GitHub-hosted processing/automated OCR as a reasonable application of the holder's broad secondary-use grant for its official digital data, but the terms contain no cloud-compute-specific clause. That rights conclusion does not weaken runtime security, command-bus allowlists, capability handling, provenance checks, or model-artifact rights restrictions.
 
 ## Capture controls
 
@@ -98,6 +100,27 @@ The canonical story inventory is [`frontend/e2e/media/scenarios.json`](../fronte
 - `study-language-switch` — study English -> Brazilian Portuguese while deterministic dictionary vocabulary remains English and no dictionary-language selector is exposed, PNG + WebM.
 
 These are fixture presentation stories. They must not be described as measured OCR output.
+
+## Real Black Jack publication capture contract
+
+A README/product capture using `tests/fixtures/ocr/real_manga/black_jack/**` must be an actual current MangaSensei application run, not a synthetic media story. It must use the exact committed fixture bytes, actual OCR output, and the real reader/study UI. Gemini should be disabled unless the product path genuinely requires it. Do not hand-correct OCR, inject fixture text as if it were inference, composite regions, hide a known OCR error, or make a universal accuracy claim from the screenshot.
+
+The preferred desktop source candidate is `v01/black_jack_v01_pdf090.jpg` (source PDF page 90), with page 123 and then page 7 as presentation fallbacks if the current real output on the earlier candidate is materially misleading or broken. If none produces a truthful presentation-quality capture, keep the existing presentation media and record the blocker rather than fabricating a showcase.
+
+For every derived Black Jack screenshot intended for publication, retain enough adjacent or machine-readable provenance to recover:
+
+- source fixture path and SHA-256;
+- source PDF page;
+- exact MangaSensei application/capture commit;
+- capture method/runtime;
+- viewport and device scale factor;
+- output path, byte count and SHA-256;
+- whether Gemini was disabled;
+- current observed OCR limitations relevant to the shown page.
+
+The published material must place the copyright holder's required attribution adjacent to the image. For English/non-Japanese public material use `Give My Regards to Black Jack` and `SHUHO SATO`; for Japanese material use `ブラックジャックによろしく` and `佐藤秀峰`. State concisely that the image comes from official Sato Manga Works data under the holder's published secondary-use terms and is not licensed under MangaSensei's GPL.
+
+The existing repository-corpus report checkpoint dated 2026-08-13 does not report a future README/demo in advance. Once a new demo is actually published, re-check the then-current holder terms and perform the required post-publication report within the stated deadline.
 
 ## Provenance
 
