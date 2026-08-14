@@ -63,8 +63,17 @@ jobs:
       MANGASENSEI_TEST_DATABASE_URL: postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55432/mangasensei
       MANGASENSEI_FRONTEND_DIST: ${{ github.workspace }}/frontend/dist
       MANGASENSEI_CAPABILITY_PEPPERS: '["large-document-e1-capability-pepper-000000000001"]'
+      MANGASENSEI_E1_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.MANGASENSEI_E1_SOURCE_SHA }}
+
+      - name: Verify exact source SHA
+        run: |
+          actual_sha="$(git rev-parse HEAD)"
+          test "${actual_sha}" = "${MANGASENSEI_E1_SOURCE_SHA}"
+          echo "large-document exact source SHA: ${actual_sha}"
 
       - name: Configure isolated runtime paths
         run: |
@@ -126,7 +135,7 @@ jobs:
         run: |
           uv run python -m tests.large_document.ci_metrics \
             --root "${MANGASENSEI_LARGE_DOCUMENT_ROOT}" \
-            --source-sha "${GITHUB_SHA}"
+            --source-sha "${MANGASENSEI_E1_SOURCE_SHA}"
 
       - name: Upload machine-readable E1 evidence
         if: always()
