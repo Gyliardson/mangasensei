@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -80,8 +79,9 @@ def test_split_output_skips_terminal_stale_request_and_processes_newer_fence(
         b"{}",
     )
 
+    original_euid = renderer_module.os.geteuid()
     monkeypatch.setenv("MANGASENSEI_PDF_RENDERER_OUTPUT_ROOT", str(output_root))
-    monkeypatch.setattr(renderer_module.os, "geteuid", lambda: os.geteuid() + 1)
+    monkeypatch.setattr(renderer_module.os, "geteuid", lambda: original_euid + 1)
     renderer = PdfRenderer(settings)
     processed: list[int] = []
     monkeypatch.setattr(
