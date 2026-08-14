@@ -41,7 +41,9 @@ The dedicated Playwright scenario uploads exactly one 200-page Document through 
 
 The resulting maximum classified browser API envelope is 67 requests, below the unchanged production/default 120/min limit. The workflow also parses the dedicated API log independently and fails on any 429.
 
-The reader gate proves that all 200 selectors remain represented, one completed Page is readable while siblings are still processing, all 200 eventually complete, unvisited pages do not fetch images, stale navigation cannot replace the current Page, superseded Blob URLs are revoked, and unmount revokes the final active Blob URL. It runs desktop Chromium, a 390x844 mobile viewport, native keyboard navigation, and the repository's Axe-based accessibility check for serious/critical violations.
+The partial-readability proof is temporally linked rather than inferred from unrelated historical observations. Before releasing the worker, the harness selects page 200 while every Page is still processing. It then waits for one live aggregate projection in which page 1 is explicitly `resultAvailable` and siblings are still processing, records that page identity and progress, selects that exact page, waits for its real StudyPage and protected-image responses, and verifies the rendered frozen image. Immediately after that successful render it performs a fresh aggregate GET and requires `processingPages > 0` again. This proves siblings remained in progress through the successful page-1 read operation, not merely at some earlier point in the run.
+
+The reader gate also proves that all 200 selectors remain represented, all 200 eventually complete, unvisited pages do not fetch images, stale navigation cannot replace the current Page, superseded Blob URLs are revoked, and unmount revokes the final active Blob URL. It runs desktop Chromium, a 390x844 mobile viewport, native keyboard navigation, and the repository's Axe-based accessibility check for serious/critical violations.
 
 Admission-to-`200/200` completion must remain at or below 120 seconds. The whole workflow job has a five-minute timeout and zero Playwright retries.
 
@@ -53,9 +55,12 @@ A successful run uploads `large-document-e1-evidence` with:
 - the non-secret document marker;
 - initial and final DB/query diagnostics;
 - browser timing/request/Blob/accessibility metrics;
-- dedicated runtime HTTP counts;
+- linked `partialReadability` evidence containing the selected page ID/ordinal, before-read progress, exact StudyPage/image read results, rendered-page identity, and fresh after-read progress;
+- dedicated runtime HTTP counts and sampled Page identities;
 - queue fairness characterization;
 - a compact combined result manifest.
+
+`tests.large_document.ci_metrics` fails closed unless the selected Page was result-available in the before-read projection, both protected reads belong to that same Page and succeeded with the expected capability headers, the rendered frozen RGB content matches that Page ordinal, and both the before-read and fresh after-read projections still contain processing siblings. It also cross-checks the sampled Page identities against the independent server-side request trace. Capability values themselves are never written to evidence.
 
 The aggregate projection diagnostic records SQL statement count and Job rows loaded. Slice E1 measures the existing set-oriented query shape rather than changing it.
 
