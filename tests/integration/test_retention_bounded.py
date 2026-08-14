@@ -59,20 +59,6 @@ def _image(seed: bytes) -> ValidatedImage:
     )
 
 
-def _large_document_images() -> tuple[ValidatedImage, ...]:
-    return tuple(
-        ValidatedImage(
-            content=page.content,
-            sha256=page.sha256,
-            width=PAGE_WIDTH,
-            height=PAGE_HEIGHT,
-            media_type="image/png",
-            format="PNG",
-        )
-        for page in generate_pages()
-    )
-
-
 async def _add_blob(
     session: AsyncSession,
     storage: LocalFilesystemStorage,
@@ -124,11 +110,21 @@ async def test_retention_bounds_200_page_document_and_drains_across_cycles(
         capability_service=capabilities,
         idempotency_pepper=_TEST_PEPPER,
     )
-    images = _large_document_images()
-    filenames = tuple(page.filename for page in generate_pages())
+    generated = generate_pages()
+    images = tuple(
+        ValidatedImage(
+            content=page.content,
+            sha256=page.sha256,
+            width=PAGE_WIDTH,
+            height=PAGE_HEIGHT,
+            media_type="image/png",
+            format="PNG",
+        )
+        for page in generated
+    )
     created = await uploader.create(
         images=images,
-        original_filenames=filenames,
+        original_filenames=tuple(page.filename for page in generated),
         idempotency_key="retention-e2-200-page-document-0001",
         study_language=StudyLanguage.PORTUGUESE_BRAZIL,
     )
@@ -156,16 +152,19 @@ async def test_retention_bounds_200_page_document_and_drains_across_cycles(
             page.created_at = expired_created_at
             page.expires_at = expired_at
 
+        document_page_ids = tuple(page.id for page in pages)
+        document_blob_ids = tuple(page.image_blob_id for page in pages)
         jobs = tuple(
             (
                 await session.execute(
                     select(JobRecord)
-                    .where(JobRecord.page_id.in_(tuple(page.id for page in pages)))
+                    .where(JobRecord.page_id.in_(document_page_ids))
                     .order_by(JobRecord.page_id)
                 )
             ).scalars()
         )
         assert len(jobs) == 200
+
         first_job = jobs[0]
         first_job.status = "completed"
         first_job.finished_at = datetime.now(UTC)
@@ -243,9 +242,10 @@ async def test_retention_bounds_200_page_document_and_drains_across_cycles(
         session.add(live_page)
         await session.flush()
 
-        document_blob_ids = tuple(page.image_blob_id for page in pages)
         last_page_public_id = pages[-1].public_id
         study_result_id = study_result.id
+        ocr_run_id = ocr_run.id
+        linguistic_run_id = linguistic_run.id
         page_capability_id = page_capability.id
         retry_request_id = retry_request.id
         live_page_id = live_page.id
@@ -285,6 +285,8 @@ async def test_retention_bounds_200_page_document_and_drains_across_cycles(
         )
         assert len(remaining_document_jobs) == 175
         assert await session.get(StudyResultRecord, study_result_id) is None
+        assert await session.get(OcrRunRecord, ocr_run_id) is None
+        assert await session.get(LinguisticRunRecord, linguistic_run_id) is None
         assert await session.get(PageCapabilityRecord, page_capability_id) is None
         assert await session.get(DocumentRetryRequestRecord, retry_request_id) is not None
         document_capabilities = tuple(
@@ -339,9 +341,9 @@ async def test_retention_bounds_200_page_document_and_drains_across_cycles(
         ).scalars().all() == []
         assert (
             await session.execute(
-                select(JobRecord.id).where(JobRecord.page_id.in_(tuple(range(1, 201))))
+                select(JobRecord.id).where(JobRecord.page_id.in_(document_page_ids))
             )
-        ) is not None
+        ).scalars().all() == []
         assert await session.get(DocumentRetryRequestRecord, retry_request_id) is None
         assert (
             await session.execute(
@@ -369,9 +371,11 @@ async def test_retention_blob_cleanup_budget_prioritizes_new_orphans_and_drains_
     expired_created_at = datetime.now(UTC) - timedelta(hours=25)
 
     async with sessions.begin() as session:
-        old_orphans = tuple(
-            [await _add_blob(session, storage, seed=f"old-orphan-{index}".encode()) for index in range(5)]
-        )
+        old_orphans: list[ImageBlobRecord] = []
+        for index in range(5):
+            old_orphans.append(
+                await _add_blob(session, storage, seed=f"old-orphan-{index}".encode())
+            )
         selected_blobs: list[ImageBlobRecord] = []
         for index in range(3):
             blob = await _add_blob(session, storage, seed=f"selected-page-{index}".encode())
@@ -532,13 +536,14 @@ async def test_document_expiry_controls_bounded_page_and_gemini_reconciliation(
                 request_digest=hashlib.sha256(f"gemini-request-{index}".encode()).digest(),
                 reserved_cost=reservation,
                 state="reserved",
+                created_at=child_created_at,
             )
             session.add(call)
             pages.append(page)
             calls.append(call)
         session.add(
             GeminiBudgetBucketRecord(
-                budget_date=datetime.now(UTC).date(),
+                budget_date=child_created_at.date(),
                 currency="USD",
                 limit_amount=Decimal("5.000000"),
                 reserved_amount=reservation * 3,
