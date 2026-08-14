@@ -74,6 +74,7 @@ def test_split_output_skips_terminal_stale_request_and_processes_newer_fence(
     spool.write_model_atomic(first_path, first)
     spool.write_model_atomic(second_path, second)
     spool.prepare_attempt_dir(first.import_id, first.fencing_token)
+    spool.prepare_attempt_dir(second.import_id, second.fencing_token)
     spool.write_bytes_exclusive(
         spool.manifest_path(first.import_id, first.fencing_token),
         b"{}",
