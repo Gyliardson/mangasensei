@@ -1,7 +1,127 @@
 name: Large Document E1
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/large-document.yml"
+      - "backend/**"
+      - "frontend/**"
+      - "tests/large_document/**"
+      - "tests/integration/test_document_large_harness.py"
+      - "tests/integration/test_document_scale.py"
+      - "tests/integration/test_queue_fairness_characterization.py"
+      - "docs/large-document-testing.md"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "package.json"
+      - "package-lock.json"
+  pull_request:
+    paths:
+      - ".github/workflows/large-document.yml"
+      - "backend/**"
+      - "frontend/**"
+      - "tests/large_document/**"
+      - "tests/integration/test_document_large_harness.py"
+      - "tests/integration/test_document_scale.py"
+      - "tests/integration/test_queue_fairness_characterization.py"
+      - "docs/large-document-testing.md"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "package.json"
+      - "package-lock.json"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: large-document-e1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  large-document:
+    name: 200-page control-plane full-stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+        env:
+          POSTGRES_DB: mangasensei
+          POSTGRES_USER: mangasensei
+          POSTGRES_PASSWORD: mangasensei
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U mangasensei -d mangasensei"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55432/mangasensei
+      MANGASENSEI_TEST_DATABASE_URL: postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55432/mangasensei
+      MANGASENSEI_STORAGE_ROOT: ${{ runner.temp }}/large-document/storage
+      MANGASENSEI_FRONTEND_DIST: ${{ github.workspace }}/frontend/dist
+      MANGASENSEI_CAPABILITY_PEPPERS: '["large-document-e1-capability-pepper-000000000001"]'
+      MANGASENSEI_LARGE_DOCUMENT_INPUT: ${{ runner.temp }}/large-document/input
+      MANGASENSEI_LARGE_DOCUMENT_MARKER: ${{ runner.temp }}/large-document/document.json
+      MANGASENSEI_LARGE_DOCUMENT_BROWSER_METRICS: ${{ runner.temp }}/large-document/browser.json
+      MANGASENSEI_QUEUE_CHARACTERIZATION_OUTPUT: ${{ runner.temp }}/large-document/queue-claims.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Build frontend and install Chromium
+        run: |
+          npm ci
+          npm run build
+          npx --no-install playwright install --with-deps chromium
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Sync locked Python environment
+        run: uv sync --frozen
+
+      - name: Run isolated deterministic 200-page harness
+        run: |
+          uv run python -m tests.large_document.ci_harness \
+            --root "${RUNNER_TEMP}/large-document" \
+            --source-sha "${GITHUB_SHA}"
+
+      - name: Upload machine-readable E1 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: large-document-e1-evidence
+          path: |
+            ${{ runner.temp }}/large-document/input/manifest.json
+            ${{ runner.temp }}/large-document/document.json
+            ${{ runner.temp }}/large-document/db-initial.json
+            ${{ runner.temp }}/large-document/db-final.json
+            ${{ runner.temp }}/large-document/browser.json
+            ${{ runner.temp }}/large-document/runtime-requests.json
+            ${{ runner.temp }}/large-document/queue-claims.json
+            ${{ runner.temp }}/large-document/result-manifest.json
+          if-no-files-found: ignore
+
+      - name: Upload large-document failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: large-document-e1-failure
+          path: |
+            playwright-report-large-document
+            test-results-large-document
+            ${{ runner.temp }}/large-document/api.log
+            ${{ runner.temp }}/large-document/worker.log
+            ${{ runner.temp }}/large-document/*.json
+          if-no-files-found: ignore
