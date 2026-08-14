@@ -37,7 +37,10 @@ export default defineConfig({
         },
       ],
     },
-    trace: "retain-on-failure",
+    // Trace snapshots can issue speculative resource requests that are not
+    // product browser traffic. Keep E1's request envelope free of harness I/O;
+    // HTML reports and failure screenshots remain enabled.
+    trace: "off",
     screenshot: "only-on-failure",
   },
   projects: [
