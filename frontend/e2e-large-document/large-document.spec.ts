@@ -484,7 +484,7 @@ test("CONTROL_PLANE_MAX_200 completes through the real document control plane", 
             + progress.processingPages
             + progress.failedPages
             + progress.cancelledPages
-        ) === PAGE_COUNT,
+        ) === PAGE_COUNT),
       },
       requests: {
         browserApiTotal: apiRequests.length,
