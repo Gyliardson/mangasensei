@@ -51,7 +51,7 @@ def main() -> int:
         harness.expire_import_lease(import_id)
         diagnostic["expiredLeaseDb"] = harness.db_state(import_id)
 
-        harness.start("pdf-importer")
+        harness.docker("start", harness.service_id("pdf-importer"))
         harness.wait_healthy("pdf-importer", 90)
 
         def higher_fence() -> dict[str, Any] | None:
