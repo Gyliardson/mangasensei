@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import delete, exists, func, select, text
+from sqlalchemy import delete, exists, func, select, text, tuple_, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mangasensei.infrastructure.database.document_models import DocumentRecord
@@ -31,75 +31,152 @@ class RetentionJanitor:
         for pending in await self._storage.pending_writes(limit=batch_size):
             await self._reconcile_pending_write(pending)
 
-        async with self._sessions.begin() as session:
-            await session.execute(
-                delete(RateLimitBucketRecord).where(
-                    RateLimitBucketRecord.window_start < func.now() - text("interval '1 day'")
-                )
+        document_pages = (
+            select(
+                PageRecord.id.label("page_id"),
+                DocumentRecord.expires_at.label("effective_expires_at"),
             )
-            expired_document_ids = tuple(
+            .join(DocumentRecord, DocumentRecord.id == PageRecord.document_id)
+            .where(DocumentRecord.expires_at <= func.now())
+        )
+        standalone_pages = select(
+            PageRecord.id.label("page_id"),
+            PageRecord.expires_at.label("effective_expires_at"),
+        ).where(
+            PageRecord.document_id.is_(None),
+            PageRecord.expires_at <= func.now(),
+        )
+        eligible_pages = union_all(document_pages, standalone_pages).subquery()
+
+        async with self._sessions.begin() as session:
+            stale_bucket_keys = tuple(
+                tuple(row)
+                for row in (
+                    await session.execute(
+                        select(
+                            RateLimitBucketRecord.key_digest,
+                            RateLimitBucketRecord.action,
+                            RateLimitBucketRecord.window_start,
+                        )
+                        .where(
+                            RateLimitBucketRecord.window_start
+                            < func.now() - text("interval '1 day'")
+                        )
+                        .order_by(
+                            RateLimitBucketRecord.window_start,
+                            RateLimitBucketRecord.action,
+                            RateLimitBucketRecord.key_digest,
+                        )
+                        .limit(batch_size)
+                        .with_for_update(skip_locked=True)
+                    )
+                ).all()
+            )
+            if stale_bucket_keys:
+                await session.execute(
+                    delete(RateLimitBucketRecord).where(
+                        tuple_(
+                            RateLimitBucketRecord.key_digest,
+                            RateLimitBucketRecord.action,
+                            RateLimitBucketRecord.window_start,
+                        ).in_(stale_bucket_keys)
+                    )
+                )
+
+            expired_pages = tuple(
+                (
+                    await session.execute(
+                        select(PageRecord.id, PageRecord.image_blob_id)
+                        .join(eligible_pages, eligible_pages.c.page_id == PageRecord.id)
+                        .order_by(eligible_pages.c.effective_expires_at, PageRecord.id)
+                        .limit(batch_size)
+                        .with_for_update(of=PageRecord, skip_locked=True)
+                    )
+                ).all()
+            )
+            if expired_pages:
+                page_ids = tuple(row.id for row in expired_pages)
+                await reconcile_abandoned_gemini_calls(session, page_ids=page_ids)
+                await session.execute(delete(PageRecord).where(PageRecord.id.in_(page_ids)))
+
+            empty_expired_document_ids = tuple(
                 (
                     await session.execute(
                         select(DocumentRecord.id)
-                        .where(DocumentRecord.expires_at <= func.now())
+                        .where(
+                            DocumentRecord.expires_at <= func.now(),
+                            ~exists().where(PageRecord.document_id == DocumentRecord.id),
+                        )
                         .order_by(DocumentRecord.expires_at, DocumentRecord.id)
                         .limit(batch_size)
                         .with_for_update(skip_locked=True)
                     )
                 ).scalars()
             )
-            document_pages = (
+            if empty_expired_document_ids:
+                await session.execute(
+                    delete(DocumentRecord).where(
+                        DocumentRecord.id.in_(empty_expired_document_ids)
+                    )
+                )
+
+            deleted_blob_ids = tuple(dict.fromkeys(row.image_blob_id for row in expired_pages))
+            newly_orphaned_blob_ids = (
                 tuple(
                     (
                         await session.execute(
-                            select(PageRecord.id, PageRecord.image_blob_id).where(
-                                PageRecord.document_id.in_(expired_document_ids)
+                            select(ImageBlobRecord.id)
+                            .where(
+                                ImageBlobRecord.id.in_(deleted_blob_ids),
+                                ~exists().where(PageRecord.image_blob_id == ImageBlobRecord.id),
                             )
+                            .order_by(ImageBlobRecord.id)
+                            .limit(batch_size)
                         )
-                    ).all()
+                    ).scalars()
                 )
-                if expired_document_ids
+                if deleted_blob_ids
                 else ()
             )
-            expired_standalone = tuple(
-                (
-                    await session.execute(
-                        select(PageRecord.id, PageRecord.image_blob_id)
-                        .where(
-                            PageRecord.document_id.is_(None),
-                            PageRecord.expires_at <= func.now(),
+            remaining_blob_budget = batch_size - len(newly_orphaned_blob_ids)
+            older_orphan_blob_ids = (
+                tuple(
+                    (
+                        await session.execute(
+                            select(ImageBlobRecord.id)
+                            .where(
+                                ~exists().where(
+                                    PageRecord.image_blob_id == ImageBlobRecord.id
+                                ),
+                                ImageBlobRecord.id.notin_(newly_orphaned_blob_ids),
+                            )
+                            .order_by(ImageBlobRecord.id)
+                            .limit(remaining_blob_budget)
                         )
-                        .order_by(PageRecord.expires_at, PageRecord.id)
-                        .limit(batch_size)
-                        .with_for_update(skip_locked=True)
-                    )
-                ).all()
-            )
-            expired_pages = (*document_pages, *expired_standalone)
-            if expired_pages:
-                page_ids = tuple(row.id for row in expired_pages)
-                await reconcile_abandoned_gemini_calls(session, page_ids=page_ids)
-            if expired_document_ids:
-                await session.execute(
-                    delete(DocumentRecord).where(DocumentRecord.id.in_(expired_document_ids))
+                    ).scalars()
                 )
-            if expired_standalone:
-                standalone_ids = tuple(row.id for row in expired_standalone)
-                await session.execute(delete(PageRecord).where(PageRecord.id.in_(standalone_ids)))
-
-            expired_blob_ids = tuple(dict.fromkeys(row.image_blob_id for row in expired_pages))
-            unreferenced_blob_ids = tuple(
-                (
-                    await session.execute(
-                        select(ImageBlobRecord.id)
-                        .where(~exists().where(PageRecord.image_blob_id == ImageBlobRecord.id))
-                        .order_by(ImageBlobRecord.id)
-                        .limit(batch_size)
+                if remaining_blob_budget > 0 and newly_orphaned_blob_ids
+                else (
+                    tuple(
+                        (
+                            await session.execute(
+                                select(ImageBlobRecord.id)
+                                .where(
+                                    ~exists().where(
+                                        PageRecord.image_blob_id == ImageBlobRecord.id
+                                    )
+                                )
+                                .order_by(ImageBlobRecord.id)
+                                .limit(remaining_blob_budget)
+                            )
+                        ).scalars()
                     )
-                ).scalars()
+                    if remaining_blob_budget > 0
+                    else ()
+                )
             )
 
-        blob_ids = tuple(dict.fromkeys((*expired_blob_ids, *unreferenced_blob_ids)))
+        blob_ids = (*newly_orphaned_blob_ids, *older_orphan_blob_ids)
         for blob_id in blob_ids:
             await self._delete_if_unreferenced(blob_id)
         return len(expired_pages)
