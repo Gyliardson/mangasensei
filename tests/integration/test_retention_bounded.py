@@ -207,7 +207,7 @@ async def test_retention_bounds_200_page_document_and_drains_across_cycles(
             key_id="v1",
             scope="read:page",
             digest=hashlib.sha256(b"retention-e2-page-capability").digest(),
-            expires_at=created.expires_at,
+            expires_at=expired_at,
         )
         retry_request = DocumentRetryRequestRecord(
             document_id=document.id,
