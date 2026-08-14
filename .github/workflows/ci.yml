@@ -334,8 +334,12 @@ jobs:
             -e MANGASENSEI_ENVIRONMENT=test \
             -e MANGASENSEI_PDF_SPOOL_ROOT=/app/var/pdf-spool \
             mangasensei:pdf-fullstack mangasensei pdf-renderer >/dev/null
+          # Post-Slice-D clean full-stack verification observed 157 HTTP responses from
+          # this API process. 240 leaves 83 requests (53%) headroom even against that
+          # conservative upper bound. This override is test-only; production stays 120/min.
           sudo --preserve-env=MANGASENSEI_DATABASE_URL,MANGASENSEI_STORAGE_ROOT,MANGASENSEI_PDF_SPOOL_ROOT,MANGASENSEI_FRONTEND_DIST,MANGASENSEI_CAPABILITY_PEPPERS \
             setpriv --reuid=10001 --regid=10001 --clear-groups \
+            env MANGASENSEI_API_RATE_LIMIT_PER_MINUTE=240 \
             "${harness_python}" -c \
             'from mangasensei.cli import main; raise SystemExit(main(["api", "--host", "127.0.0.1", "--port", "8000"]))' \
             > "${RUNNER_TEMP}/mangasensei-api.log" 2>&1 &
@@ -384,6 +388,17 @@ jobs:
 
       - name: Full-stack PDF import through isolated renderer
         run: npx --no-install playwright test --config frontend/playwright.pdf-fullstack.config.ts
+
+      - name: Measure full-stack API request envelope
+        if: always()
+        run: |
+          api_log="${RUNNER_TEMP}/mangasensei-api.log"
+          test -f "${api_log}"
+          total_requests="$(grep -cE 'HTTP/1\.[01]" [0-9]{3}' "${api_log}" || true)"
+          unexpected_429s="$(grep -cE 'HTTP/1\.[01]" 429 ' "${api_log}" || true)"
+          echo "Full-stack API HTTP requests observed: ${total_requests}"
+          echo "Full-stack API 429 responses observed: ${unexpected_429s}"
+          test "${unexpected_429s}" -eq 0
 
       - name: Stop full-stack runtime processes
         if: always()
