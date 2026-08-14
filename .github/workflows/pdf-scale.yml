@@ -6,11 +6,15 @@ on:
     paths:
       - ".github/workflows/pdf-scale.yml"
       - "tests/pdf_scale/**"
+      - "tests/integration/test_pdf_scale_e3_recovery.py"
+      - "backend/src/mangasensei/api/**"
       - "backend/src/mangasensei/application/pdf_imports.py"
-      - "backend/src/mangasensei/pdf_imports/**"
       - "backend/src/mangasensei/config.py"
+      - "backend/src/mangasensei/infrastructure/database/**"
+      - "backend/src/mangasensei/pdf_imports/**"
       - "backend/src/mangasensei/runtime.py"
       - "backend/src/mangasensei/cli.py"
+      - "backend/src/mangasensei/storage/**"
       - "tests/integration/test_pdf_imports.py"
       - "tests/integration/test_pdf_import_review_fixes.py"
       - "tests/unit/test_pdf_*.py"
@@ -18,15 +22,20 @@ on:
       - "compose.yaml"
       - "pyproject.toml"
       - "uv.lock"
+      - "docs/large-document-testing.md"
   pull_request:
     paths:
       - ".github/workflows/pdf-scale.yml"
       - "tests/pdf_scale/**"
+      - "tests/integration/test_pdf_scale_e3_recovery.py"
+      - "backend/src/mangasensei/api/**"
       - "backend/src/mangasensei/application/pdf_imports.py"
-      - "backend/src/mangasensei/pdf_imports/**"
       - "backend/src/mangasensei/config.py"
+      - "backend/src/mangasensei/infrastructure/database/**"
+      - "backend/src/mangasensei/pdf_imports/**"
       - "backend/src/mangasensei/runtime.py"
       - "backend/src/mangasensei/cli.py"
+      - "backend/src/mangasensei/storage/**"
       - "tests/integration/test_pdf_imports.py"
       - "tests/integration/test_pdf_import_review_fixes.py"
       - "tests/unit/test_pdf_*.py"
@@ -34,6 +43,7 @@ on:
       - "compose.yaml"
       - "pyproject.toml"
       - "uv.lock"
+      - "docs/large-document-testing.md"
   workflow_dispatch:
 
 permissions:
@@ -44,15 +54,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  calibration:
-    name: Frozen 200-page raster calibration
+  scale-recovery:
+    name: 200-page resources and recovery
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+        env:
+          POSTGRES_DB: mangasensei
+          POSTGRES_USER: mangasensei
+          POSTGRES_PASSWORD: mangasensei
+        ports:
+          - 55433:5432
+        options: >-
+          --health-cmd "pg_isready -U mangasensei -d mangasensei"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     env:
       MANGASENSEI_E3_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      COMPOSE_PROJECT_NAME: mangasensei_pdf_scale_e3_calibration
-      POSTGRES_PASSWORD: pdf-scale-e3-calibration
-      MANGASENSEI_CAPABILITY_PEPPERS: '["pdf-scale-e3-calibration-pepper-000000001"]'
+      MANGASENSEI_TEST_DATABASE_URL: postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55433/mangasensei
+      POSTGRES_PASSWORD: pdf-scale-e3
+      MANGASENSEI_CAPABILITY_PEPPERS: '["pdf-scale-e3-capability-pepper-000000000001"]'
       MANGASENSEI_VERSION: dev
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -63,7 +87,7 @@ jobs:
         run: |
           actual_sha="$(git rev-parse HEAD)"
           test "${actual_sha}" = "${MANGASENSEI_E3_SOURCE_SHA}"
-          echo "PDF Scale E3 calibration source SHA: ${actual_sha}"
+          echo "PDF Scale E3 source SHA: ${actual_sha}"
 
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
@@ -74,99 +98,60 @@ jobs:
       - name: Install exact locked runtime
         run: uv sync --frozen --no-build-package pypdfium2
 
-      - name: Prove canonical stdlib source regeneration
+      - name: Reset fresh E3 evidence root
         run: |
-          uv run pytest -q tests/pdf_scale/test_generator.py
           root="${RUNNER_TEMP}/pdf-scale-e3"
           rm -rf "${root}"
-          mkdir -p "${root}/workload" "${root}/evidence"
-          chmod 0777 "${root}/evidence"
-          uv run python -m tests.pdf_scale.generator --output "${root}/workload"
-          test "$(stat -c %s "${root}/workload/source.pdf")" = "46282"
-          test "$(sha256sum "${root}/workload/source.pdf" | cut -d' ' -f1)" = "cb181b41e45a46e138b7188d87d54620e4c1738dd654f3e6cb7eadc854ef2cf5"
+          mkdir -p "${root}"
+          echo "MANGASENSEI_E3_EVIDENCE_ROOT=${root}" >> "${GITHUB_ENV}"
+
+      - name: Verify frozen source, raster contract and post-commit cleanup recovery
+        run: >-
+          uv run pytest -q
+          tests/pdf_scale/test_generator.py
+          tests/integration/test_pdf_scale_e3_recovery.py
 
       - name: Build reviewed production image
         run: docker build --build-arg MANGASENSEI_VERSION="$(cat VERSION)" -t mangasensei:dev .
 
-      - name: Start isolated spool and renderer
-        run: |
-          docker compose up --no-deps -d pdf-spool-init
-          for attempt in $(seq 1 30); do
-            anchor="$(docker compose ps -q pdf-spool-init)"
-            if test -n "${anchor}" && test "$(docker inspect --format '{{.State.Health.Status}}' "${anchor}")" = healthy; then
-              break
-            fi
-            if test "${attempt}" = "30"; then
-              docker compose logs pdf-spool-init
-              exit 1
-            fi
-            sleep 1
-          done
-          docker compose up --no-deps -d pdf-renderer
-          for attempt in $(seq 1 45); do
-            renderer="$(docker compose ps -q pdf-renderer)"
-            if test -n "${renderer}" && test "$(docker inspect --format '{{.State.Health.Status}}' "${renderer}")" = healthy; then
-              exit 0
-            fi
-            sleep 1
-          done
-          docker compose logs pdf-spool-init pdf-renderer
-          exit 1
-
-      - name: Publish exact frozen request through the real spool boundary
+      - name: Run production-like clean scale and recovery scenarios
         run: >-
-          docker compose run --rm --no-deps
-          -v "${PWD}/tests/pdf_scale:/e3:ro"
-          pdf-spool-init
-          python /e3/calibration_helper.py publish
-
-      - name: Collect authoritative pinned-runtime raster calibration
-        run: >-
-          docker compose run --rm --no-deps
-          -v "${PWD}/tests/pdf_scale:/e3:ro"
-          -v "${RUNNER_TEMP}/pdf-scale-e3/evidence:/evidence"
-          pdf-spool-init
-          python /e3/calibration_helper.py collect
-          --output /evidence/raster-calibration.json
+          uv run python -m tests.pdf_scale.scale_scenarios
+          --root "${MANGASENSEI_E3_EVIDENCE_ROOT}"
           --source-sha "${MANGASENSEI_E3_SOURCE_SHA}"
 
-      - name: Require calibration evidence shape
+      - name: Validate final fail-closed evidence manifest
         run: |
           python - <<'PY'
           import json
           import os
           from pathlib import Path
-          root = Path(os.environ["RUNNER_TEMP"]) / "pdf-scale-e3"
-          data = json.loads((root / "evidence/raster-calibration.json").read_text())
-          assert data["mode"] == "calibration"
-          assert data["repositorySourceSha"] == os.environ["MANGASENSEI_E3_SOURCE_SHA"]
-          assert data["pageCount"] == 200
-          assert data["aggregatePixels"] == 1_920_000
-          assert len(data["pages"]) == 200
-          assert [p["ordinal"] for p in data["pages"]] == list(range(200))
-          assert data["renderer"]["pypdfium2"] == "5.12.1"
-          assert data["renderer"]["pdfium_build"] == 7947
-          print(json.dumps({
-              "aggregateRasterBytes": data["aggregateRasterBytes"],
-              "minRasterBytes": data["minRasterBytes"],
-              "maxRasterBytes": data["maxRasterBytes"],
-              "orderedRasterSha256": data["orderedRasterSha256"],
-          }, sort_keys=True))
+          root = Path(os.environ["MANGASENSEI_E3_EVIDENCE_ROOT"])
+          result = json.loads((root / "result-manifest.json").read_text())
+          assert result["repositorySourceSha"] == os.environ["MANGASENSEI_E3_SOURCE_SHA"]
+          assert result["workload"]["sourceBytes"] == 46282
+          assert result["workload"]["sourceSha256"] == "cb181b41e45a46e138b7188d87d54620e4c1738dd654f3e6cb7eadc854ef2cf5"
+          assert result["rasterContract"]["aggregateRasterBytes"] == 48223
+          assert result["rasterContract"]["aggregatePixels"] == 1920000
+          assert set(result["scenarios"].values()) == {"pass"}
+          assert len(result["evidenceFiles"]) >= 11
+          if result["headroomReviewRequired"]:
+              print("E3 engineering headroom review threshold reached; reviewer investigation required")
+          print(json.dumps(result["scenarios"], sort_keys=True))
           PY
 
-      - name: Upload calibration JSON only
+      - name: Upload machine-readable E3 evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: pdf-scale-e3-calibration
-          path: |
-            ${{ runner.temp }}/pdf-scale-e3/workload/workload-manifest.json
-            ${{ runner.temp }}/pdf-scale-e3/evidence/raster-calibration.json
-          if-no-files-found: error
+          name: pdf-scale-e3-evidence
+          path: ${{ runner.temp }}/pdf-scale-e3/**/*.json
+          if-no-files-found: ignore
 
-      - name: Diagnostics
-        if: failure()
-        run: docker compose logs pdf-spool-init pdf-renderer || true
-
-      - name: Cleanup
+      - name: Cleanup E3 Compose state
         if: always()
-        run: docker compose down -v --remove-orphans || true
+        run: |
+          for project in mangasensei_e3_clean mangasensei_e3_renderer_crash mangasensei_e3_importer_reclaim; do
+            COMPOSE_PROJECT_NAME="${project}" \
+              docker compose -f compose.yaml -f tests/pdf_scale/compose.e3.yml down -v --remove-orphans || true
+          done

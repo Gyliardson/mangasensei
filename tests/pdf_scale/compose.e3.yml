@@ -1,0 +1,5 @@
+services:
+  pdf-importer:
+    command: ["python", "/e3/importer_probe.py", "mangasensei-pdf-importer"]
+    volumes:
+      - ./tests/pdf_scale:/e3:ro
