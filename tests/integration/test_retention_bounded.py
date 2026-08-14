@@ -166,12 +166,9 @@ async def test_retention_bounds_200_page_document_and_drains_across_cycles(
         assert len(jobs) == 200
 
         first_job = jobs[0]
-        first_job.status = "completed"
-        first_job.finished_at = datetime.now(UTC)
-        first_job.fencing_token = 1
         ocr_run = OcrRunRecord(
             job_id=first_job.id,
-            fencing_token=1,
+            fencing_token=first_job.fencing_token,
             detector="retention-test",
             recognizer="retention-test",
             model_manifest_version="retention-test-v1",
@@ -187,7 +184,7 @@ async def test_retention_bounds_200_page_document_and_drains_across_cycles(
         linguistic_run = LinguisticRunRecord(
             job_id=first_job.id,
             ocr_run_id=ocr_run.id,
-            fencing_token=1,
+            fencing_token=first_job.fencing_token,
             tokenizer_name="retention-test",
             tokenizer_version="1",
             config_digest=hashlib.sha256(b"linguistic-config").digest(),
