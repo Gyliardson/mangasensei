@@ -181,7 +181,9 @@ def _validate_partial_readability(
     ):
         failures.append("partialReadability.pageOrdinal must be an in-range integer")
     if partial.get("selectedPageResultAvailable") is not True:
-        failures.append("selected partial Page was not resultAvailable in the before-read projection")
+        failures.append(
+            "selected partial Page was not resultAvailable in the before-read projection"
+        )
 
     before = partial.get("beforeReadProgress")
     after = partial.get("afterReadProgress")
