@@ -185,7 +185,10 @@ def _clean_scenario(root: Path, source_sha: str) -> dict[str, Any]:
         harness.start_base()
         harness.pause("pdf-renderer")
         harness.start_importer()
-        import_id, token, admitted_at = admit(harness, key="e3-clean-200-v1")
+        import_id, token, admitted_at = admit(
+            harness,
+            key="e3-clean-200-page-import-v1",
+        )
         harness.wait_request(import_id, 1)
         harness.pause("pdf-importer")
 

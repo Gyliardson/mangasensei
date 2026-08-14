@@ -44,6 +44,7 @@ class ComposeHarness:
         *args: str,
         capture: bool = False,
         check: bool = True,
+        input_text: str | None = None,
     ) -> str:
         command = [_DOCKER, "compose"]
         for filename in _COMPOSE_FILES:
@@ -54,6 +55,7 @@ class ComposeHarness:
             env=self.env,
             check=check,
             text=True,
+            input=input_text,
             stdout=subprocess.PIPE if capture else None,
             stderr=subprocess.PIPE if capture else None,
         )
@@ -235,12 +237,14 @@ source = input_root / "imports" / import_id / "source.pdf"
 requests = list((input_root / "requests").glob(f"{import_id}.*.request.json"))
 output_import = output_root / "imports" / import_id
 
+
 def total(path: Path) -> int:
     if not path.exists():
         return 0
     if path.is_file():
         return path.stat().st_size
     return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
+
 
 print(json.dumps({
     "sourceExists": source.is_file(),
@@ -394,8 +398,7 @@ WHERE d.id = (
         ]
         for key, value in sorted((variables or {}).items()):
             command.extend(("-v", f"{key}={value}"))
-        command.extend(("-c", sql))
-        return self.compose(*command, capture=True)
+        return self.compose(*command, capture=True, input_text=sql)
 
     def expire_import_lease(self, import_id: str) -> None:
         sql = """

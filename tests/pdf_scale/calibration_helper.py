@@ -16,6 +16,7 @@ from generator import (
     generate_pdf,
     source_manifest,
 )
+
 from mangasensei.config import Settings
 from mangasensei.pdf_imports.contracts import PdfRasterManifest, PdfRenderRequest
 from mangasensei.pdf_imports.spool import PdfSpool
