@@ -53,7 +53,7 @@ The permission boundary is specific:
 
 ## Post-publication reporting checkpoint
 
-Maintainer attestation: the required post-publication report for the **existing 12-page MangaSensei repository corpus** was sent to Sato Manga Works on **2026-08-13 (BRT / America/Sao_Paulo)**. No sender account details, message headers, Message-ID, screenshots, or private correspondence are retained here.
+Maintainer attestation: the required post-publication report for the **existing 12-page MangaSensei repository corpus** was sent to Sato Manga Works on **2026-08-13 (BRT / America/Sao_Paulo)**. On **2026-08-14 JST**, Sato Manga Works acknowledged the report, stated that it had reviewed the reported details and URLs, and requested a new report after any future demonstration or other additional use. The acknowledgement corroborates the reporting checkpoint but does not replace or broaden the published secondary-use terms. No sender account details, message headers, Message-ID, screenshots, or private correspondence are retained here.
 
 This checkpoint covers the already published repository fixture use only. A future README/product-demo publication using these images is a **new reportable use**: after it is actually published, review the then-current official terms and send the required post-publication report within their stated deadline. Do not treat this checkpoint as reporting a future demo in advance.
 

@@ -124,7 +124,7 @@ The broad secondary-use grant reasonably supports automated OCR and GitHub-hoste
 
 ### Post-publication reporting checkpoint
 
-Maintainer attestation records that the required post-publication report covering the **existing published 12-page repository fixture use** was sent to Sato Manga Works on **2026-08-13 (BRT / America/Sao_Paulo)**. The repository intentionally retains no sender address, mailbox/account data, Message-ID, private email headers, screenshots, or correspondence body for that checkpoint.
+Maintainer attestation records that the required post-publication report covering the **existing published 12-page repository fixture use** was sent to Sato Manga Works on **2026-08-13 (BRT / America/Sao_Paulo)**. On **2026-08-14 JST**, Sato Manga Works acknowledged the report, stated that it had reviewed the reported details and URLs, and requested a new report after any future demonstration or other additional use. The acknowledgement is operational/compliance evidence; the published secondary-use terms remain the rights basis. The repository intentionally retains no sender address, mailbox/account data, Message-ID, private email headers, screenshots, or correspondence body for that checkpoint.
 
 A later README/product-demo publication using Black Jack material is a separate new use. After that demo is actually published, the maintainer must review the then-current official terms and perform the required post-publication report within the holder's stated deadline. The 2026-08-13 checkpoint must not be read as advance reporting of a future demo.
 
