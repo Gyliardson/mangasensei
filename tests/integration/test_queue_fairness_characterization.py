@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -196,8 +197,9 @@ async def test_real_queue_large_document_fairness_characterization(
     output = os.environ.get("MANGASENSEI_QUEUE_CHARACTERIZATION_OUTPUT")
     if output:
         path = Path(output)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
+        payload = json.dumps(artifact, indent=2, sort_keys=True) + "\n"
+        await asyncio.to_thread(path.write_text, payload, encoding="utf-8")
     with capsys.disabled():
         print(
             "large_document_queue_characterization "
