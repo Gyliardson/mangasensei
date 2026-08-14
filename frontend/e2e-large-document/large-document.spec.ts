@@ -117,6 +117,26 @@ function responsePath(response: PlaywrightResponse): string {
   return new URL(response.url()).pathname;
 }
 
+async function fetchDocumentSnapshot(
+  page: Page,
+  documentId: string,
+  readDocument: string,
+): Promise<DocumentSnapshotEnvelope> {
+  const snapshot = await page.evaluate(
+    async ({ currentDocumentId, documentToken }) => {
+      const response = await fetch(`/api/v1/documents/${currentDocumentId}`, {
+        headers: { "X-Document-Token": documentToken },
+      });
+      if (!response.ok) {
+        throw new Error(`document aggregate refresh failed with HTTP ${response.status}`);
+      }
+      return response.json();
+    },
+    { currentDocumentId: documentId, documentToken: readDocument },
+  );
+  return snapshot as DocumentSnapshotEnvelope;
+}
+
 test("CONTROL_PLANE_MAX_200 completes through the real document control plane", async ({
   page,
 }) => {
@@ -267,6 +287,34 @@ test("CONTROL_PLANE_MAX_200 completes through the real document control plane", 
     cancelledPages: 0,
   });
 
+  const page1Id = uploaded.data.pages[0]?.pageId;
+  const page100Id = uploaded.data.pages[99]?.pageId;
+  const page200Id = uploaded.data.pages[199]?.pageId;
+  if (!page1Id || !page100Id || !page200Id) {
+    throw new Error("document admission did not return all sampled Page identities");
+  }
+
+  const pageIndex = page.locator(".document-page-index button");
+  await expect(pageIndex).toHaveCount(PAGE_COUNT);
+  await expect(pageIndex.nth(0)).toHaveAttribute("aria-current", "page");
+  await pageIndex.nth(199).click();
+  await expect(pageIndex.nth(199)).toHaveAttribute("aria-current", "page");
+  await expect(page.getByText("Page 200 of 200")).toBeVisible();
+
+  const partialAggregateResponsePromise = page.waitForResponse(async (response) => {
+    if (
+      response.request().method() !== "GET"
+      || responsePath(response) !== `/api/v1/documents/${documentId}`
+      || !response.ok()
+    ) {
+      return false;
+    }
+    const snapshot = (await response.json()) as DocumentSnapshotEnvelope;
+    assertProgressPartition(snapshot.data.progress);
+    const candidate = snapshot.data.pages.find((entry) => entry.pageId === page1Id);
+    return candidate?.resultAvailable === true && snapshot.data.progress.processingPages > 0;
+  }, { timeout: 120_000 });
+
   await writeFile(
     markerPath,
     `${JSON.stringify({
@@ -277,25 +325,60 @@ test("CONTROL_PLANE_MAX_200 completes through the real document control plane", 
     "utf8",
   );
 
-  const pageIndex = page.locator(".document-page-index button");
-  await expect(pageIndex).toHaveCount(PAGE_COUNT);
-  await expect(pageIndex.nth(0)).toHaveAttribute("aria-current", "page");
-  await expect(pageIndex.nth(0)).toHaveAttribute("data-page-status", "readable", {
-    timeout: 120_000,
+  const partialAggregateResponse = await partialAggregateResponsePromise;
+  const beforeReadSnapshot = (await partialAggregateResponse.json()) as DocumentSnapshotEnvelope;
+  assertProgressPartition(beforeReadSnapshot.data.progress);
+  const partialPage = beforeReadSnapshot.data.pages.find((entry) => entry.pageId === page1Id);
+  expect(partialPage).toEqual({
+    pageId: page1Id,
+    ordinal: 0,
+    resultAvailable: true,
   });
-  await expectBlobImageRendered(page);
-  expect(await renderedFirstPixel(page)).toEqual(PAGE_1_RGB);
+  expect(beforeReadSnapshot.data.progress.processingPages).toBeGreaterThan(0);
+  await expect(pageIndex.nth(0)).toHaveAttribute("data-page-status", "readable");
 
-  await expect.poll(async () => {
-    await flushResponseTasks();
-    return progressObservations.some(
-      (progress) => progress.completedPages > 0 && progress.processingPages > 0,
-    );
-  }).toBe(true);
-  const partial = progressObservations.find(
+  const page1Study = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET"
+      && responsePath(response) === `/api/v1/documents/${documentId}/pages/${page1Id}`,
+  );
+  const page1Image = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET"
+      && responsePath(response) === `/api/v1/documents/${documentId}/pages/${page1Id}/image`,
+  );
+  await pageIndex.nth(0).click();
+  await expect(page.getByText("Page 1 of 200")).toBeVisible();
+  const [page1StudyResponse, page1ImageResponse] = await Promise.all([page1Study, page1Image]);
+  expect(page1StudyResponse.status()).toBe(200);
+  expect(page1ImageResponse.status()).toBe(200);
+  const page1StudyAuthorized = (
+    await page1StudyResponse.request().headerValue("x-document-token")
+  ) === readDocument;
+  const page1ImageAuthorized = (
+    await page1ImageResponse.request().headerValue("x-document-token")
+  ) === readDocumentImage;
+  expect(page1StudyAuthorized).toBe(true);
+  expect(page1ImageAuthorized).toBe(true);
+  await expectBlobImageRendered(page);
+  const page1RenderedPixel = await renderedFirstPixel(page);
+  expect(page1RenderedPixel).toEqual(PAGE_1_RGB);
+
+  const afterReadSnapshot = await fetchDocumentSnapshot(page, documentId, readDocument);
+  assertProgressPartition(afterReadSnapshot.data.progress);
+  expect(afterReadSnapshot.data.progress.processingPages).toBeGreaterThan(0);
+  expect(
+    afterReadSnapshot.data.pages.find((entry) => entry.pageId === page1Id),
+  ).toMatchObject({ pageId: page1Id, ordinal: 0, resultAvailable: true });
+
+  await flushResponseTasks();
+  expect(progressObservations.some(
+    (progress) => progress.completedPages > 0 && progress.processingPages > 0,
+  )).toBe(true);
+  const historicalPartial = progressObservations.find(
     (progress) => progress.completedPages > 0 && progress.processingPages > 0,
   );
-  expect(partial).toBeTruthy();
+  expect(historicalPartial).toBeTruthy();
 
   const firstBlobState = await page.evaluate(() => {
     const target = window as typeof window & { __largeDocumentBlobLifecycle?: BlobLifecycle };
@@ -329,17 +412,10 @@ test("CONTROL_PLANE_MAX_200 completes through the real document control plane", 
 
   const desktopA11y = await axeResult(page);
 
-  const page1Id = uploaded.data.pages[0]?.pageId;
-  const page100Id = uploaded.data.pages[99]?.pageId;
-  const page200Id = uploaded.data.pages[199]?.pageId;
-  expect(page1Id).toBeTruthy();
-  expect(page100Id).toBeTruthy();
-  expect(page200Id).toBeTruthy();
-
   await page.evaluate((delayedPageId) => {
     const target = window as typeof window & { __largeDocumentDelayedPageId?: string | null };
     target.__largeDocumentDelayedPageId = delayedPageId;
-  }, page100Id!);
+  }, page100Id);
 
   const page100Study = page.waitForResponse(
     (response) =>
@@ -441,7 +517,7 @@ test("CONTROL_PLANE_MAX_200 completes through the real document control plane", 
   expect(apiRequests.length).toBeLessThanOrEqual(67);
   expect(unexpected429s).toBe(0);
 
-  const sampledPageIds = new Set([page1Id!, page100Id!, page200Id!]);
+  const sampledPageIds = new Set([page1Id, page100Id, page200Id]);
   const studyReadPageIds = new Set(
     protectedReads.filter((read) => read.kind === "study-page").map((read) => read.pageId),
   );
@@ -476,7 +552,7 @@ test("CONTROL_PLANE_MAX_200 completes through the real document control plane", 
         totalScenarioElapsedMs,
       },
       progress: {
-        partial,
+        partial: historicalPartial,
         final: progressObservations.at(-1),
         observationCount: progressObservations.length,
         partitionsAll200: progressObservations.every((progress) => (
@@ -485,6 +561,31 @@ test("CONTROL_PLANE_MAX_200 completes through the real document control plane", 
             + progress.failedPages
             + progress.cancelledPages
         ) === PAGE_COUNT),
+      },
+      partialReadability: {
+        pageId: partialPage?.pageId,
+        pageOrdinal: partialPage?.ordinal,
+        selectedPageResultAvailable: partialPage?.resultAvailable,
+        beforeReadProgress: beforeReadSnapshot.data.progress,
+        studyPageRead: {
+          pageId: page1Id,
+          status: page1StudyResponse.status(),
+          authorized: page1StudyAuthorized,
+          succeeded: page1StudyResponse.status() === 200 && page1StudyAuthorized,
+        },
+        imageRead: {
+          pageId: page1Id,
+          status: page1ImageResponse.status(),
+          authorized: page1ImageAuthorized,
+          succeeded: page1ImageResponse.status() === 200 && page1ImageAuthorized,
+        },
+        uiRender: {
+          pageId: page1Id,
+          pageNumber: 1,
+          renderedFirstPixel: page1RenderedPixel,
+          succeeded: true,
+        },
+        afterReadProgress: afterReadSnapshot.data.progress,
       },
       requests: {
         browserApiTotal: apiRequests.length,
