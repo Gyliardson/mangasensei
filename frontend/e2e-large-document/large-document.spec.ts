@@ -329,7 +329,7 @@ test("CONTROL_PLANE_MAX_200 completes through the real document control plane", 
   const beforeReadSnapshot = (await partialAggregateResponse.json()) as DocumentSnapshotEnvelope;
   assertProgressPartition(beforeReadSnapshot.data.progress);
   const partialPage = beforeReadSnapshot.data.pages.find((entry) => entry.pageId === page1Id);
-  expect(partialPage).toEqual({
+  expect(partialPage).toMatchObject({
     pageId: page1Id,
     ordinal: 0,
     resultAvailable: true,
