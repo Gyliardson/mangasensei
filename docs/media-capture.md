@@ -103,7 +103,9 @@ These are fixture presentation stories. They must not be described as measured O
 
 ## Real Black Jack publication capture contract
 
-A README/product capture using `tests/fixtures/ocr/real_manga/black_jack/**` must be an actual current MangaSensei application run, not a synthetic media story. It must use the exact committed fixture bytes, actual OCR output, and the real reader/study UI. Gemini should be disabled unless the product path genuinely requires it. Do not hand-correct OCR, inject fixture text as if it were inference, composite regions, hide a known OCR error, or make a universal accuracy claim from the screenshot.
+This documentation/provenance change does **not** include a real Black Jack README capture, does not record a new full-page OCR observation, and does not change the root or localized READMEs. That publication work is intentionally deferred to a separate follow-up with a legitimate executable MangaSensei OCR runtime.
+
+A README/product capture using `tests/fixtures/ocr/real_manga/black_jack/**` must be an actual current MangaSensei application run, not a synthetic media story. It must use the exact committed fixture bytes, actual OCR output, and the real reader/study UI, with Gemini disabled. Do not hand-correct OCR, inject fixture text as if it were inference, composite regions, generate replacement imagery, hide a known OCR error, or make a universal accuracy claim from the screenshot.
 
 The preferred desktop source candidate is `v01/black_jack_v01_pdf090.jpg` (source PDF page 90), with page 123 and then page 7 as presentation fallbacks if the current real output on the earlier candidate is materially misleading or broken. If none produces a truthful presentation-quality capture, keep the existing presentation media and record the blocker rather than fabricating a showcase.
 
