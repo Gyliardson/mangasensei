@@ -61,16 +61,22 @@ jobs:
     env:
       MANGASENSEI_DATABASE_URL: postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55432/mangasensei
       MANGASENSEI_TEST_DATABASE_URL: postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55432/mangasensei
-      MANGASENSEI_STORAGE_ROOT: ${{ runner.temp }}/large-document/storage
       MANGASENSEI_FRONTEND_DIST: ${{ github.workspace }}/frontend/dist
       MANGASENSEI_CAPABILITY_PEPPERS: '["large-document-e1-capability-pepper-000000000001"]'
-      MANGASENSEI_LARGE_DOCUMENT_ROOT: ${{ runner.temp }}/large-document
-      MANGASENSEI_LARGE_DOCUMENT_INPUT: ${{ runner.temp }}/large-document/input
-      MANGASENSEI_LARGE_DOCUMENT_MARKER: ${{ runner.temp }}/large-document/document.json
-      MANGASENSEI_LARGE_DOCUMENT_BROWSER_METRICS: ${{ runner.temp }}/large-document/browser.json
-      MANGASENSEI_QUEUE_CHARACTERIZATION_OUTPUT: ${{ runner.temp }}/large-document/queue-claims.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure isolated runtime paths
+        run: |
+          root="${RUNNER_TEMP}/large-document"
+          {
+            echo "MANGASENSEI_STORAGE_ROOT=${root}/storage"
+            echo "MANGASENSEI_LARGE_DOCUMENT_ROOT=${root}"
+            echo "MANGASENSEI_LARGE_DOCUMENT_INPUT=${root}/input"
+            echo "MANGASENSEI_LARGE_DOCUMENT_MARKER=${root}/document.json"
+            echo "MANGASENSEI_LARGE_DOCUMENT_BROWSER_METRICS=${root}/browser.json"
+            echo "MANGASENSEI_QUEUE_CHARACTERIZATION_OUTPUT=${root}/queue-claims.json"
+          } >> "${GITHUB_ENV}"
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -103,11 +109,11 @@ jobs:
 
       - name: Capture final database and query diagnostics
         run: |
-          test -s "${RUNNER_TEMP}/large-document/db-initial.json"
+          test -s "${MANGASENSEI_LARGE_DOCUMENT_ROOT}/db-initial.json"
           uv run python -m tests.large_document.db_diagnostics \
             --phase final \
             --document-marker "${MANGASENSEI_LARGE_DOCUMENT_MARKER}" \
-            --output "${RUNNER_TEMP}/large-document/db-final.json"
+            --output "${MANGASENSEI_LARGE_DOCUMENT_ROOT}/db-final.json"
 
       - name: Run cheap 200-cardinality and queue characterization contracts
         run: |
@@ -119,7 +125,7 @@ jobs:
       - name: Assemble and validate machine-readable evidence
         run: |
           uv run python -m tests.large_document.ci_metrics \
-            --root "${RUNNER_TEMP}/large-document" \
+            --root "${MANGASENSEI_LARGE_DOCUMENT_ROOT}" \
             --source-sha "${GITHUB_SHA}"
 
       - name: Upload machine-readable E1 evidence
