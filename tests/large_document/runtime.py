@@ -28,7 +28,7 @@ from tests.large_document.db_diagnostics import collect
 
 
 class RequestMetricsMiddleware:
-    """Record request method/path/status only; capability headers are never persisted."""
+    """Record non-secret request provenance without persisting capability values."""
 
     def __init__(self, app: ASGIApp, output: Path) -> None:
         self._app = app
@@ -40,6 +40,12 @@ class RequestMetricsMiddleware:
             return
         status = 500
         started = time.perf_counter()
+        header_names = {name.lower() for name, _value in scope["headers"]}
+        safe_headers = {
+            name.lower(): value
+            for name, value in scope["headers"]
+            if name.lower() in {b"sec-fetch-dest", b"sec-fetch-mode", b"sec-fetch-site"}
+        }
 
         async def tracked_send(message: Message) -> None:
             nonlocal status
@@ -55,6 +61,16 @@ class RequestMetricsMiddleware:
                 "path": scope["path"],
                 "status": status,
                 "elapsedMs": round((time.perf_counter() - started) * 1000, 3),
+                "documentTokenHeaderPresent": b"x-document-token" in header_names,
+                "secFetchDest": safe_headers.get(b"sec-fetch-dest", b"").decode(
+                    "ascii", errors="replace"
+                ),
+                "secFetchMode": safe_headers.get(b"sec-fetch-mode", b"").decode(
+                    "ascii", errors="replace"
+                ),
+                "secFetchSite": safe_headers.get(b"sec-fetch-site", b"").decode(
+                    "ascii", errors="replace"
+                ),
             }
             with self._output.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(record, sort_keys=True) + "\n")
