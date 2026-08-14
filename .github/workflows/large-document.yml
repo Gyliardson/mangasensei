@@ -64,6 +64,7 @@ jobs:
       MANGASENSEI_STORAGE_ROOT: ${{ runner.temp }}/large-document/storage
       MANGASENSEI_FRONTEND_DIST: ${{ github.workspace }}/frontend/dist
       MANGASENSEI_CAPABILITY_PEPPERS: '["large-document-e1-capability-pepper-000000000001"]'
+      MANGASENSEI_LARGE_DOCUMENT_ROOT: ${{ runner.temp }}/large-document
       MANGASENSEI_LARGE_DOCUMENT_INPUT: ${{ runner.temp }}/large-document/input
       MANGASENSEI_LARGE_DOCUMENT_MARKER: ${{ runner.temp }}/large-document/document.json
       MANGASENSEI_LARGE_DOCUMENT_BROWSER_METRICS: ${{ runner.temp }}/large-document/browser.json
@@ -91,9 +92,33 @@ jobs:
       - name: Sync locked Python environment
         run: uv sync --frozen
 
-      - name: Run isolated deterministic 200-page harness
+      - name: Generate frozen 200-page workload
         run: |
-          uv run python -m tests.large_document.ci_harness \
+          rm -rf "${MANGASENSEI_LARGE_DOCUMENT_INPUT}"
+          uv run python -m tests.large_document.generator \
+            --output "${MANGASENSEI_LARGE_DOCUMENT_INPUT}"
+
+      - name: Run dedicated 200-page full-stack browser scenario
+        run: npx --no-install playwright test --config frontend/playwright.large-document.config.ts
+
+      - name: Capture final database and query diagnostics
+        run: |
+          test -s "${RUNNER_TEMP}/large-document/db-initial.json"
+          uv run python -m tests.large_document.db_diagnostics \
+            --phase final \
+            --document-marker "${MANGASENSEI_LARGE_DOCUMENT_MARKER}" \
+            --output "${RUNNER_TEMP}/large-document/db-final.json"
+
+      - name: Run cheap 200-cardinality and queue characterization contracts
+        run: |
+          uv run pytest -q \
+            tests/integration/test_document_large_harness.py \
+            tests/integration/test_document_scale.py \
+            tests/integration/test_queue_fairness_characterization.py
+
+      - name: Assemble and validate machine-readable evidence
+        run: |
+          uv run python -m tests.large_document.ci_metrics \
             --root "${RUNNER_TEMP}/large-document" \
             --source-sha "${GITHUB_SHA}"
 
@@ -108,6 +133,7 @@ jobs:
             ${{ runner.temp }}/large-document/db-initial.json
             ${{ runner.temp }}/large-document/db-final.json
             ${{ runner.temp }}/large-document/browser.json
+            ${{ runner.temp }}/large-document/runtime-http.jsonl
             ${{ runner.temp }}/large-document/runtime-requests.json
             ${{ runner.temp }}/large-document/queue-claims.json
             ${{ runner.temp }}/large-document/result-manifest.json
@@ -121,7 +147,7 @@ jobs:
           path: |
             playwright-report-large-document
             test-results-large-document
-            ${{ runner.temp }}/large-document/api.log
             ${{ runner.temp }}/large-document/worker.log
+            ${{ runner.temp }}/large-document/runtime-http.jsonl
             ${{ runner.temp }}/large-document/*.json
           if-no-files-found: ignore
