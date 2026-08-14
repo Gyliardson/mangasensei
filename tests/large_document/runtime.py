@@ -95,7 +95,9 @@ async def _assert_fresh_database(settings: Settings) -> None:
                 "documents": int(
                     await session.scalar(select(func.count()).select_from(DocumentRecord)) or 0
                 ),
-                "pages": int(await session.scalar(select(func.count()).select_from(PageRecord)) or 0),
+                "pages": int(
+                    await session.scalar(select(func.count()).select_from(PageRecord)) or 0
+                ),
                 "jobs": int(await session.scalar(select(func.count()).select_from(JobRecord)) or 0),
                 "imageBlobs": int(
                     await session.scalar(select(func.count()).select_from(ImageBlobRecord)) or 0
