@@ -99,16 +99,33 @@ References:
 
 ## MangaSensei Public Demo Corpus
 
-The project-owned [`assets/public-demo/`](assets/public-demo/) corpus is licensed separately under CC BY 4.0. Its SVG artwork, rendered PNG pages and annotations are original MangaSensei corpus assets; this does not change the GPL-3.0-only license of MangaSensei source code or the separate terms of the Black Jack fixtures below.
+The project-owned [`assets/public-demo/`](assets/public-demo/) corpus is licensed separately under CC BY 4.0. Its SVG artwork, rendered PNG pages and annotations are original MangaSensei corpus assets; this does not change the GPL-3.0-only license of MangaSensei source code or the separate Sato Manga Works terms governing the Black Jack fixtures below.
 
 The deterministic renderer uses Noto Sans CJK JP `Sans2.004` and Noto Serif CJK JP `Serif2.003` from the official [`notofonts/noto-cjk`](https://github.com/notofonts/noto-cjk) repository under SIL OFL 1.1. Font binaries are not committed; exact upstream paths, Git blob IDs, byte sizes and SHA-256 values are recorded in [`assets/public-demo/provenance/fonts.json`](assets/public-demo/provenance/fonts.json) and verified before rendering.
 
 ## Give My Regards to Black Jack Test Fixtures
 
-The MangaSensei repository contains a small testing corpus of selected pages from the official PDF of Volume 1 of `ブラックジャックによろしく` by `佐藤秀峰` (`Give My Regards to Black Jack` by `SHUHO SATO`).
+The MangaSensei repository contains a 12-page **third-party authorized real-manga pressure corpus** selected from the official Volume-1 PDF of `ブラックジャックによろしく` by `佐藤秀峰` (`Give My Regards to Black Jack` by `SHUHO SATO`). The fixtures are located at [`tests/fixtures/ocr/real_manga/black_jack/`](tests/fixtures/ocr/real_manga/black_jack/).
 
-These fixtures are located at [`tests/fixtures/ocr/real_manga/black_jack/`](tests/fixtures/ocr/real_manga/black_jack/).
+They are third-party manga data redistributed under the [current published secondary-use terms of Sato Manga Works](https://densho810.com/free/), re-reviewed by MangaSensei on **2026-08-13**. Subject to those conditions, the terms permit reproduction/public transmission, redistribution of the copyright holder's official digital data, commercial and noncommercial secondary use, and adaptation. This permission is specific to the official Sato Manga Works data for *Give My Regards to Black Jack*; it does not permit redistribution of scans/digitizations made from physical books, does not extend to `新ブラックジャックによろしく` / *The New Give My Regards to Black Jack*, and does not cover unrelated works.
 
-They are redistributed according to the specific terms for secondary use published by Sato Manga Works Ltd. at the official source: [https://densho810.com/free/](https://densho810.com/free/).
+Required attribution strings are:
 
-These files are NOT part of the MangaSensei GPL license and remain subject to the copyright holder's terms. The applicable terms require a post-publication reporting communication to Sato Manga Works after publication/distribution of the files.
+- Japanese use: `ブラックジャックによろしく` — `佐藤秀峰`;
+- English/non-Japanese use: `Give My Regards to Black Jack` — `SHUHO SATO`.
+
+The holder's listed JASRAC-managed exceptions concern specified pages in Volumes 2, 7 and 11 and therefore do not affect this selected Volume-1 fixture corpus.
+
+The committed corpus provenance records source archive SHA-256 `ec7bbb4ce4f719536a2d58f29eb2c665d19b0769303efe009b4d98cccad699e1` and source PDF SHA-256 `a2ad133db82a21cefce1acccb5548de10d2d74118c1519d86ede8566b02ca8b4`. These integrity values identify the reviewed source bytes; they do not themselves grant permission.
+
+These files are **not** public domain, project-owned, CC BY, unrestricted, or part of the MangaSensei GPL license. They remain third-party copyrighted material subject to the copyright holder's terms.
+
+The broad secondary-use grant reasonably supports automated OCR and GitHub-hosted processing of the official data, but the official terms contain no cloud-compute-specific clause. That rights conclusion does not by itself alter MangaSensei Research Lab allowlists, security controls, model-artifact rights, or execution policy.
+
+### Post-publication reporting checkpoint
+
+Maintainer attestation records that the required post-publication report covering the **existing published 12-page repository fixture use** was sent to Sato Manga Works on **2026-08-13 (BRT / America/Sao_Paulo)**. On **2026-08-14 JST**, Sato Manga Works acknowledged the report, stated that it had reviewed the reported details and URLs, and requested a new report after any future demonstration or other additional use. The acknowledgement is operational/compliance evidence; the published secondary-use terms remain the rights basis. The repository intentionally retains no sender address, mailbox/account data, Message-ID, private email headers, screenshots, or correspondence body for that checkpoint.
+
+A later README/product-demo publication using Black Jack material is a separate new use. After that demo is actually published, the maintainer must review the then-current official terms and perform the required post-publication report within the holder's stated deadline. The 2026-08-13 checkpoint must not be read as advance reporting of a future demo.
+
+See the fixture-level [provenance, integrity and handling contract](tests/fixtures/ocr/real_manga/black_jack/README.md) for the exact inventory and operational rules.

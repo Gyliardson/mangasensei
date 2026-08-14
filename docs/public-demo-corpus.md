@@ -4,9 +4,11 @@ MangaSensei Public Demo Corpus v1 is the project's canonical owned presentation 
 
 ## Rights boundary
 
-The public demo corpus is licensed under CC BY 4.0. MangaSensei source code remains GPL-3.0-only. The licensed *Give My Regards to Black Jack* regression fixtures remain a separate real-world evidence source under Sato Manga Works' published secondary-use terms; they are not part of, and are not relicensed by, the public demo corpus.
+The public demo corpus is licensed under CC BY 4.0. MangaSensei source code remains GPL-3.0-only. The **third-party authorized** *Give My Regards to Black Jack* regression fixtures remain a separate professional real-manga evidence source redistributed under Sato Manga Works' published secondary-use terms; they are not part of, and are not relicensed by, the public demo corpus.
 
-The [current official Sato Manga Works secondary-use terms](https://densho810.com/free/) permit commercial and non-commercial reproduction/public transmission and secondary use subject to their conditions, including required title/author attribution and post-use reporting. That separate permission is not needed for these four project-owned pages.
+The [current official Sato Manga Works secondary-use terms](https://densho810.com/free/) permit commercial and non-commercial reproduction/public transmission and secondary use subject to their conditions, including required title/author attribution and post-use reporting. That separate permission is not needed for these four project-owned pages and does not make the Black Jack material project-owned, CC BY, public domain or part of MangaSensei's GPL license.
+
+MangaSensei Public Demo Corpus v1 remains the canonical deterministic annotation/ground-truth corpus. Authorized Black Jack pages are a real-world OCR pressure/validation corpus and may support separately reviewed product demonstrations; they do not replace this ground-truth dataset.
 
 Each manifest page may list `intendedUseCases` for MangaSensei project planning. This field is non-normative metadata, is not a permissions whitelist, and does not narrow or otherwise restrict the CC BY 4.0 license grant.
 

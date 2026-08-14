@@ -209,17 +209,17 @@ Artifacts are evidence containers, not long-term scheduler memory.
 
 **Controls:** research branches are disposable; promotion requires a fresh candidate branch from current `main`, minimal reimplementation and ordinary production gates plus explicit maintainer merge approval.
 
-### Licensed/private data leakage
+### Third-party/private data leakage
 
-**Threat:** a cloud experiment uploads Black Jack or other private/licensed source material because it exists in a local test corpus.
+**Threat:** a cloud experiment uploads Black Jack or other source material without the separately reviewed permission, provenance, visibility and execution decision merely because the data exists in a repository or local test corpus.
 
-**Controls:** GitHub-hosted experiments are limited to MangaSensei-owned public corpus data, synthetic/project-authored fixtures or separately reviewed public-safe inputs. The licensed Black Jack corpus is not an allowed cloud input in this foundation.
+**Controls:** GitHub-hosted experiments remain limited to inputs explicitly frozen by the reviewed catalog/implementation. MangaSensei-owned public corpus data and synthetic/project-authored fixtures are eligible only when the experiment contract allows them. The Black Jack corpus is a third-party authorized corpus under Sato Manga Works' published secondary-use terms, not private data; however, that rights clearance does not automatically place it on the Research Lab execution allowlist. Any GitHub-hosted Black Jack experiment still requires an explicit reviewed input/provenance/visibility decision and must preserve all normal command-bus controls.
 
 ## Data boundary
 
 The Research Lab preserves MangaSensei's local-first/privacy-first invariants. The initial plugin consumes only a project-authored text fixture.
 
-Future GitHub-hosted experiments may use `assets/public-demo/**` only when the experiment spec explicitly freezes the exact public corpus revision/hashes and the cloud visibility is appropriate. Licensed real-manga validation remains a separate local path unless its exact use and artifact visibility are reviewed first.
+Future GitHub-hosted experiments may use `assets/public-demo/**` only when the experiment spec explicitly freezes the exact public corpus revision/hashes and the cloud visibility is appropriate. The current rights review also supports GitHub-hosted processing/automated OCR of the official Black Jack data as a reasonable application of Sato Manga Works' broad secondary-use grant; the holder's terms do not contain a cloud-compute-specific clause. This rights conclusion is separate from Research Lab activation: Black Jack remains outside a cloud experiment unless the exact use is added through the normal reviewed allowlist/catalog path.
 
 ## CPU model smoke
 
@@ -276,7 +276,7 @@ Perform exactly one bounded research iteration, then stop.
 7. Freeze the decision, hypothesis, controls, baseline SHA, input/corpus identities and hashes, scoring/normalization, success/failure gates, stop condition, max cases and resource/runtime envelope before requesting an expensive experiment.
 8. Use only an experiment already present in the allowlisted Research Lab catalog. If the required experiment type is not implemented, do not invent a command or arbitrary parameter. Record BLOCKED and propose the focused repository change needed to add that plugin safely.
 9. For a runnable step, post at most one exact MANGASENSEI_RESEARCH_COMMAND_V1 comment to issue #132. Use a new bounded command_id, the exact current main SHA, the catalog's exact experiment/spec version and only allowlisted parameters.
-10. Never use command fields to pass shell, executable paths, URLs, git refs, model repositories, corpus paths, secrets or licensed/private manga data.
+10. Never use command fields to pass shell, executable paths, URLs, git refs, model repositories, corpus paths, secrets or unreviewed source material.
 11. After requesting one experiment, record/update the durable checkpoint state and stop. Do not wait-loop, prompt-tune indefinitely or request another dependent experiment in the same scheduled iteration.
 
 State discipline:
@@ -292,8 +292,8 @@ Security/privacy:
 - Do not merge to main, tag or release.
 - Do not weaken CI/security or modify production behavior silently.
 - Do not download arbitrary models/dependencies.
-- GitHub-hosted experiments may use only project-owned public/synthetic/explicitly public-safe data.
-- Do not upload Black Jack licensed crops/images to cloud research infrastructure without a separately reviewed permission/visibility decision.
+- GitHub-hosted experiments may use only inputs explicitly permitted by the reviewed catalog and current provenance/visibility policy.
+- Black Jack is rights-cleared with conditions under Sato Manga Works' terms, but cloud research use still requires a separately reviewed catalog/input/visibility decision; do not infer execution permission merely from repository presence.
 - Raw OCR and research evidence remain auditable; repeated identical errors are stability evidence, not correctness.
 - Do not tune repeatedly against the same tiny calibration set until it passes.
 
@@ -311,4 +311,4 @@ For experiments that routinely approach multi-hour duration, reduce the cadence 
 
 After activation, the scheduled researcher may inspect GitHub/primary sources, update the ledger, post allowlisted commands, inspect run logs/artifacts and propose/create focused research work when permissions permit.
 
-It must not autonomously merge `main`, release/tag, weaken security/CI, expose secrets, silently change production behavior, repeatedly tune one benchmark, fetch arbitrary models/dependencies or use licensed/private manga in cloud experiments without a reviewed permission decision.
+It must not autonomously merge `main`, release/tag, weaken security/CI, expose secrets, silently change production behavior, repeatedly tune one benchmark, fetch arbitrary models/dependencies or use any source material in cloud experiments outside the reviewed catalog/provenance/visibility boundary. Black Jack rights clearance is not an exception to those execution controls.
