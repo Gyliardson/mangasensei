@@ -140,7 +140,7 @@ class ComposeHarness:
         self.compose("stop", "-t", "0", service)
 
     def start(self, service: str) -> None:
-        self.compose("start", service)
+        self.docker("start", self.service_id(service))
 
     def wait_renderer_child(self, *, timeout: float, import_id: str, fence: int) -> None:
         deadline = time.monotonic() + timeout
