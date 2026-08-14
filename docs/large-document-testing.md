@@ -80,6 +80,61 @@ Stale `RateLimitBucketRecord` cleanup keeps the existing one-day eligibility thr
 
 These changes keep the retention/access contract at exactly 24 hours while making the load-bearing cleanup classes `O(batch_size)` instead of `O(batch_size * pages_per_document)`.
 
+## Slice E3 PDF scale and recovery
+
+Slice E3 adds evidence-first maximum-page, resource, pressure, and crash/reclaim coverage around the Slice-D PDF importer. The permanent gates are [PDF Scale E3](../.github/workflows/pdf-scale.yml) and [PDF Import Pressure E3](../.github/workflows/pdf-pressure.yml). They execute the raw PR-head/source SHA explicitly and upload JSON evidence only; no generated 200-page PDF or 480 MiB raster set is committed or uploaded.
+
+### Source provenance repair and frozen workload
+
+An early Slice-E planning draft listed a 49,198-byte PDF with SHA-256 `02f15ab6368b3f32e86a701e0fbb4d6114d98fd0e71590c3c27d8c225b54a33d`. That planning note did not contain or reference a byte-level serializer sufficient to reproduce the claimed bytes. Before any E3 raster calibration, resource measurement, recovery conclusion, or production decision, that incomplete planning-only identity was withdrawn. It was not a production regression or a historical runtime artifact.
+
+The repository-tracked source of truth is now [`pdf-scale-stdlib-v1`](../tests/pdf_scale/generator.py). The stdlib-only serializer emits PDF 1.4 with LF line endings, fixed object numbering/xref/trailer serialization, no metadata/IDs/compression/active content, exactly 200 Pages with a `28.7 x 43.0` point MediaBox, and one deterministic 1x1-point black rectangle per Page. Its frozen source identity is:
+
+- workload: `PDF_PAGECOUNT_MAX_200`;
+- source bytes: 46,282;
+- source SHA-256: `cb181b41e45a46e138b7188d87d54620e4c1738dd654f3e6cb7eadc854ef2cf5`;
+- Page ordinals: `0..199`.
+
+Regeneration tests fail on any byte-count or digest drift and also open the generated source with the reviewed PDFium runtime to verify the 200-page geometry. No resource conclusion in E3 was based on the superseded planning source identity.
+
+### Reviewed raster calibration
+
+The first authoritative pinned-runtime run was calibration only, on repository source SHA `a56e69c055c8b242f90f5d05a780b07af342b340`. The calibrated values were then frozen in [`raster-contract.json`](../tests/pdf_scale/raster-contract.json) before post-calibration evidence ran.
+
+Under `pdfium-raster-v1` with pypdfium2 5.12.1, PDFium build 7947 (`152.0.7947.0`), Pillow 12.3.0, the normal non-V8/non-XFA PDFium build, fixed 200 DPI rendering, white background, RGB PNG and compression level 6, the workload produces:
+
+- 200 ordered `80x120` rasters;
+- 1,920,000 aggregate pixels;
+- 48,223 aggregate encoded raster bytes;
+- 236-byte minimum and 244-byte maximum raster;
+- ordered concatenated-raster SHA-256 `275ff16afad710b8d509f5038a57e65ed9952ba5e371a8cbdb84f94b6dfe4bff`.
+
+All 200 individual raster hashes are part of the frozen contract rather than being summarized here.
+
+### Resource envelope observations
+
+The E3 scale topology keeps the production renderer at 1 GiB / 1 CPU / 64 PIDs and the PDF importer at 1536 MiB / 1 CPU / 64 PIDs. It does not start the OCR/Page worker or Gemini.
+
+A qualifying post-fix hosted-run observation on source SHA `2408f637c949508133b77a1293b2cc42b89aaeab` completed the clean 200-page import with zero durable Document/Page/Job rows at the manifest checkpoint and exactly 1 Document / 200 Pages / 200 pending initial Jobs after commit. The renderer observed a 246,251,520-byte cgroup-v2 memory peak (22.93% of 1 GiB); the importer observed 71,913,472 bytes (4.46% of 1536 MiB). Both `memory.events` records had zero OOM/OOM-kill/max events and Docker reported `OOMKilled=false`. These are run observations, not product performance SLOs.
+
+The same clean run observed approximately 3.199 s renderer time, 0.062 s manifest validation, 1.209 s commit, and 6.680 s admission-to-terminal cleanup. At manifest completion the source occupied 46,282 bytes, the request 432 bytes, and the renderer-output import contained 201 files / 94,397 bytes; terminal cleanup removed source, request, and renderer-output import artifacts.
+
+The separate `PDF_IMPORTER_PROTOCOL_PRESSURE_480M` profile substitutes only the renderer-output protocol boundary. It generates 60 valid unique `80x120` RGB PNGs of exactly 8,388,608 bytes each using a deterministic private ancillary chunk, for 503,316,480 aggregate bytes (480 MiB) and 576,000 aggregate pixels. The real coordinator still validates spool identity, hashes, Pillow decoding, aggregate limits, lease/fence ownership, storage staging, Document/Page/Job creation, and terminal cleanup. This profile does not prove renderer resource usage.
+
+A qualifying hosted pressure run observed a 1,101,508,608-byte importer peak against the unchanged 1,610,612,736-byte limit (68.39%), with zero OOM/OOM-kill/max events and `OOMKilled=false`. It completed exactly 1 Document / 60 Pages / 60 pending initial Jobs / 60 unique immutable image blobs, preserved all raster hashes, and removed terminal spool artifacts. The predeclared E3 engineering review threshold is 80%, so this run did not require a memory-architecture redesign or cgroup increase.
+
+### Recovery behavior and production correction
+
+A real renderer process/container failure during an active 200-page import remains fail-closed: the import terminates with `pdf_renderer_crash`, no durable Document/Page/Job graph exists, transient spool state is cleaned, and a fresh import succeeds after the renderer is restarted.
+
+E3 did expose one recovery defect after a renderer had already completed fence 1 and the importer then crashed. After lease expiry/reclaim, the importer correctly acquired fence 2 and published a fence-2 request, but the split renderer input channel is intentionally read-only to the renderer, so the stale fence-1 request remained. The renderer selected request filenames in sorted order, repeatedly encountered the already-terminal fence-1 request, returned, and starved the newer fence-2 request.
+
+The production correction is intentionally narrow: in split-output mode, the renderer now skips request entries whose matching manifest or failure record already exists and continues scanning later requests. It does not delete or mutate the read-only input channel, change fencing authority, reuse partial raster work, increase timeout/lease/memory limits, or weaken spool validation. A focused renderer regression covers stale terminal fence 1 followed by fence 2, and the full E3 reclaim scenario proves that the higher fence completes exactly one 200-Page Document while stale ownership cannot commit.
+
+The post-DB-commit/pre-cleanup recovery boundary is also covered with a test-only seam only around `_cleanup_terminal_source()`. `_commit_document()` remains real. After simulated process death, the completed 1/200/200 graph remains durable with `source_cleaned_at` unset; a fresh coordinator's normal cleanup removes transient source/request/attempt state, sets `source_cleaned_at`, and preserves the committed Document and all 200 Pages/Jobs.
+
+E3 therefore required one focused renderer request-selection fix. It did not require renderer/importer memory increases, a longer 180-second renderer timeout, a longer 240-second import lease, relaxed raster/spool limits, OCR/Gemini execution, or partial user-visible PDF Documents. Slice E4 queue fairness and Slice E5 whole-production-topology/resource acceptance remain deferred under #105.
+
 ## Explicit non-goals
 
-The E1 harness does not run the 480 MiB pressure workload, production OCR models, Gemini, or copyrighted manga content. Slice E2 does not change production upload/security/capability semantics beyond bounded physical cleanup, and it does not change PDF resource policy, queue fairness, or Compose resource ceilings. Slice E3 (PDF resource/restart hardening), E4 (queue fairness policy), and E5 (final Compose/resource acceptance) remain deferred.
+The E1 harness does not run the 480 MiB pressure workload, production OCR models, Gemini, or copyrighted manga content. Slice E2 does not change production upload/security/capability semantics beyond bounded physical cleanup. E3 does not change queue fairness, API/worker/retention cgroups, OCR/Gemini behavior, reader UX, retention duration, or the existing renderer isolation/security boundary. Slice E4 (queue fairness policy) and Slice E5 (final whole-production-topology/resource acceptance) remain deferred.
