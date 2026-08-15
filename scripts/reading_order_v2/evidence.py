@@ -31,14 +31,35 @@ MANDATORY_MEMBERS = {
     for name in ("diagnostics.jsonl", "ordering.json", "scores.json", "repeat-hashes.json")
 }
 FORBIDDEN_SUFFIXES = {
-    ".ckpt", ".pt", ".pth", ".onnx", ".safetensors",
-    ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff",
+    ".ckpt",
+    ".pt",
+    ".pth",
+    ".onnx",
+    ".safetensors",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".gif",
+    ".bmp",
+    ".tiff",
 }
 _SECRET_RE = re.compile(
     r"(?i)(?:api[_-]?key|token|password|secret|authorization)"
     r"\s*[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9_./+=-]{12,}"
 )
-_PRIVATE_PATH_RE = re.compile(r"(?:/(?:home|Users)/[^\s\"']+|[A-Za-z]:\\Users\\[^\s\"']+)")
+_WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\s\"'<>]+")
+_POSIX_LOCAL_PREFIX_RE = re.compile(
+    r"(?<![:/A-Za-z0-9])/(?:home|Users|mnt|tmp|var|opt|private|root|srv)/[^\s\"'<>]+"
+)
+
+_PATH_FIELD_TOKENS = {"path", "file", "dir", "directory", "root", "cwd", "workspace"}
+_PATH_FIELD_SUFFIXES = ("Path", "File", "Dir", "Directory", "Root", "Cwd", "Workspace")
+
+_PATH_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b(?:path|file|dir|directory|root|cwd|workspace)\s*[:=]\s*"
+    r"[\"']?(/[^\s\"'<>]+)"
+)
 
 
 class EvidenceError(ValueError):
@@ -57,6 +78,42 @@ def _safe_member(name: str) -> None:
         raise EvidenceError(f"evidence members must use POSIX separators: {name}")
     if pure.suffix.lower() in FORBIDDEN_SUFFIXES:
         raise EvidenceError(f"forbidden evidence artifact type: {name}")
+
+
+def _is_absolute_local_path(value: str) -> bool:
+    if value.startswith(("https://", "http://")):
+        return False
+    return value.startswith("/") or re.match(r"^[A-Za-z]:[\\/]", value) is not None
+
+
+def _is_path_field(field_name: str) -> bool:
+    normalized = field_name.replace("-", "_")
+    if any(part.lower() in _PATH_FIELD_TOKENS for part in normalized.split("_")):
+        return True
+    return field_name.endswith(_PATH_FIELD_SUFFIXES)
+
+
+def _validate_json_paths(
+    value: object, *, name: str, location: str = "$", field_name: str | None = None
+) -> None:
+    if isinstance(value, str):
+        if field_name is not None and _is_path_field(field_name):
+            if _is_absolute_local_path(value):
+                raise EvidenceError(
+                    f"private absolute path detected in {name} at {location}"
+                )
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _validate_json_paths(
+                item, name=name, location=f"{location}[{index}]", field_name=field_name
+            )
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _validate_json_paths(
+                item, name=name, location=f"{location}.{key}", field_name=key
+            )
 
 
 def _source_paths(source_manifest: dict[str, object]) -> set[str]:
@@ -118,15 +175,39 @@ def expected_members(source_manifest: dict[str, object]) -> set[str]:
 
 
 def scan_safe_text(name: str, data: bytes) -> None:
-    if name.endswith((".json", ".jsonl", ".md", ".py", ".mjs", ".sha256")):
-        try:
-            text = data.decode("utf-8")
-        except UnicodeDecodeError as error:
-            raise EvidenceError(f"text evidence is not UTF-8: {name}") from error
-        if _PRIVATE_PATH_RE.search(text):
-            raise EvidenceError(f"private absolute path detected in {name}")
-        if _SECRET_RE.search(text):
-            raise EvidenceError(f"secret-like assignment detected in {name}")
+    if not name.endswith((".json", ".jsonl", ".md", ".py", ".mjs", ".sha256")):
+        return
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise EvidenceError(f"text evidence is not UTF-8: {name}") from error
+    if (
+        _WINDOWS_ABSOLUTE_PATH_RE.search(text)
+        or _POSIX_LOCAL_PREFIX_RE.search(text)
+        or _PATH_ASSIGNMENT_RE.search(text)
+    ):
+        raise EvidenceError(f"private absolute path detected in {name}")
+    if _SECRET_RE.search(text):
+        raise EvidenceError(f"secret-like assignment detected in {name}")
+
+
+def _validate_serialized_json(name: str, data: bytes) -> None:
+    text = data.decode("utf-8")
+    try:
+        if name.endswith(".json"):
+            value = json.loads(text)
+            _validate_json_paths(value, name=name)
+            return
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise EvidenceError(f"malformed JSON in {name}:{line_number}") from error
+            _validate_json_paths(value, name=name, location=f"$line{line_number}")
+    except json.JSONDecodeError as error:
+        raise EvidenceError(f"malformed JSON in {name}") from error
 
 
 def validate_staging_tree(root: Path) -> dict[str, object]:
@@ -148,13 +229,7 @@ def validate_staging_tree(root: Path) -> dict[str, object]:
         actual.add(name)
         data = path.read_bytes()
         if name.endswith((".json", ".jsonl")):
-            for line_number, line in enumerate(data.decode("utf-8").splitlines(), start=1):
-                if not line.strip():
-                    continue
-                try:
-                    json.loads(line)
-                except json.JSONDecodeError as error:
-                    raise EvidenceError(f"malformed JSON in {name}:{line_number}") from error
+            _validate_serialized_json(name, data)
         scan_safe_text(name, data)
     if actual != expected:
         raise EvidenceError(
@@ -167,11 +242,14 @@ def validate_staging_tree(root: Path) -> dict[str, object]:
 
 def write_checksums(root: Path) -> None:
     files = sorted(
-        path for path in root.rglob("*")
+        path
+        for path in root.rglob("*")
         if path.is_file() and path.name != "checksums.sha256"
     )
     lines = [f"{sha256_path(path)}  {path.relative_to(root).as_posix()}" for path in files]
-    (root / "checksums.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    (root / "checksums.sha256").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8", newline="\n"
+    )
 
 
 def verify_checksums(root: Path) -> None:

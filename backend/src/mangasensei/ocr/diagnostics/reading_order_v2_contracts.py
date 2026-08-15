@@ -138,8 +138,50 @@ class ArmResult:
     diagnostic: PageDiagnostic
 
 
+def _candidate_groups_from_geometry(
+    value: PageDiagnostic, region: RegionDiagnostic
+) -> tuple[str, ...]:
+    if not value.segmentation.attempted or not value.groups:
+        return region.candidate_group_ids
+    matches = tuple(
+        group.group_id
+        for group in value.groups
+        if (
+            2 * group.bbox[0] <= region.center2x <= 2 * group.bbox[2]
+            and 2 * group.bbox[1] <= region.center2y <= 2 * group.bbox[3]
+        )
+    )
+    if value.segmentation.reliable:
+        return region.candidate_group_ids
+    return matches
+
+
+def _scheduler_tie_key(value: PageDiagnostic, group: GroupDiagnostic) -> tuple[object, ...]:
+    scheduler_ran = (
+        group.precedence_index is not None or value.fallback_reason == "precedence-cycle"
+    )
+    if not scheduler_ran:
+        return ()
+    rank: object = float(group.fallback_rank) if group.fallback_ranc is not None else "inf"
+    if value.arm_id.partial_panel_evidence:
+        return (rank, 0, group.bbox[1], -group.bbox[2], group.source_group_index)
+    return (rank, group.bbox[1], -group.bbox[2], group.source_group_index)
+
+
 def diagnostic_to_dict(value: PageDiagnostic) -> dict[str, object]:
     """Serialize the frozen diagnostic schema without exposing runtime object identity."""
+    candidate_groups = {
+        region.region_id: _candidate_groups_from_geometry(value, region)
+        for region in value.regions
+    }
+    group_candidate_regions = {
+        group.group_id: tuple(
+            region.region_id
+            for region in value.regions
+            if group.group_id in candidate_groups[region.region_id]
+        )
+        for group in value.groups
+    }
     return {
         "schemaVersion": value.schema_version,
         "specVersion": value.spec_version,
@@ -168,11 +210,11 @@ def diagnostic_to_dict(value: PageDiagnostic) -> dict[str, object]:
                 "polygon": None,
                 "center2x": group.center2x,
                 "center2y": group.center2y,
-                "candidateRegionIds": list(group.candidate_region_ids),
+                "candidateRegionIds": list(group_candidate_regions[group.group_id]),
                 "confidentRegionIds": list(group.confident_region_ids),
                 "fallbackRank": group.fallback_rank,
                 "precedenceIndex": group.precedence_index,
-                "tieKey": list(group.tie_key),
+                "tieKey": list(_scheduler_tie_key(value, group)),
                 "precedenceEdges": [
                     {
                         "targetGroupId": edge.target_group_id,
@@ -201,10 +243,14 @@ def diagnostic_to_dict(value: PageDiagnostic) -> dict[str, object]:
                 "center2y": region.center2y,
                 "directionRaw": region.direction_raw,
                 "orientationClass": region.orientation_class.value,
-                "candidateGroupIds": list(region.candidate_group_ids),
+                "candidateGroupIds": list(candidate_groups[region.region_id]),
                 "assignmentStatus": region.assignment_status.value,
                 "assignmentReason": region.assignment_reason,
-                "ambiguityCount": region.ambiguity_count,
+                "ambiguityCount": (
+                    len(candidate_groups[region.region_id])
+                    if not value.segmentation.reliable and value.groups
+                    else region.ambiguity_count
+                ),
                 "assignedGroupId": region.assigned_group_id,
                 "fallbackIndex": region.fallback_index,
                 "localTierId": region.local_tier_id,

@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .scoring import CorpusScore, candidate_only_wrong_pairs, wrong_set_is_subset
+from .contracts import REQUIRED_SLICES
+from .scoring import CorpusScore, PairMetrics, candidate_only_wrong_pairs, wrong_set_is_subset
 
 
 class Verdict(StrEnum):
@@ -34,8 +35,59 @@ class VerdictResult:
     reasons: tuple[GateReason, ...]
 
 
-def _slice(score: CorpusScore, name: str):
+def _slice(score: CorpusScore, name: str) -> PairMetrics | None:
     return score.slices.get(name)
+
+
+def _required_slice_nonregression(
+    control: CorpusScore, candidate: CorpusScore, arm: str
+) -> list[GateReason]:
+    reasons: list[GateReason] = []
+    for name in sorted(REQUIRED_SLICES):
+        control_slice = control.slices.get(name)
+        candidate_slice = candidate.slices.get(name)
+        if control_slice is None or control_slice.comparable_pairs <= 0:
+            reasons.append(
+                GateReason(
+                    "required-slice",
+                    arm,
+                    "fail",
+                    f"control slice {name} is missing or has no comparable pairs",
+                )
+            )
+            continue
+        if candidate_slice is None or candidate_slice.comparable_pairs <= 0:
+            reasons.append(
+                GateReason(
+                    "required-slice",
+                    arm,
+                    "fail",
+                    f"candidate slice {name} is missing or has no comparable pairs",
+                )
+            )
+            continue
+        if candidate_slice.pairwise_accuracy < control_slice.pairwise_accuracy:
+            reasons.append(
+                GateReason(
+                    "slice-pairwise-nonregression",
+                    arm,
+                    "fail",
+                    f"slice {name} regressed",
+                )
+            )
+        if (
+            candidate_slice.normalized_inversion_distance
+            > control_slice.normalized_inversion_distance
+        ):
+            reasons.append(
+                GateReason(
+                    "slice-inversion-nonregression",
+                    arm,
+                    "fail",
+                    f"slice {name} regressed",
+                )
+            )
+    return reasons
 
 
 def _universal(
@@ -77,34 +129,7 @@ def _universal(
                 "exact-sequence page count decreased",
             )
         )
-    for name, control_slice in control.slices.items():
-        candidate_slice = candidate.slices.get(name)
-        if candidate_slice is None:
-            reasons.append(
-                GateReason("required-slice", arm, "fail", f"missing slice {name}")
-            )
-            continue
-        if candidate_slice.pairwise_accuracy < control_slice.pairwise_accuracy:
-            reasons.append(
-                GateReason(
-                    "slice-pairwise-nonregression",
-                    arm,
-                    "fail",
-                    f"slice {name} regressed",
-                )
-            )
-        if (
-            candidate_slice.normalized_inversion_distance
-            > control_slice.normalized_inversion_distance
-        ):
-            reasons.append(
-                GateReason(
-                    "slice-inversion-nonregression",
-                    arm,
-                    "fail",
-                    f"slice {name} regressed",
-                )
-            )
+    reasons.extend(_required_slice_nonregression(control, candidate, arm))
     return not reasons, reasons
 
 
@@ -118,6 +143,7 @@ def evaluate_verdict(
     a_exercised: bool,
     b_exercised: bool,
 ) -> VerdictResult:
+    """Low-level frozen gate evaluator; normal qualification derives its booleans."""
     reasons: list[GateReason] = []
     if not harness_valid:
         reasons.append(

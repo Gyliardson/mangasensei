@@ -9,9 +9,14 @@ from shutil import which
 
 from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ArmId
 
-from .canonical import canonical_json_bytes, sha256_bytes, write_canonical_json
+from .canonical import write_canonical_json
+from .comparison import (
+    build_repeat_hash_record,
+    evaluate_qualification,
+    require_repeat_determinism,
+)
 from .contracts import PAGE_IDS, load_ground_truth
-from .scoring import score_corpus, score_page
+from .scoring import CorpusScore, score_corpus, score_page
 from .validate_corpus import CORPUS_ROOT, validate_corpus
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -73,50 +78,75 @@ def _aggregate_repeat(
     return diagnostics, ordering
 
 
+def _score_repeat(ordering: list[dict[str, object]]) -> CorpusScore:
+    page_scores = []
+    for order in ordering:
+        page_id = order.get("pageId")
+        final_order = order.get("finalOrder")
+        if (
+            not isinstance(page_id, str)
+            or page_id not in PAGE_IDS
+            or not isinstance(final_order, list)
+            or not all(isinstance(item, str) for item in final_order)
+        ):
+            raise ValueError("malformed ordering output")
+        gt = load_ground_truth(CORPUS_ROOT / "annotations" / f"{page_id}.json")
+        page_scores.append(score_page(gt, tuple(final_order)))
+    return score_corpus(tuple(page_scores))
+
+
 def main() -> None:
     # Qualification remains impossible until PR2 supplies and freezes all H01-H16 assets.
     validate_corpus(CORPUS_ROOT)
     repository_sha = _git_head()
-    arm_scores = {}
+    arm_scores: dict[ArmId, CorpusScore] = {}
+    selected_diagnostics: dict[ArmId, list[dict[str, object]]] = {}
+    selected_ordering: dict[ArmId, list[dict[str, object]]] = {}
+    repeat_hashes_by_arm: dict[ArmId, list[dict[str, str]]] = {}
+
     for arm in ArmId:
         repeat_hashes: list[dict[str, str]] = []
         first_diagnostics: list[dict[str, object]] | None = None
         first_ordering: list[dict[str, object]] | None = None
+        first_score: CorpusScore | None = None
         for repeat in (1, 2, 3):
             for page_id in PAGE_IDS:
                 _run_fresh_process(page_id, arm, repository_sha, repeat)
             diagnostics, ordering = _aggregate_repeat(arm, repeat)
-            hashes = {
-                "diagnosticsSha256": sha256_bytes(canonical_json_bytes(diagnostics)),
-                "orderingSha256": sha256_bytes(canonical_json_bytes(ordering)),
-            }
-            repeat_hashes.append(hashes)
+            corpus_score = _score_repeat(ordering)
+            repeat_hashes.append(
+                build_repeat_hash_record(diagnostics, ordering, corpus_score)
+            )
             if repeat == 1:
-                first_diagnostics, first_ordering = diagnostics, ordering
-        if len({item["diagnosticsSha256"] for item in repeat_hashes}) != 1 or len(
-            {item["orderingSha256"] for item in repeat_hashes}
-        ) != 1:
-            raise RuntimeError(f"{arm.value}: nondeterministic output across fresh-process repeats")
+                first_diagnostics = diagnostics
+                first_ordering = ordering
+                first_score = corpus_score
+
+        require_repeat_determinism(arm, repeat_hashes)
         assert first_diagnostics is not None
         assert first_ordering is not None
-        page_scores = []
-        for order in first_ordering:
-            page_id = order["pageId"]
-            final_order = order["finalOrder"]
-            if (
-                not isinstance(page_id, str)
-                or not isinstance(final_order, list)
-                or not all(isinstance(item, str) for item in final_order)
-            ):
-                raise ValueError("malformed ordering output")
-            gt = load_ground_truth(CORPUS_ROOT / "annotations" / f"{page_id}.json")
-            page_scores.append(score_page(gt, tuple(final_order)))
-        corpus_score = score_corpus(tuple(page_scores))
-        arm_scores[arm.value] = corpus_score
+        assert first_score is not None
+
+        selected_diagnostics[arm] = first_diagnostics
+        selected_ordering[arm] = first_ordering
+        repeat_hashes_by_arm[arm] = repeat_hashes
+        arm_scores[arm] = first_score
         write_canonical_json(SUMMARY_ROOT / arm.value / "repeat-hashes.json", repeat_hashes)
-        write_canonical_json(SUMMARY_ROOT / arm.value / "scores.json", corpus_score)
-    # Formal verdict/evidence assembly intentionally occurs in a separate reviewed execution step.
-    write_canonical_json(SUMMARY_ROOT / "arm-scores.json", arm_scores)
+        write_canonical_json(SUMMARY_ROOT / arm.value / "scores.json", first_score)
+
+    comparison, verdict = evaluate_qualification(
+        corpus_root=CORPUS_ROOT,
+        diagnostics_by_arm=selected_diagnostics,
+        ordering_by_arm=selected_ordering,
+        repeat_hashes_by_arm=repeat_hashes_by_arm,
+        scores_by_arm=arm_scores,
+    )
+    write_canonical_json(
+        SUMMARY_ROOT / "arm-scores.json",
+        {arm.value: score for arm, score in arm_scores.items()},
+    )
+    write_canonical_json(SUMMARY_ROOT / "comparison.json", comparison)
+    write_canonical_json(SUMMARY_ROOT / "verdict.json", verdict)
 
 
 if __name__ == "__main__":

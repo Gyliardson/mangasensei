@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fractions import Fraction
 
+from scripts.reading_order_v2.contracts import REQUIRED_SLICES
 from scripts.reading_order_v2.scoring import CorpusScore, PairMetrics
 from scripts.reading_order_v2.verdict import Verdict, evaluate_verdict
 
@@ -21,11 +22,14 @@ def _metric(
 
 
 def _score(global_wrong=(), a_wrong=(), b_wrong=()) -> CorpusScore:
+    slices = {name: _metric(()) for name in REQUIRED_SLICES}
+    slices["A"] = _metric(tuple(a_wrong))
+    slices["B"] = _metric(tuple(b_wrong))
     return CorpusScore(
         page_count=16,
         exact_sequence_pages=16 - len(global_wrong),
         aggregate=_metric(tuple(global_wrong)),
-        slices={"A": _metric(tuple(a_wrong)), "B": _metric(tuple(b_wrong))},
+        slices=slices,
         pages=(),
     )
 
@@ -89,7 +93,7 @@ def test_a_b_combined_fail_and_pass_paths() -> None:
     assert result.verdict is Verdict.COMBINED_FAIL
 
 
-def test_exercised_hypothesis_without_control_failure_is_inconclusive() -> None:
+def test_exercised_hypothesis_without_control_failure_is_inclusive() -> None:
     no_a_failure = _score((("c", "d"),), (), (("c", "d"),))
     b_pass = _score((), (), ())
     result = _evaluate(no_a_failure, no_a_failure, b_pass, b_pass)
@@ -101,3 +105,18 @@ def test_exercised_hypothesis_without_control_failure_is_inconclusive() -> None:
     result = _evaluate(no_b_failure, a_pass, no_b_failure, a_pass)
     assert result.verdict is Verdict.B_INCONCLUSIVE
     assert result.b_status == "INCONCLUSIVE"
+
+
+def test_candidate_missing_required_control_slice_cannot_pass() -> None:
+    control = _score(
+        (("a", "b"), ("c", "d")),
+        (("a", "b"),),
+        (("c", "d"),),
+    )
+    a_pass = _score((("c", "d"),), (), (("c", "d"),))
+    b_pass = _score((("a", "b"),), (("a", "b"),), ())
+    combined = _score()
+    del a_pass.slices["horizontal-only"]
+    result = _evaluate(control, a_pass, b_pass, combined)
+    assert result.verdict is Verdict.A_FAIL
+    assert any(reason.gate == "required-slice" for reason in result.reasons)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,17 +14,19 @@ CORPUS_VERSION = "1.0.0"
 PAGE_IDS = tuple(f"H{index:02d}" for index in range(1, 17))
 PAGE_ID_RE = re.compile(r"^H(?:0[1-9]|1[0-6])$")
 HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
-REQUIRED_SLICES = {
-    "A",
-    "B",
-    "A+B",
-    "clean-control",
-    "vertical-only",
-    "horizontal-only",
-    "mixed",
-    "partial-assignment",
-    "intentional-fallback",
-}
+REQUIRED_SLICES = frozenset(
+    {
+        "A",
+        "B",
+        "A+B",
+        "clean-control",
+        "vertical-only",
+        "horizontal-only",
+        "mixed",
+        "partial-assignment",
+        "intentional-fallback",
+    }
+)
 
 
 class ContractError(ValueError):
@@ -211,6 +214,12 @@ def load_ground_truth(path: Path) -> PageGroundTruth:
             raise ContractError(
                 f"{path}.qualificationPairs[{index}].slices: nonempty string array required"
             )
+        unknown_slices = sorted(set(slices) - REQUIRED_SLICES)
+        if unknown_slices:
+            raise ContractError(
+                f"{path}.qualificationPairs[{index}].slices: unknown frozen slices "
+                f"{unknown_slices}"
+            )
         if pair_id in seen_pair_ids or (earlier, later) in seen_pair_keys:
             raise ContractError(f"{path}: duplicate qualification pair")
         seen_pair_ids.add(pair_id)
@@ -248,6 +257,19 @@ def load_ground_truth(path: Path) -> PageGroundTruth:
         tuple(sorted(set(tags))),
         tuple(panels),
     )
+
+
+def validate_required_slice_inventory(pages: Iterable[PageGroundTruth]) -> None:
+    counts = {name: 0 for name in REQUIRED_SLICES}
+    for page in pages:
+        for pair in page.qualification_pairs:
+            for name in pair.slices:
+                if name not in REQUIRED_SLICES:
+                    raise ContractError(f"{page.page_id}: unknown frozen slice {name}")
+                counts[name] += 1
+    missing = sorted(name for name, count in counts.items() if count <= 0)
+    if missing:
+        raise ContractError(f"held-out corpus missing required qualification slices: {missing}")
 
 
 def validate_corpus_design(data: dict[str, Any]) -> None:

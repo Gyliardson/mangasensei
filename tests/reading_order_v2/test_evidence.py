@@ -7,6 +7,7 @@ import pytest
 from scripts.reading_order_v2.evidence import (
     MANDATORY_MEMBERS,
     EvidenceError,
+    scan_safe_text,
     validate_staging_tree,
     verify_checksums,
     write_checksums,
@@ -69,7 +70,7 @@ def test_evidence_rejects_unexpected_member_symlink_private_path_and_secret(tmp_
     extra.unlink()
 
     readme = root / "README.md"
-    readme.write_text('path=/home/alice/project\n', encoding="utf-8")
+    readme.write_text("path=/home/alice/project\n", encoding="utf-8")
     write_checksums(root)
     with pytest.raises(EvidenceError):
         validate_staging_tree(root)
@@ -77,6 +78,54 @@ def test_evidence_rejects_unexpected_member_symlink_private_path_and_secret(tmp_
     write_checksums(root)
     with pytest.raises(EvidenceError):
         validate_staging_tree(root)
+
+
+@pytest.mark.parametrize(
+    "private_path",
+    [
+        r"C:\Arquivos\GitHub\Projetos\MangaSensei",
+        r"D:\research\artifact",
+        "/mnt/data/artifact",
+        "/tmp/private-output",
+        "/home/alice/project",
+    ],
+)
+def test_evidence_rejects_generic_private_absolute_paths(private_path: str) -> None:
+    with pytest.raises(EvidenceError):
+        scan_safe_text("README.md", f"path={private_path}\n".encode())
+
+
+@pytest.mark.parametrize(
+    "safe_text",
+    [
+        "scripts/reading_order_v2/run_arm.py",
+        "harness/source/foo.py",
+        "https://json-schema.org/draft/2020-12/schema",
+        "normal non-path prose",
+    ],
+)
+def test_evidence_allows_repository_paths_urls_and_prose(safe_text: str) -> None:
+    scan_safe_text("README.md", safe_text.encode())
+
+
+def test_evidence_rejects_absolute_path_in_structured_json(tmp_path) -> None:
+    root = _stage(tmp_path)
+    comparison = root / "comparison.json"
+    comparison.write_text(json.dumps({"localPath": "/mnt/data/artifact"}), encoding="utf-8")
+    write_checksums(root)
+    with pytest.raises(EvidenceError):
+        validate_staging_tree(root)
+
+
+def test_evidence_allows_https_json_schema_value(tmp_path) -> None:
+    root = _stage(tmp_path)
+    comparison = root / "comparison.json"
+    comparison.write_text(
+        json.dumps({"$schema": "https://json-schema.org/draft/2020-12/schema"}),
+        encoding="utf-8",
+    )
+    write_checksums(root)
+    validate_staging_tree(root)
 
 
 def test_evidence_rejects_checksum_mismatch(tmp_path) -> None:

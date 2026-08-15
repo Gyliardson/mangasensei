@@ -12,9 +12,11 @@ from .contracts import (
     CORPUS_VERSION,
     PAGE_IDS,
     ContractError,
+    PageGroundTruth,
     load_arm_input,
     load_ground_truth,
     validate_corpus_design,
+    validate_required_slice_inventory,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -55,6 +57,7 @@ def validate_corpus(root: Path = CORPUS_ROOT) -> None:
     clean_pages = 0
     fallback_pages = 0
     open_pages = 0
+    ground_truth_pages: list[PageGroundTruth] = []
     for page_record in pages:
         assert isinstance(page_record, dict)
         page_id = page_record["id"]
@@ -76,6 +79,7 @@ def validate_corpus(root: Path = CORPUS_ROOT) -> None:
                 raise ContractError(f"{page_id}: image must be single RGB 1440x2048 PNG")
         arm_input = load_arm_input(root / expected_paths["input"])
         gt = load_ground_truth(root / expected_paths["annotation"])
+        ground_truth_pages.append(gt)
         if arm_input.page_id != page_id or gt.page_id != page_id:
             raise ContractError(f"{page_id}: page IDs disagree")
         input_ids = {region.region_id for region in arm_input.regions}
@@ -100,6 +104,7 @@ def validate_corpus(root: Path = CORPUS_ROOT) -> None:
         raise ContractError("held-out corpus does not meet frozen B pair/page minima")
     if clean_pages < 4 or fallback_pages < 2 or open_pages < 2:
         raise ContractError("held-out corpus does not meet frozen layout minima")
+    validate_required_slice_inventory(ground_truth_pages)
 
     inventory = manifest.get("inventory")
     if not isinstance(inventory, list):
