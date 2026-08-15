@@ -270,13 +270,20 @@ def _pair_bound_b_evidence(
         ):
             result["horizontal"].append(pair.pair_id)
 
+        first_run = first.get("localRunId")
+        second_run = second.get("localRunId")
+        distinct_runs = (
+            isinstance(first_run, str)
+            and bool(first_run)
+            and isinstance(second_run, str)
+            and bool(second_run)
+            and first_run != second_run
+        )
         if (
             _is_b_pair(pair)
             and "mixed" in pair.slices
             and same_tier
-            and not same_run
-            and isinstance(first.get("localRunId"), str)
-            and isinstance(second.get("localRunId"), str)
+            and distinct_runs
             and first_mode == second_mode == "mixed"
             and {first_orientation, second_orientation} == {"horizontal", "vertical"}
         ):
