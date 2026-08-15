@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pytest
@@ -78,13 +80,41 @@ def test_group_tie_key_matches_actual_a0_and_a1_scheduler_keys(
 ) -> None:
     boxes = (PanelBox(520, 50, 950, 480), PanelBox(50, 50, 480, 480))
     segmentation = PanelSegmentation(boxes, True, "reliable")
-    a0 = _run_with_segmentation(monkeypatch, segmentation, ArmId.A0_B0_CONTROL)
-    assert a0["groups"][0]["tieKey"] == [0.0, 50, -950, 0]
-    assert a0["groups"][1]["tieKey"] == [1.0, 50, -480, 1]
+    captured: dict[str, list[tuple[Any, ...]]] = {}
 
+    original_production_scheduler = production._deterministic_topological_order
+
+    def capture_a0(
+        node_count: int,
+        edges: Sequence[tuple[int, int]],
+        *,
+        tie_key: Callable[[int], tuple[Any, ...]],
+    ) -> tuple[int, ...] | None:
+        captured["a0"] = [tie_key(index) for index in range(node_count)]
+        return original_production_scheduler(node_count, edges, tie_key=tie_key)
+
+    monkeypatch.setattr(production, "_deterministic_topological_order", capture_a0)
+    a0 = _run_with_segmentation(monkeypatch, segmentation, ArmId.A0_B0_CONTROL)
+    assert [group["tieKey"] for group in a0["groups"]] == [
+        list(key) for key in captured["a0"]
+    ]
+
+    original_a1_scheduler = v2._deterministic_topological_order
+
+    def capture_a1(
+        node_count: int,
+        edges: Sequence[tuple[int, int]],
+        *,
+        tie_key: Callable[[int], tuple[Any, ...]],
+    ) -> tuple[int, ...] | None:
+        captured["a1"] = [tie_key(index) for index in range(node_count)]
+        return original_a1_scheduler(node_count, edges, tie_key=tie_key)
+
+    monkeypatch.setattr(v2, "_deterministic_topological_order", capture_a1)
     a1 = _run_with_segmentation(monkeypatch, segmentation, ArmId.A1_B0_PANEL_ONLY)
-    assert a1["groups"][0]["tieKey"] == [0.0, 0, 50, -950, 0]
-    assert a1["groups"][1]["tieKey"] == [1.0, 0, 50, -480, 1]
+    assert [group["tieKey"] for group in a1["groups"]] == [
+        list(key) for key in captured["a1"]
+    ]
 
 
 def test_unreliable_segmentation_keeps_candidate_membership_diagnostics(
