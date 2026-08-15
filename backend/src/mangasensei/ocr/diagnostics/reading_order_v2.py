@@ -313,6 +313,7 @@ def _b1_local_order(
             for item in run:
                 ref = refs_by_object[id(item.region)]
                 _, y1, _, _, center2x, _ = _raw_geometry(item.region)
+                intra: tuple[object, ...]
                 if orientation is OrientationClass.HORIZONTAL:
                     intra = (center2x, 2 * y1, ref.source_index)
                 elif orientation is OrientationClass.VERTICAL:
