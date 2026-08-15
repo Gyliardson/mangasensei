@@ -1,0 +1,275 @@
+name: Reading Order v2 held-out prequalification revision
+
+on:
+  push:
+    branches:
+      - automation/reading-order-v2-heldout-revision
+
+permissions:
+  contents: write
+
+jobs:
+  revise-render-freeze:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+        env:
+          POSTGRES_DB: mangasensei
+          POSTGRES_USER: mangasensei
+          POSTGRES_PASSWORD: mangasensei
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U mangasensei -d mangasensei"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      PYTHONPATH: ${{ github.workspace }}/repo
+      MANGASENSEI_TEST_DATABASE_URL: postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55432/mangasensei
+    steps:
+      - name: Checkout revision authoring helper
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: automation/reading-order-v2-heldout-revision
+          path: tool
+
+      - name: Checkout PR2 branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: test/reading-order-v2-heldout-v1
+          fetch-depth: 0
+          path: repo
+
+      - name: Guard branch and merge current main without force
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "e7edc5349901ab1607cfe8f7018a915946687a90"
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "04ea971b0de17119e454a5b2c6c52edb45a06b75"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git merge --no-ff --no-edit 04ea971b0de17119e454a5b2c6c52edb45a06b75
+          echo "MERGED_HEAD=$(git rev-parse HEAD)"
+
+      - name: Apply authored H01 H03 H04 revision
+        working-directory: repo
+        run: python ../tool/.github/ro2-revision/revise.py
+
+      - name: Guard frozen methodology and scope before tooling
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          git diff --exit-code 04ea971b0de17119e454a5b2c6c52edb45a06b75 -- \
+            assets/reading-order-v2/heldout-v1/corpus-design.json \
+            scripts/reading_order_v2/spec/experiment-spec-v1.json \
+            scripts/reading_order_v2/schemas/input-v1.json \
+            scripts/reading_order_v2/schemas/annotation-v1.json \
+            backend/src/mangasensei/ocr/reading_order.py \
+            backend/src/mangasensei/ocr/diagnostics/reading_order_v2.py \
+            scripts/reading_order_v2/scoring.py \
+            scripts/reading_order_v2/verdict.py
+          test -z "$(git status --porcelain -- uv.lock package-lock.json frontend/package-lock.json)"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: repo/package-lock.json
+
+      - name: Install Node dependencies from lockfile
+        working-directory: repo
+        run: npm ci
+
+      - name: Install canonical Chromium
+        working-directory: repo/frontend
+        run: npx --no-install playwright install --with-deps chromium
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install Python dependencies from lockfile
+        working-directory: repo
+        run: uv sync --frozen --extra ocr
+
+      - name: Validate frozen design before render
+        working-directory: repo
+        run: uv run python -m scripts.reading_order_v2.validate_design
+
+      - name: Render canonical corpus images
+        working-directory: repo
+        run: node scripts/reading_order_v2/render.mjs
+
+      - name: Record revised rendering provenance
+        working-directory: repo
+        shell: bash
+        run: |
+          set -euo pipefail
+          chromium_version="$(node - <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => { const browser = await chromium.launch({ headless: true }); console.log(browser.version()); await browser.close(); })().catch((error) => { console.error(error); process.exit(1); });
+          NODE
+          )"
+          chromium_revision="$(node - <<'NODE'
+          const fs = require('node:fs'); const path = require('node:path');
+          const pkg = require.resolve('playwright-core/package.json');
+          const browsers = JSON.parse(fs.readFileSync(path.join(path.dirname(pkg), 'browsers.json'), 'utf8'));
+          const chromium = browsers.browsers.find((entry) => entry.name === 'chromium');
+          if (!chromium) process.exit(1); console.log(chromium.revision);
+          NODE
+          )"
+          export CHROMIUM_VERSION="${chromium_version}"
+          export CHROMIUM_REVISION="${chromium_revision}"
+          export NODE_VERSION="$(node --version)"
+          export NPM_VERSION="$(npm --version)"
+          export PLAYWRIGHT_VERSION="$(node -p "require('playwright/package.json').version")"
+          export RENDERER_BLOB="$(git hash-object scripts/reading_order_v2/render.mjs)"
+          export RENDERER_SHA256="$(sha256sum scripts/reading_order_v2/render.mjs | cut -d' ' -f1)"
+          export PACKAGE_LOCK_SHA256="$(sha256sum package-lock.json | cut -d' ' -f1)"
+          export REPOSITORY_BASE_COMMIT="$(git rev-parse HEAD)"
+          export REVISION_SCRIPT_SHA256="$(sha256sum ../tool/.github/ro2-revision/revise.py | cut -d' ' -f1)"
+          python - <<'PY'
+          import json, os, platform
+          from pathlib import Path
+          path = Path("assets/reading-order-v2/heldout-v1/provenance/toolchain.json")
+          prior = json.loads(path.read_text(encoding="utf-8"))
+          prior.update({
+              "platformClass": "GitHub Actions ubuntu-24.04",
+              "os": platform.system(),
+              "architecture": platform.machine(),
+              "node": os.environ["NODE_VERSION"],
+              "npm": os.environ["NPM_VERSION"],
+              "playwright": os.environ["PLAYWRIGHT_VERSION"],
+              "chromiumRevision": os.environ["CHROMIUM_REVISION"],
+              "chromiumVersion": os.environ["CHROMIUM_VERSION"],
+              "rendererGitBlob": os.environ["RENDERER_BLOB"],
+              "rendererSha256": os.environ["RENDERER_SHA256"],
+              "packageLockSha256": os.environ["PACKAGE_LOCK_SHA256"],
+              "repositoryBaseCommit": os.environ["REPOSITORY_BASE_COMMIT"],
+              "preQualificationRevisionFrom": "e7edc5349901ab1607cfe8f7018a915946687a90",
+              "preQualificationRevisionMain": "04ea971b0de17119e454a5b2c6c52edb45a06b75",
+              "revisionAuthoringScriptSha256": os.environ["REVISION_SCRIPT_SHA256"],
+          })
+          path.write_text(json.dumps(prior, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+      - name: Run static orientation assignment and pair structure validation
+        working-directory: repo
+        run: uv run pytest tests/reading_order_v2/test_heldout_fixture_orientation.py -q
+
+      - name: Freeze revised corpus
+        working-directory: repo
+        run: uv run python -m scripts.reading_order_v2.freeze
+
+      - name: Validate final frozen corpus
+        working-directory: repo
+        run: uv run python -m scripts.reading_order_v2.validate_corpus
+
+      - name: Run requested Reading Order v2 tests
+        working-directory: repo
+        run: |
+          uv run pytest \
+            tests/reading_order_v2/test_heldout_corpus.py \
+            tests/reading_order_v2/test_heldout_fixture_orientation.py \
+            tests/reading_order_v2
+
+      - name: Ruff
+        working-directory: repo
+        run: uv run ruff check backend/src tests scripts
+
+      - name: mypy strict
+        working-directory: repo
+        run: uv run mypy backend/src
+
+      - name: Full pytest with coverage
+        working-directory: repo
+        run: |
+          uv run pytest --cov --cov-report=term
+          uv run coverage json -o /tmp/coverage.json
+          python - <<'PY'
+          import json
+          print(f"TOTAL_COVERAGE={json.load(open('/tmp/coverage.json'))['totals']['percent_covered_display']}%")
+          PY
+
+      - name: Build wheel and sdist
+        working-directory: repo
+        run: uv build
+
+      - name: Report frozen identities and verify final scope
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain -- uv.lock package-lock.json frontend/package-lock.json)"
+          git diff --exit-code 04ea971b0de17119e454a5b2c6c52edb45a06b75 -- \
+            assets/reading-order-v2/heldout-v1/corpus-design.json \
+            scripts/reading_order_v2/spec/experiment-spec-v1.json \
+            scripts/reading_order_v2/schemas/input-v1.json \
+            scripts/reading_order_v2/schemas/annotation-v1.json \
+            backend/src/mangasensei/ocr/reading_order.py \
+            backend/src/mangasensei/ocr/diagnostics/reading_order_v2.py \
+            scripts/reading_order_v2/scoring.py \
+            scripts/reading_order_v2/verdict.py
+          echo AFFECTED_IMAGE_HASHES_BEGIN
+          sha256sum assets/reading-order-v2/heldout-v1/images/H01.png assets/reading-order-v2/heldout-v1/images/H03.png assets/reading-order-v2/heldout-v1/images/H04.png
+          echo AFFECTED_IMAGE_HASHES_END
+          echo MANIFEST_SHA256="$(sha256sum assets/reading-order-v2/heldout-v1/manifest.json | cut -d' ' -f1)"
+          echo CORPUS_DESIGN_SHA256="$(sha256sum assets/reading-order-v2/heldout-v1/corpus-design.json | cut -d' ' -f1)"
+          echo REVISION_SCRIPT_SHA256="$(sha256sum ../tool/.github/ro2-revision/revise.py | cut -d' ' -f1)"
+          echo CHANGED_SINCE_PREVIOUS_HEAD_BEGIN
+          git diff --name-only e7edc5349901ab1607cfe8f7018a915946687a90
+          echo CHANGED_SINCE_PREVIOUS_HEAD_END
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("assets/reading-order-v2/heldout-v1")
+          a_pairs = b_pairs = 0
+          a_pages, b_pages, slices = set(), set(), set()
+          horizontal, mixed, vertical = [], [], []
+          for path in sorted((root / "annotations").glob("H*.json")):
+              page = json.loads(path.read_text())
+              for pair in page["qualificationPairs"]:
+                  ps = set(pair["slices"])
+                  slices |= ps
+                  if {"A", "A+B"} & ps:
+                      a_pairs += 1; a_pages.add(page["pageId"])
+                  if {"B", "A+B"} & ps:
+                      b_pairs += 1; b_pages.add(page["pageId"])
+                  if "horizontal-only" in ps and ({"B", "A+B"} & ps): horizontal.append(pair["id"])
+                  if "mixed" in ps and ({"B", "A+B"} & ps): mixed.append(pair["id"])
+                  if "vertical-only" in ps: vertical.append(pair["id"])
+          print("A_PAIRS", a_pairs, "A_PAGES", sorted(a_pages))
+          print("B_PAIRS", b_pairs, "B_PAGES", sorted(b_pages))
+          print("SLICES", sorted(slices))
+          print("HORIZONTAL_B_PAIRS", horizontal)
+          print("MIXED_B_PAIRS", mixed)
+          print("VERTICAL_CONTROL_PAIRS", vertical)
+          PY
+
+      - name: Commit and push PR2 revision
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          git add assets/reading-order-v2/heldout-v1 tests/reading_order_v2/test_heldout_fixture_orientation.py
+          python - <<'PY'
+          import subprocess
+          names = subprocess.check_output(["git", "diff", "--cached", "--name-only"], text=True).splitlines()
+          assert names
+          allowed = all(
+              name.startswith("assets/reading-order-v2/heldout-v1/")
+              or name == "tests/reading_order_v2/test_heldout_fixture_orientation.py"
+              for name in names
+          )
+          assert allowed, names
+          assert "assets/reading-order-v2/heldout-v1/corpus-design.json" not in names
+          print("STAGED_REVISION_FILES", names)
+          PY
+          git commit -m "test(reading-order): align held-out B pair geometry"
+          git push origin HEAD:refs/heads/test/reading-order-v2-heldout-v1
+          echo FINAL_PR_HEAD="$(git rev-parse HEAD)"
