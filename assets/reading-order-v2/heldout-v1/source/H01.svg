@@ -2,12 +2,12 @@
 <rect x="0" y="0" width="1440" height="2048" fill="#ffffff"/>
 <rect x="760" y="180" width="560" height="1050" fill="#fafafa" stroke="#202020" stroke-width="12"/>
 <rect x="120" y="300" width="520" height="1200" fill="#fafafa" stroke="#202020" stroke-width="12"/>
-<rect x="900" y="330" width="260" height="28" rx="6" fill="#303030"/>
-<rect x="900" y="384" width="260" height="28" rx="6" fill="#303030"/>
-<rect x="1030" y="470" width="250" height="28" rx="6" fill="#303030"/>
-<rect x="1030" y="524" width="250" height="28" rx="6" fill="#303030"/>
+<rect x="800" y="360" width="150" height="28" rx="6" fill="#303030"/>
+<rect x="800" y="414" width="150" height="28" rx="6" fill="#303030"/>
+<rect x="970" y="366" width="150" height="28" rx="6" fill="#303030"/>
+<rect x="970" y="420" width="150" height="28" rx="6" fill="#303030"/>
 <rect x="250" y="500" width="260" height="28" rx="6" fill="#303030"/>
 <rect x="250" y="554" width="260" height="28" rx="6" fill="#303030"/>
-<rect x="820" y="610" width="270" height="28" rx="6" fill="#303030"/>
-<rect x="820" y="664" width="270" height="28" rx="6" fill="#303030"/>
+<rect x="1140" y="372" width="150" height="28" rx="6" fill="#303030"/>
+<rect x="1140" y="426" width="150" height="28" rx="6" fill="#303030"/>
 </svg>
