@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "reading-order-v2-annotation-v1",
+  "pageId": "H01",
+  "readingOrder": [
+    "ro2h-H01-r001",
+    "ro2h-H01-r002",
+    "ro2h-H01-r004",
+    "ro2h-H01-r003"
+  ],
+  "unscoredRegionIds": [],
+  "qualificationPairs": [
+    {
+      "id": "ro2h-H01-q001",
+      "earlier": "ro2h-H01-r001",
+      "later": "ro2h-H01-r002",
+      "slices": [
+        "B",
+        "clean-control",
+        "horizontal-only"
+      ]
+    },
+    {
+      "id": "ro2h-H01-q002",
+      "earlier": "ro2h-H01-r002",
+      "later": "ro2h-H01-r004",
+      "slices": [
+        "B",
+        "clean-control",
+        "horizontal-only"
+      ]
+    },
+    {
+      "id": "ro2h-H01-q003",
+      "earlier": "ro2h-H01-r004",
+      "later": "ro2h-H01-r003",
+      "slices": [
+        "clean-control"
+      ]
+    }
+  ],
+  "layoutTags": [
+    "clean-control",
+    "horizontal-only",
+    "adjacent-horizontal-fragments"
+  ],
+  "panels": [
+    {
+      "id": "p-right",
+      "bbox": {
+        "x": 760,
+        "y": 180,
+        "width": 560,
+        "height": 1050
+      },
+      "precedencePosition": 0
+    },
+    {
+      "id": "p-left",
+      "bbox": {
+        "x": 120,
+        "y": 300,
+        "width": 520,
+        "height": 1200
+      },
+      "precedencePosition": 1
+    }
+  ],
+  "orientationExpectations": [
+    {
+      "regionId": "ro2h-H01-r001",
+      "expected": "horizontal"
+    },
+    {
+      "regionId": "ro2h-H01-r002",
+      "expected": "horizontal"
+    },
+    {
+      "regionId": "ro2h-H01-r003",
+      "expected": "horizontal"
+    },
+    {
+      "regionId": "ro2h-H01-r004",
+      "expected": "horizontal"
+    }
+  ],
+  "assignmentExpectations": [
+    {
+      "regionId": "ro2h-H01-r001",
+      "expected": "unique",
+      "panelId": "p-right"
+    },
+    {
+      "regionId": "ro2h-H01-r002",
+      "expected": "unique",
+      "panelId": "p-right"
+    },
+    {
+      "regionId": "ro2h-H01-r003",
+      "expected": "unique",
+      "panelId": "p-left"
+    },
+    {
+      "regionId": "ro2h-H01-r004",
+      "expected": "unique",
+      "panelId": "p-right"
+    }
+  ]
+}

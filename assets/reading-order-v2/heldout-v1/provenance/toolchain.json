@@ -1,0 +1,16 @@
+{
+  "architecture": "x86_64",
+  "chromiumRevision": "1234",
+  "chromiumVersion": "151.0.7922.34",
+  "node": "v22.23.2",
+  "npm": "10.9.8",
+  "os": "Linux",
+  "packageLockSha256": "9c1a32e3f8e969d8fb12130f3c75f9158c6c0fab908cedf4f52200001473ed59",
+  "platformClass": "GitHub Actions ubuntu-24.04",
+  "playwright": "1.62.1",
+  "rendererGitBlob": "919afd55abebe5caabfe46d66eeb1b542be46e32",
+  "rendererSha256": "862b83d647694179eb449fd03ed92f29f4f91cc00f272abd0ae004f6a0dfdb49",
+  "repositoryBaseCommit": "6ac0de4ea17b98076f88230023aa5f05fab4dc66",
+  "schemaVersion": "reading-order-v2-toolchain-provenance-v1",
+  "sourcePayloadSha256": "7f5f812b46c923d53da5786b0acc354c5222d33cb8ae877af0a14e52fb2814fd"
+}

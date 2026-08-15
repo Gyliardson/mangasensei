@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "reading-order-v2-annotation-v1",
+  "pageId": "H08",
+  "readingOrder": [
+    "ro2h-H08-r001",
+    "ro2h-H08-r002",
+    "ro2h-H08-r004",
+    "ro2h-H08-r003"
+  ],
+  "unscoredRegionIds": [],
+  "qualificationPairs": [
+    {
+      "id": "ro2h-H08-q001",
+      "earlier": "ro2h-H08-r002",
+      "later": "ro2h-H08-r004",
+      "slices": [
+        "A",
+        "partial-assignment"
+      ]
+    },
+    {
+      "id": "ro2h-H08-q002",
+      "earlier": "ro2h-H08-r004",
+      "later": "ro2h-H08-r003",
+      "slices": [
+        "A",
+        "partial-assignment",
+        "intentional-fallback"
+      ]
+    }
+  ],
+  "layoutTags": [
+    "open-frame",
+    "partial-assignment",
+    "intentional-fallback",
+    "region-through-frame"
+  ],
+  "panels": [
+    {
+      "id": "p-open-right",
+      "bbox": {
+        "x": 760,
+        "y": 180,
+        "width": 560,
+        "height": 1080
+      },
+      "precedencePosition": 0
+    },
+    {
+      "id": "p-left",
+      "bbox": {
+        "x": 120,
+        "y": 420,
+        "width": 520,
+        "height": 1280
+      },
+      "precedencePosition": 1
+    }
+  ],
+  "orientationExpectations": [
+    {
+      "regionId": "ro2h-H08-r001",
+      "expected": "vertical"
+    },
+    {
+      "regionId": "ro2h-H08-r002",
+      "expected": "vertical"
+    },
+    {
+      "regionId": "ro2h-H08-r003",
+      "expected": "horizontal"
+    },
+    {
+      "regionId": "ro2h-H08-r004",
+      "expected": "horizontal"
+    }
+  ],
+  "assignmentExpectations": [
+    {
+      "regionId": "ro2h-H08-r001",
+      "expected": "unique",
+      "panelId": "p-open-right"
+    },
+    {
+      "regionId": "ro2h-H08-r002",
+      "expected": "unique",
+      "panelId": "p-open-right"
+    },
+    {
+      "regionId": "ro2h-H08-r003",
+      "expected": "unique",
+      "panelId": "p-left"
+    },
+    {
+      "regionId": "ro2h-H08-r004",
+      "expected": "outside",
+      "panelId": null
+    }
+  ]
+}

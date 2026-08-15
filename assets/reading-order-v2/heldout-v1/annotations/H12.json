@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "reading-order-v2-annotation-v1",
+  "pageId": "H12",
+  "readingOrder": [
+    "ro2h-H12-r001",
+    "ro2h-H12-r002",
+    "ro2h-H12-r003"
+  ],
+  "unscoredRegionIds": [],
+  "qualificationPairs": [
+    {
+      "id": "ro2h-H12-q001",
+      "earlier": "ro2h-H12-r001",
+      "later": "ro2h-H12-r002",
+      "slices": [
+        "A",
+        "partial-assignment"
+      ]
+    },
+    {
+      "id": "ro2h-H12-q002",
+      "earlier": "ro2h-H12-r002",
+      "later": "ro2h-H12-r003",
+      "slices": [
+        "A",
+        "partial-assignment"
+      ]
+    }
+  ],
+  "layoutTags": [
+    "partial-assignment",
+    "nested-panel",
+    "ambiguous-membership"
+  ],
+  "panels": [
+    {
+      "id": "p-outer",
+      "bbox": {
+        "x": 420,
+        "y": 160,
+        "width": 900,
+        "height": 1600
+      },
+      "precedencePosition": 0
+    },
+    {
+      "id": "p-inset",
+      "bbox": {
+        "x": 650,
+        "y": 620,
+        "width": 500,
+        "height": 420
+      },
+      "precedencePosition": 1
+    }
+  ],
+  "orientationExpectations": [
+    {
+      "regionId": "ro2h-H12-r001",
+      "expected": "vertical"
+    },
+    {
+      "regionId": "ro2h-H12-r002",
+      "expected": "horizontal"
+    },
+    {
+      "regionId": "ro2h-H12-r003",
+      "expected": "horizontal"
+    }
+  ],
+  "assignmentExpectations": [
+    {
+      "regionId": "ro2h-H12-r001",
+      "expected": "unique",
+      "panelId": "p-outer"
+    },
+    {
+      "regionId": "ro2h-H12-r002",
+      "expected": "ambiguous",
+      "panelId": null
+    },
+    {
+      "regionId": "ro2h-H12-r003",
+      "expected": "unique",
+      "panelId": "p-outer"
+    }
+  ]
+}

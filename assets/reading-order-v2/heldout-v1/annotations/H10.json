@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "reading-order-v2-annotation-v1",
+  "pageId": "H10",
+  "readingOrder": [
+    "ro2h-H10-r001",
+    "ro2h-H10-r003",
+    "ro2h-H10-r002",
+    "ro2h-H10-r004"
+  ],
+  "unscoredRegionIds": [],
+  "qualificationPairs": [
+    {
+      "id": "ro2h-H10-q001",
+      "earlier": "ro2h-H10-r001",
+      "later": "ro2h-H10-r003",
+      "slices": [
+        "A",
+        "partial-assignment"
+      ]
+    },
+    {
+      "id": "ro2h-H10-q002",
+      "earlier": "ro2h-H10-r003",
+      "later": "ro2h-H10-r002",
+      "slices": [
+        "A",
+        "partial-assignment"
+      ]
+    }
+  ],
+  "layoutTags": [
+    "partial-assignment",
+    "slight-panel-overlap",
+    "ambiguous-membership"
+  ],
+  "panels": [
+    {
+      "id": "p-right",
+      "bbox": {
+        "x": 650,
+        "y": 180,
+        "width": 670,
+        "height": 1200
+      },
+      "precedencePosition": 0
+    },
+    {
+      "id": "p-left",
+      "bbox": {
+        "x": 120,
+        "y": 360,
+        "width": 660,
+        "height": 1240
+      },
+      "precedencePosition": 1
+    }
+  ],
+  "orientationExpectations": [
+    {
+      "regionId": "ro2h-H10-r001",
+      "expected": "vertical"
+    },
+    {
+      "regionId": "ro2h-H10-r002",
+      "expected": "vertical"
+    },
+    {
+      "regionId": "ro2h-H10-r003",
+      "expected": "horizontal"
+    },
+    {
+      "regionId": "ro2h-H10-r004",
+      "expected": "horizontal"
+    }
+  ],
+  "assignmentExpectations": [
+    {
+      "regionId": "ro2h-H10-r001",
+      "expected": "unique",
+      "panelId": "p-right"
+    },
+    {
+      "regionId": "ro2h-H10-r002",
+      "expected": "unique",
+      "panelId": "p-left"
+    },
+    {
+      "regionId": "ro2h-H10-r003",
+      "expected": "ambiguous",
+      "panelId": null
+    },
+    {
+      "regionId": "ro2h-H10-r004",
+      "expected": "unique",
+      "panelId": "p-left"
+    }
+  ]
+}
