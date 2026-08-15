@@ -1,0 +1,36 @@
+name: Reading Order v2 manifest hash report
+
+on:
+  push:
+    branches:
+      - automation/reading-order-v2-heldout-authoring
+    paths:
+      - .github/ro2-authoring/manifest-hash-trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  hash:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout frozen PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: e7edc5349901ab1607cfe8f7018a915946687a90
+          path: repo
+      - name: Checkout utility branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: automation/reading-order-v2-heldout-authoring
+          path: report
+      - name: Record exact SHA-256
+        run: |
+          set -euo pipefail
+          sha256sum repo/assets/reading-order-v2/heldout-v1/manifest.json | awk '{print $1}' > report/.github/ro2-authoring/manifest-sha256.txt
+          cd report
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/ro2-authoring/manifest-sha256.txt
+          git commit -m "chore(reading-order): record manifest sha256"
+          git push origin HEAD:refs/heads/automation/reading-order-v2-heldout-authoring
