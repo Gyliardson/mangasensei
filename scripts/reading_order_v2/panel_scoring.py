@@ -54,8 +54,16 @@ def score_panels(
     gt_boxes = tuple((panel.panel_id, panel.bbox) for panel in gt.panels)
     matches = assign_bbox_ids_one_to_one(gt_boxes, tuple(observed))
     tp = len(matches)
-    precision = Fraction(tp, len(observed)) if observed else Fraction(int(not gt_boxes), 1)
-    recall = Fraction(tp, len(gt_boxes)) if gt_boxes else Fraction(int(not observed), 1)
+    precision = (
+        Fraction(tp, len(observed))
+        if observed
+        else Fraction(int(not gt_boxes), 1)
+    )
+    recall = (
+        Fraction(tp, len(gt_boxes))
+        if gt_boxes
+        else Fraction(int(not observed), 1)
+    )
     f1 = (
         (2 * precision * recall) / (precision + recall)
         if precision + recall
