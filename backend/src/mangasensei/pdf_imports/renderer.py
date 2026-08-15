@@ -148,10 +148,23 @@ class PdfRenderer:
                     raise PdfSpoolError("request import identity mismatch")
                 if request.fencing_token != int(match.group("fence")):
                     raise PdfSpoolError("request fencing identity mismatch")
+                if self._spool.split_output:
+                    manifest_path = self._spool.manifest_path(
+                        request.import_id, request.fencing_token
+                    )
+                    failure_path = self._spool.failure_path(
+                        request.import_id, request.fencing_token
+                    )
+                    if self._spool.output_file_exists(
+                        manifest_path
+                    ) or self._spool.output_file_exists(failure_path):
+                        continue
                 self._process(path, request)
             except (PdfSpoolError, ValidationError, ValueError):
                 if not self._spool.split_output:
                     path.unlink(missing_ok=True)
+                    return True
+                continue
             return True
         return False
 

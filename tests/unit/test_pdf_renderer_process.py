@@ -59,6 +59,44 @@ def test_run_once_renders_in_disposable_child_process(tmp_path: Path) -> None:
     assert not request_path.exists()
 
 
+def test_split_output_skips_terminal_stale_request_and_processes_newer_fence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_root = tmp_path / "input"
+    output_root = tmp_path / "output"
+    settings = Settings(environment="test", pdf_spool_root=input_root)
+    spool = PdfSpool(input_root, output_root)
+    first = _request(spool, settings, _pdf_bytes(tmp_path / "one-page.pdf"))
+    second = first.model_copy(update={"fencing_token": 2})
+    first_path = spool.request_path(first.import_id, first.fencing_token)
+    second_path = spool.request_path(second.import_id, second.fencing_token)
+    spool.write_model_atomic(first_path, first)
+    spool.write_model_atomic(second_path, second)
+    spool.prepare_attempt_dir(first.import_id, first.fencing_token)
+    spool.prepare_attempt_dir(second.import_id, second.fencing_token)
+    spool.write_bytes_exclusive(
+        spool.manifest_path(first.import_id, first.fencing_token),
+        b"{}",
+    )
+
+    original_euid = renderer_module.os.geteuid()
+    monkeypatch.setenv("MANGASENSEI_PDF_RENDERER_OUTPUT_ROOT", str(output_root))
+    monkeypatch.setattr(renderer_module.os, "geteuid", lambda: original_euid + 1)
+    renderer = PdfRenderer(settings)
+    processed: list[int] = []
+    monkeypatch.setattr(
+        renderer,
+        "_process",
+        lambda _path, request: processed.append(request.fencing_token),
+    )
+
+    assert renderer.run_once() is True
+    assert processed == [2]
+    assert first_path.exists()
+    assert second_path.exists()
+
+
 class _FakeProcess:
     def __init__(self, *, alive: bool, exitcode: int | None) -> None:
         self._alive = alive

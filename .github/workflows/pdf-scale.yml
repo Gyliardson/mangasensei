@@ -1,0 +1,157 @@
+name: PDF Scale E3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pdf-scale.yml"
+      - "tests/pdf_scale/**"
+      - "tests/integration/test_pdf_scale_e3_recovery.py"
+      - "backend/src/mangasensei/api/**"
+      - "backend/src/mangasensei/application/pdf_imports.py"
+      - "backend/src/mangasensei/config.py"
+      - "backend/src/mangasensei/infrastructure/database/**"
+      - "backend/src/mangasensei/pdf_imports/**"
+      - "backend/src/mangasensei/runtime.py"
+      - "backend/src/mangasensei/cli.py"
+      - "backend/src/mangasensei/storage/**"
+      - "tests/integration/test_pdf_imports.py"
+      - "tests/integration/test_pdf_import_review_fixes.py"
+      - "tests/unit/test_pdf_*.py"
+      - "Dockerfile"
+      - "compose.yaml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "docs/large-document-testing.md"
+  pull_request:
+    paths:
+      - ".github/workflows/pdf-scale.yml"
+      - "tests/pdf_scale/**"
+      - "tests/integration/test_pdf_scale_e3_recovery.py"
+      - "backend/src/mangasensei/api/**"
+      - "backend/src/mangasensei/application/pdf_imports.py"
+      - "backend/src/mangasensei/config.py"
+      - "backend/src/mangasensei/infrastructure/database/**"
+      - "backend/src/mangasensei/pdf_imports/**"
+      - "backend/src/mangasensei/runtime.py"
+      - "backend/src/mangasensei/cli.py"
+      - "backend/src/mangasensei/storage/**"
+      - "tests/integration/test_pdf_imports.py"
+      - "tests/integration/test_pdf_import_review_fixes.py"
+      - "tests/unit/test_pdf_*.py"
+      - "Dockerfile"
+      - "compose.yaml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "docs/large-document-testing.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pdf-scale-e3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scale-recovery:
+    name: 200-page resources and recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+        env:
+          POSTGRES_DB: mangasensei
+          POSTGRES_USER: mangasensei
+          POSTGRES_PASSWORD: mangasensei
+        ports:
+          - 55433:5432
+        options: >-
+          --health-cmd "pg_isready -U mangasensei -d mangasensei"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      MANGASENSEI_E3_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      MANGASENSEI_TEST_DATABASE_URL: postgresql+psycopg://mangasensei:mangasensei@127.0.0.1:55433/mangasensei
+      POSTGRES_PASSWORD: pdf-scale-e3
+      MANGASENSEI_CAPABILITY_PEPPERS: '["pdf-scale-e3-capability-pepper-000000000001"]'
+      MANGASENSEI_VERSION: dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.MANGASENSEI_E3_SOURCE_SHA }}
+
+      - name: Verify exact source SHA
+        run: |
+          actual_sha="$(git rev-parse HEAD)"
+          test "${actual_sha}" = "${MANGASENSEI_E3_SOURCE_SHA}"
+          echo "PDF Scale E3 source SHA: ${actual_sha}"
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install exact locked runtime
+        run: uv sync --frozen --no-build-package pypdfium2
+
+      - name: Reset fresh E3 evidence root
+        run: |
+          root="${RUNNER_TEMP}/pdf-scale-e3"
+          rm -rf "${root}"
+          mkdir -p "${root}"
+          echo "MANGASENSEI_E3_EVIDENCE_ROOT=${root}" >> "${GITHUB_ENV}"
+
+      - name: Verify frozen source, raster contract and post-commit cleanup recovery
+        run: >-
+          uv run pytest -q
+          tests/pdf_scale/test_generator.py
+          tests/integration/test_pdf_scale_e3_recovery.py
+
+      - name: Build reviewed production image
+        run: docker build --build-arg MANGASENSEI_VERSION="$(cat VERSION)" -t mangasensei:dev .
+
+      - name: Run production-like clean scale and recovery scenarios
+        run: >-
+          uv run python -m tests.pdf_scale.scale_scenarios
+          --root "${MANGASENSEI_E3_EVIDENCE_ROOT}"
+          --source-sha "${MANGASENSEI_E3_SOURCE_SHA}"
+
+      - name: Validate final fail-closed evidence manifest
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["MANGASENSEI_E3_EVIDENCE_ROOT"])
+          result = json.loads((root / "result-manifest.json").read_text())
+          assert result["repositorySourceSha"] == os.environ["MANGASENSEI_E3_SOURCE_SHA"]
+          assert result["workload"]["sourceBytes"] == 46282
+          assert result["workload"]["sourceSha256"] == "cb181b41e45a46e138b7188d87d54620e4c1738dd654f3e6cb7eadc854ef2cf5"
+          assert result["rasterContract"]["aggregateRasterBytes"] == 48223
+          assert result["rasterContract"]["aggregatePixels"] == 1920000
+          assert set(result["scenarios"].values()) == {"pass"}
+          assert len(result["evidenceFiles"]) >= 11
+          if result["headroomReviewRequired"]:
+              print("E3 engineering headroom review threshold reached; reviewer investigation required")
+          print(json.dumps(result["scenarios"], sort_keys=True))
+          PY
+
+      - name: Upload machine-readable E3 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pdf-scale-e3-evidence
+          path: ${{ runner.temp }}/pdf-scale-e3/**/*.json
+          if-no-files-found: ignore
+
+      - name: Cleanup E3 Compose state
+        if: always()
+        run: |
+          for project in mangasensei_e3_clean mangasensei_e3_renderer_crash mangasensei_e3_importer_reclaim; do
+            COMPOSE_PROJECT_NAME="${project}" \
+              docker compose -f compose.yaml -f tests/pdf_scale/compose.e3.yml down -v --remove-orphans || true
+          done

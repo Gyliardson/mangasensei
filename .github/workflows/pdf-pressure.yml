@@ -1,0 +1,121 @@
+name: PDF Import Pressure E3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pdf-pressure.yml"
+      - "tests/pdf_scale/pressure_producer.py"
+      - "tests/pdf_scale/pressure_scenario.py"
+      - "tests/pdf_scale/runtime_common.py"
+      - "tests/pdf_scale/importer_probe.py"
+      - "tests/pdf_scale/compose.e3.yml"
+  pull_request:
+    paths:
+      - ".github/workflows/pdf-pressure.yml"
+      - "tests/pdf_scale/pressure_producer.py"
+      - "tests/pdf_scale/pressure_scenario.py"
+      - "tests/pdf_scale/runtime_common.py"
+      - "tests/pdf_scale/importer_probe.py"
+      - "tests/pdf_scale/compose.e3.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pdf-import-pressure-e3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pressure:
+    name: 480 MiB importer protocol pressure
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MANGASENSEI_E3_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      POSTGRES_PASSWORD: pdf-pressure-e3
+      MANGASENSEI_CAPABILITY_PEPPERS: '["pdf-pressure-e3-capability-pepper-000000001"]'
+      MANGASENSEI_VERSION: dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.MANGASENSEI_E3_SOURCE_SHA }}
+
+      - name: Verify exact source SHA
+        run: |
+          actual_sha="$(git rev-parse HEAD)"
+          test "${actual_sha}" = "${MANGASENSEI_E3_SOURCE_SHA}"
+          echo "PDF Import Pressure E3 source SHA: ${actual_sha}"
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install exact locked runtime
+        run: uv sync --frozen --no-build-package pypdfium2
+
+      - name: Reset fresh pressure evidence root
+        run: |
+          root="${RUNNER_TEMP}/pdf-pressure-e3"
+          rm -rf "${root}"
+          mkdir -p "${root}"
+          echo "MANGASENSEI_E3_PRESSURE_ROOT=${root}" >> "${GITHUB_ENV}"
+
+      - name: Verify deterministic exact-size pressure PNG contract
+        run: |
+          uv run python - <<'PY'
+          from tests.pdf_scale.pressure_producer import AGGREGATE_BYTES, PAGE_BYTES, pressure_png
+          first = pressure_png(0)
+          last = pressure_png(59)
+          assert len(first) == len(last) == PAGE_BYTES == 8388608
+          assert first != last
+          assert AGGREGATE_BYTES == 503316480
+          PY
+
+      - name: Build reviewed production image
+        run: docker build --build-arg MANGASENSEI_VERSION="$(cat VERSION)" -t mangasensei:dev .
+
+      - name: Run 480 MiB real-importer pressure profile
+        run: >-
+          uv run python -m tests.pdf_scale.pressure_scenario
+          --root "${MANGASENSEI_E3_PRESSURE_ROOT}"
+          --source-sha "${MANGASENSEI_E3_SOURCE_SHA}"
+
+      - name: Validate pressure result
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["MANGASENSEI_E3_PRESSURE_ROOT"])
+          result = json.loads((root / "result-manifest.json").read_text())
+          evidence = json.loads((root / "pressure-evidence.json").read_text())
+          assert result["repositorySourceSha"] == os.environ["MANGASENSEI_E3_SOURCE_SHA"]
+          assert result["result"] == "pass"
+          assert evidence["generated"]["pages"] == 60
+          assert evidence["generated"]["pageBytes"] == 8388608
+          assert evidence["generated"]["aggregateBytes"] == 503316480
+          assert evidence["finalDb"]["pages"] == 60
+          assert evidence["finalDb"]["jobs"] == 60
+          assert evidence["finalDb"]["imageBlobs"] == 60
+          if evidence["headroomReviewRequired"]:
+              print("E3 importer pressure headroom review threshold reached; reviewer investigation required")
+          PY
+
+      - name: Upload JSON pressure evidence only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pdf-pressure-e3-evidence
+          path: ${{ runner.temp }}/pdf-pressure-e3/*.json
+          if-no-files-found: ignore
+
+      - name: Cleanup pressure Compose state
+        if: always()
+        run: >-
+          COMPOSE_PROJECT_NAME=mangasensei_e3_pressure
+          docker compose -f compose.yaml -f tests/pdf_scale/compose.e3.yml
+          down -v --remove-orphans || true

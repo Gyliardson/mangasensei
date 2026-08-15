@@ -1,0 +1,2 @@
+# Exact historical false positive from the synthetic E3 pressure harness.
+5ad8f3d481b33fee2e237f2283477b3d9c394eaa:tests/pdf_scale/pressure_scenario.py:generic-api-key:79
