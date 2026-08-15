@@ -28,11 +28,19 @@ jobs:
       - name: Guard branch base and extract pre-authored corpus
         working-directory: repo
         run: |
-          test "$(git rev-parse HEAD)" = "6ac0de4ea17b98076f88230023aa5f05fab4dc66"
-          test "$(sha256sum ../tool/.github/ro2-authoring/text-assets.tar.gz | cut -d' ' -f1)" = "7f5f812b46c923d53da5786b0acc354c5222d33cb8ae877af0a14e52fb2814fd"
-          tar -xzf ../tool/.github/ro2-authoring/text-assets.tar.gz
+          set -euo pipefail
+          actual_head="$(git rev-parse HEAD)"
+          echo "target head=${actual_head}"
+          test "${actual_head}" = "6ac0de4ea17b98076f88230023aa5f05fab4dc66"
+          cat ../tool/.github/ro2-authoring/chunk-*.txt | tr -d '\n' | base64 --decode > /tmp/ro2-text-assets.tar.gz
+          actual_payload_sha="$(sha256sum /tmp/ro2-text-assets.tar.gz | cut -d' ' -f1)"
+          echo "payload sha256=${actual_payload_sha}"
+          test "${actual_payload_sha}" = "7f5f812b46c923d53da5786b0acc354c5222d33cb8ae877af0a14e52fb2814fd"
+          tar -tzf /tmp/ro2-text-assets.tar.gz | sed -n '1,8p'
+          tar -xzf /tmp/ro2-text-assets.tar.gz
+          test -f assets/reading-order-v2/heldout-v1/source/H01.svg
+          test -f tests/reading_order_v2/test_heldout_corpus.py
           git diff --exit-code -- assets/reading-order-v2/heldout-v1/corpus-design.json scripts/reading_order_v2/spec/experiment-spec-v1.json
-          git diff --exit-code -- uv.lock package-lock.json frontend/package-lock.json 2>/dev/null || true
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
