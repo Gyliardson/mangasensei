@@ -95,10 +95,14 @@ def _region(
     status: str = "confident",
     mode: str = "b0-tier",
     orientation: str = "vertical",
+    tier: str = "g000-t000",
+    run: str = "g000-t000-r000",
 ) -> dict[str, object]:
     return {
         "regionId": region_id,
         "assignmentStatus": status,
+        "localTierId": tier,
+        "localRunId": run,
         "localOrderingMode": mode,
         "orientationClass": orientation,
     }
@@ -149,9 +153,24 @@ def _diagnostics() -> dict[ArmId, list[dict[str, object]]]:
         _region("r2", mode="ltr-horizontal", orientation="horizontal"),
     ]
     b1["H03"]["regions"] = [
-        _region("r0", mode="mixed", orientation="horizontal"),
-        _region("r1", mode="mixed", orientation="vertical"),
-        _region("r2", mode="mixed", orientation="vertical"),
+        _region(
+            "r0",
+            mode="mixed",
+            orientation="horizontal",
+            run="g000-t000-r000",
+        ),
+        _region(
+            "r1",
+            mode="mixed",
+            orientation="vertical",
+            run="g000-t000-r001",
+        ),
+        _region(
+            "r2",
+            mode="mixed",
+            orientation="vertical",
+            run="g000-t000-r001",
+        ),
     ]
     b1["H04"]["regions"] = [
         _region("r0", mode="rtl-vertical", orientation="vertical"),
@@ -254,6 +273,9 @@ def test_valid_b_evidence_derives_b_exercised() -> None:
     assert evidence["horizontalLtrPages"] == ["H02"]
     assert evidence["mixedOrientationPages"] == ["H03"]
     assert evidence["verticalRtlControlPages"] == ["H04"]
+    assert evidence["horizontalLtrPairs"] == {"H02": ["H02-p"]}
+    assert evidence["mixedOrientationPairs"] == {"H03": ["H03-p"]}
+    assert evidence["verticalRtlControlPairs"] == {"H04": ["H04-p"]}
 
 
 @pytest.mark.parametrize("page_id", ["H02", "H03", "H04"])
