@@ -97,11 +97,14 @@ def _validate_json_paths(
     value: object, *, name: str, location: str = "$", field_name: str | None = None
 ) -> None:
     if isinstance(value, str):
-        if field_name is not None and _is_path_field(field_name):
-            if _is_absolute_local_path(value):
-                raise EvidenceError(
-                    f"private absolute path detected in {name} at {location}"
-                )
+        if (
+            field_name is not None
+            and _is_path_field(field_name)
+            and _is_absolute_local_path(value)
+        ):
+            raise EvidenceError(
+                f"private absolute path detected in {name} at {location}"
+            )
         return
     if isinstance(value, list):
         for index, item in enumerate(value):
