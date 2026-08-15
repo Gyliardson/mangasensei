@@ -285,6 +285,8 @@ def _pair_bound_b_evidence(
             and same_tier
             and distinct_runs
             and first_mode == second_mode == "mixed"
+            and isinstance(first_orientation, str)
+            and isinstance(second_orientation, str)
             and {first_orientation, second_orientation} == {"horizontal", "vertical"}
         ):
             result["mixed"].append(pair.pair_id)
