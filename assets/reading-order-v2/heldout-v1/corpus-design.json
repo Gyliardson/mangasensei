@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "reading-order-v2-corpus-design-v1",
+  "corpusId": "mangasensei-reading-order-heldout-v2",
+  "version": "1.0.0",
+  "pageCount": 16,
+  "requirements": {
+    "minAQualificationPairs": 12,
+    "minAPages": 5,
+    "minBQualificationPairs": 12,
+    "minBPages": 5,
+    "minCleanOrdinaryControls": 4,
+    "minIntentionalWholePageFallbackPages": 2,
+    "minOpenOrIncompleteFramePages": 2
+  },
+  "slots": [
+    {"id":"H01","purpose":"adjacent horizontal fragments with LTR reading order"},
+    {"id":"H02","purpose":"multiple vertical manga columns with RTL reading order"},
+    {"id":"H03","purpose":"mixed horizontal and vertical regions in one panel; horizontal starts higher"},
+    {"id":"H04","purpose":"mixed horizontal and vertical regions in one panel; vertical starts higher"},
+    {"id":"H05","purpose":"right and left neighboring panels with strongly offset starts and unequal heights"},
+    {"id":"H06","purpose":"top/bottom panel precedence with a textless panel"},
+    {"id":"H07","purpose":"legitimate scored region near a panel border"},
+    {"id":"H08","purpose":"open frame with legitimate scored region outside or through imperfect framing"},
+    {"id":"H09","purpose":"at least two clean panels plus one unrelated unassigned distractor"},
+    {"id":"H10","purpose":"overlapping geometry creating ambiguous center membership"},
+    {"id":"H11","purpose":"second independent open-frame layout"},
+    {"id":"H12","purpose":"inset or nested panel layout"},
+    {"id":"H13","purpose":"materially overlapping panel geometry"},
+    {"id":"H14","purpose":"panel evidence intentionally unavailable; exact production fallback required"},
+    {"id":"H15","purpose":"combined A+B horizontal run plus unrelated uncertain region"},
+    {"id":"H16","purpose":"combined A+B mixed orientation plus ambiguity or border stress"}
+  ]
+}

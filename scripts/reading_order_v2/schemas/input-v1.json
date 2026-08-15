@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"reading-order-v2-input-v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schemaVersion","pageId","width","height","regions"],
+  "properties":{
+    "schemaVersion":{"const":"reading-order-v2-input-v1"},
+    "pageId":{"type":"string","pattern":"^H(?:0[1-9]|1[0-6])$"},
+    "width":{"const":1440},
+    "height":{"const":2048},
+    "regions":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["regionId","sourceIndex","lines","angle"],"properties":{"regionId":{"type":"string","minLength":1},"sourceIndex":{"type":"integer","minimum":0},"lines":{"type":"array","minItems":1,"items":{"type":"array","minItems":4,"maxItems":4,"items":{"type":"array","minItems":2,"maxItems":2,"items":{"type":"integer","minimum":0}}}},"angle":{"type":"number"}}}}
+  }
+}

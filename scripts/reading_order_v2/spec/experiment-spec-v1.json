@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "reading-order-v2-experiment-spec-v1",
+  "status": "frozen-for-implementation-not-authorized-for-execution",
+  "baselineRepositorySha": "292f0a8c8142d919ac4184159d102789c43b4116",
+  "experimentBoundary": "project-authored RGB pixels + frozen post-merge TextBlock-equivalent regions -> reading-order arm -> ordered same regions + diagnostics",
+  "excludedVariables": ["detector","recognizer","textline_merge","PP-OCRv6","OCR text content","confidence as ordering signal","ground truth as algorithm input","textRole"],
+  "arms": {
+    "A0_B0_CONTROL": {"panelPolicy":"production-panel-flow-v1","localOrder":"production-manga-tier-order"},
+    "A1_B0_PANEL_ONLY": {"panelPolicy":"partial-panel-evidence-v1","localOrder":"production-manga-tier-order"},
+    "A0_B1_ORDER_ONLY": {"panelPolicy":"production-panel-flow-v1","localOrder":"orientation-aware-local-v1"},
+    "A1_B1_COMBINED": {"panelPolicy":"partial-panel-evidence-v1","localOrder":"orientation-aware-local-v1"}
+  },
+  "A1": {
+    "segmentation":"exact production segmentation",
+    "membership":"exact production strict center containment",
+    "uncertainPolicy":"zero or multiple memberships become explicit singleton ordering nodes; never coerced",
+    "minimumConfidentPopulatedGroups":2,
+    "precedence":"exact production panel precedence edges",
+    "singletonPanelEdges":"none",
+    "fallbackRank":"production A0 page fallback index",
+    "fallbackConditions":["segmentation unreliable","fewer than two confidently populated groups","precedence cycle"],
+    "forbidden":["nearest panel","new assignment threshold","box expansion","region deletion","region duplication"]
+  },
+  "B1": {
+    "tierPartition":"exact production manga-tier partition",
+    "directionNormalization":{"h":"horizontal","hr":"horizontal","v":"vertical","vr":"vertical","other":"ambiguous"},
+    "horizontalOrder":["x_center ascending","y_top ascending","source_index ascending"],
+    "verticalOrder":["x_center descending","y_top ascending","source_index ascending"],
+    "mixedSubrunOrder":["minimum y_top ascending","maximum x_center descending","minimum source_index","orientation enum final tie"],
+    "ambiguousPolicy":"one singleton subrun per ambiguous region",
+    "pageFallback":"exact B0; B1 does not run"
+  },
+  "heldout": {
+    "corpusId":"mangasensei-reading-order-heldout-v2",
+    "version":"1.0.0",
+    "pageCount":16,
+    "publicDemoRole":"calibration-only",
+    "qualification":"new project-authored held-out only"
+  },
+  "formalGates": {
+    "integrity":["no drop","no duplicate","no mutation","deterministic identical diagnostics/output"],
+    "universal":["candidate wrong-pair set subset of control wrong-pair set","pairwise accuracy non-regression","normalized inversion distance non-regression","no required-slice regression","exact-sequence page count non-regression"],
+    "A":"mechanism exercised and A wrong-pair set strict subset",
+    "B":"mechanism exercised and B wrong-pair set strict subset with vertical controls non-regressing",
+    "combined":"A PASS and B PASS; global strict improvement; independent A/B corrections preserved"
+  },
+  "formalVerdicts":["READING_ORDER_V2_HELDOUT_PASS","INVALID_EXPERIMENT","A_FAIL","B_FAIL","COMBINED_FAIL","A_INCONCLUSIVE","B_INCONCLUSIVE"],
+  "stopConditions":["GT/text/page-specific rule required","new held-out inversion","required slice regression","mechanism not exercised => inconclusive","nondeterminism","methodology changed after qualification output","privacy/security/local-first weakening"]
+}

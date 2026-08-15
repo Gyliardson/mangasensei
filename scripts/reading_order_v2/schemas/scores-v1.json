@@ -1,0 +1,11 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"reading-order-v2-scores-v1",
+  "$defs":{
+    "fraction":{"type":"object","additionalProperties":false,"required":["numerator","denominator","decimal"],"properties":{"numerator":{"type":"integer"},"denominator":{"type":"integer","minimum":1},"decimal":{"type":"string","pattern":"^-?[0-9]+\\.[0-9]{12}$"}}},
+    "pair":{"type":"array","minItems":2,"maxItems":2,"items":{"type":"string"}},
+    "metrics":{"type":"object","required":["comparable_pairs","inversions","correct_pairs","pairwise_accuracy","normalized_inversion_distance","wrong_pairs"],"properties":{"comparable_pairs":{"type":"integer","minimum":0},"inversions":{"type":"integer","minimum":0},"correct_pairs":{"type":"integer","minimum":0},"pairwise_accuracy":{"$ref":"#/$defs/fraction"},"normalized_inversion_distance":{"$ref":"#/$defs/fraction"},"wrong_pairs":{"type":"array","items":{"$ref":"#/$defs/pair"}}}}
+  },
+  "description":"Formal comparisons use exact integer/Fraction values; decimal is presentation only.",
+  "type":"object"
+}

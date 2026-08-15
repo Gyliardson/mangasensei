@@ -1,0 +1,18 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"reading-order-v2-annotation-v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schemaVersion","pageId","readingOrder","unscoredRegionIds","qualificationPairs","layoutTags","panels","orientationExpectations","assignmentExpectations"],
+  "properties":{
+    "schemaVersion":{"const":"reading-order-v2-annotation-v1"},
+    "pageId":{"type":"string","pattern":"^H(?:0[1-9]|1[0-6])$"},
+    "readingOrder":{"type":"array","items":{"type":"string","minLength":1}},
+    "unscoredRegionIds":{"type":"array","items":{"type":"string","minLength":1}},
+    "qualificationPairs":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","earlier","later","slices"],"properties":{"id":{"type":"string","minLength":1},"earlier":{"type":"string","minLength":1},"later":{"type":"string","minLength":1},"slices":{"type":"array","minItems":1,"items":{"enum":["A","B","A+B","clean-control","vertical-only","horizontal-only","mixed","partial-assignment","intentional-fallback"]}}}}},
+    "layoutTags":{"type":"array","items":{"type":"string","minLength":1}},
+    "panels":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","bbox","precedencePosition"],"properties":{"id":{"type":"string","minLength":1},"bbox":{"type":"object","additionalProperties":false,"required":["x","y","width","height"],"properties":{"x":{"type":"integer","minimum":0},"y":{"type":"integer","minimum":0},"width":{"type":"integer","minimum":1},"height":{"type":"integer","minimum":1}}},"precedencePosition":{"type":["integer","null"],"minimum":0}}}},
+    "orientationExpectations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["regionId","expected"],"properties":{"regionId":{"type":"string"},"expected":{"enum":["horizontal","vertical","ambiguous"]}}}},
+    "assignmentExpectations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["regionId","expected","panelId"],"properties":{"regionId":{"type":"string"},"expected":{"enum":["unique","outside","ambiguous","not-applicable"]},"panelId":{"type":["string","null"]}}}}
+  }
+}
