@@ -8,7 +8,14 @@ from pathlib import Path
 from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ArmId
 
 from .canonical import canonical_json_bytes, sha256_bytes
-from .contracts import PAGE_IDS, REQUIRED_SLICES, ContractError, PageGroundTruth, load_ground_truth
+from .contracts import (
+    PAGE_IDS,
+    REQUIRED_SLICES,
+    ContractError,
+    PageGroundTruth,
+    QualificationPair,
+    load_ground_truth,
+)
 from .scoring import CorpusScore
 from .validate_corpus import validate_corpus
 from .verdict import GateReason, Verdict, VerdictResult, evaluate_verdict
@@ -209,28 +216,81 @@ def _has_uncertain_region(diagnostic: Mapping[str, object]) -> bool:
     )
 
 
-def _local_modes(diagnostic: Mapping[str, object]) -> set[str]:
+def _region_index(diagnostic: Mapping[str, object]) -> dict[str, Mapping[str, object]]:
     regions = diagnostic.get("regions")
     if not isinstance(regions, list):
-        return set()
+        return {}
     return {
-        mode
+        region_id: region
         for region in regions
         if isinstance(region, dict)
-        and isinstance((mode := region.get("localOrderingMode")), str)
+        and isinstance((region_id := region.get("regionId")), str)
     }
 
 
-def _orientations(diagnostic: Mapping[str, object]) -> set[str]:
-    regions = diagnostic.get("regions")
-    if not isinstance(regions, list):
-        return set()
-    return {
-        value
-        for region in regions
-        if isinstance(region, dict)
-        and isinstance((value := region.get("orientationClass")), str)
-    }
+def _is_b_pair(pair: QualificationPair) -> bool:
+    return "B" in pair.slices or "A+B" in pair.slices
+
+
+def _same_nonempty_field(
+    first: Mapping[str, object], second: Mapping[str, object], field: str
+) -> bool:
+    value = first.get(field)
+    return isinstance(value, str) and bool(value) and second.get(field) == value
+
+
+def _pair_bound_b_evidence(
+    page: PageGroundTruth,
+    diagnostic: Mapping[str, object],
+) -> dict[str, tuple[str, ...]]:
+    """Return qualification-pair IDs that actually exercise each frozen B relation."""
+    result: dict[str, list[str]] = {"horizontal": [], "mixed": [], "vertical": []}
+    if diagnostic.get("usedPanelEvidence") is not True:
+        return {name: () for name in result}
+    regions = _region_index(diagnostic)
+    for pair in page.qualification_pairs:
+        first = regions.get(pair.earlier)
+        second = regions.get(pair.later)
+        if first is None or second is None:
+            continue
+        same_tier = _same_nonempty_field(first, second, "localTierId")
+        same_run = _same_nonempty_field(first, second, "localRunId")
+        first_mode = first.get("localOrderingMode")
+        second_mode = second.get("localOrderingMode")
+        first_orientation = first.get("orientationClass")
+        second_orientation = second.get("orientationClass")
+
+        if (
+            _is_b_pair(pair)
+            and "horizontal-only" in pair.slices
+            and same_tier
+            and same_run
+            and first_mode == second_mode == "ltr-horizontal"
+            and first_orientation == second_orientation == "horizontal"
+        ):
+            result["horizontal"].append(pair.pair_id)
+
+        if (
+            _is_b_pair(pair)
+            and "mixed" in pair.slices
+            and same_tier
+            and not same_run
+            and isinstance(first.get("localRunId"), str)
+            and isinstance(second.get("localRunId"), str)
+            and first_mode == second_mode == "mixed"
+            and {first_orientation, second_orientation} == {"horizontal", "vertical"}
+        ):
+            result["mixed"].append(pair.pair_id)
+
+        if (
+            "vertical-only" in pair.slices
+            and same_tier
+            and same_run
+            and first_mode == second_mode == "rtl-vertical"
+            and first_orientation == second_orientation == "vertical"
+        ):
+            result["vertical"].append(pair.pair_id)
+    return {name: tuple(sorted(pair_ids)) for name, pair_ids in result.items()}
 
 
 def _derive_a_exercise(
@@ -285,18 +345,21 @@ def _derive_b_exercise(
     mixed_declared = b_pages & _slice_pages(ground_truth, "mixed")
     vertical_declared = _slice_pages(ground_truth, "vertical-only")
 
-    def eligible(page_id: str, mode: str) -> bool:
-        diagnostic = order_only.get(page_id, {})
-        return diagnostic.get("usedPanelEvidence") is True and mode in _local_modes(diagnostic)
+    horizontal_pairs: dict[str, tuple[str, ...]] = {}
+    mixed_pairs: dict[str, tuple[str, ...]] = {}
+    vertical_pairs: dict[str, tuple[str, ...]] = {}
+    for page_id, page in sorted(ground_truth.items()):
+        evidence = _pair_bound_b_evidence(page, order_only.get(page_id, {}))
+        if page_id in horizontal_declared and evidence["horizontal"]:
+            horizontal_pairs[page_id] = evidence["horizontal"]
+        if page_id in mixed_declared and evidence["mixed"]:
+            mixed_pairs[page_id] = evidence["mixed"]
+        if page_id in vertical_declared and evidence["vertical"]:
+            vertical_pairs[page_id] = evidence["vertical"]
 
-    horizontal = {page_id for page_id in horizontal_declared if eligible(page_id, "ltr-horizontal")}
-    mixed = {
-        page_id
-        for page_id in mixed_declared
-        if eligible(page_id, "mixed")
-        and {"horizontal", "vertical"} <= _orientations(order_only.get(page_id, {}))
-    }
-    vertical = {page_id for page_id in vertical_declared if eligible(page_id, "rtl-vertical")}
+    horizontal = set(horizontal_pairs)
+    mixed = set(mixed_pairs)
+    vertical = set(vertical_pairs)
     exercised = bool(horizontal and mixed and vertical)
     return {
         "exercised": exercised,
@@ -307,6 +370,15 @@ def _derive_b_exercise(
         "horizontalLtrPages": sorted(horizontal),
         "mixedOrientationPages": sorted(mixed),
         "verticalRtlControlPages": sorted(vertical),
+        "horizontalLtrPairs": {
+            page_id: list(pair_ids) for page_id, pair_ids in sorted(horizontal_pairs.items())
+        },
+        "mixedOrientationPairs": {
+            page_id: list(pair_ids) for page_id, pair_ids in sorted(mixed_pairs.items())
+        },
+        "verticalRtlControlPairs": {
+            page_id: list(pair_ids) for page_id, pair_ids in sorted(vertical_pairs.items())
+        },
     }
 
 
