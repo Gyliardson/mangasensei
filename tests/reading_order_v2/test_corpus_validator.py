@@ -3,10 +3,9 @@ from __future__ import annotations
 import inspect
 
 import pytest
-
 from scripts.reading_order_v2.contracts import (
-    ContractError,
     PAGE_IDS,
+    ContractError,
     arm_asset_paths,
     validate_corpus_design,
 )

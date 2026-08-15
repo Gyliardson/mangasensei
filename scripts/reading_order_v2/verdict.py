@@ -7,7 +7,7 @@ from .scoring import CorpusScore, candidate_only_wrong_pairs, wrong_set_is_subse
 
 
 class Verdict(StrEnum):
-    READING_ORDER_V2_HELDOUT_PASS = "READING_ORDER_V2_HELDOUT_PASS"
+    READING_ORDER_V2_HELDOUT_PASS = "READING_ORDER_V2_HELDOUT_PASS"  # noqa: S105
     INVALID_EXPERIMENT = "INVALID_EXPERIMENT"
     A_FAIL = "A_FAIL"
     B_FAIL = "B_FAIL"

@@ -21,6 +21,8 @@ from mangasensei.ocr.reading_order import (
 )
 
 from .reading_order_v2_contracts import (
+    SCHEMA_VERSION,
+    SPEC_VERSION,
     ArmId,
     ArmResult,
     AssignmentStatus,
@@ -32,8 +34,6 @@ from .reading_order_v2_contracts import (
     PrecedenceEdgeDiagnostic,
     RationalDiagnostic,
     RegionDiagnostic,
-    SCHEMA_VERSION,
-    SPEC_VERSION,
     SegmentationDiagnostic,
 )
 
@@ -309,10 +309,7 @@ def _b1_local_order(
                 OrientationClass.VERTICAL: "rtl-vertical",
                 OrientationClass.AMBIGUOUS: "singleton",
             }[orientation]
-            if len(prepared) > 1:
-                mixed_mode = "mixed"
-            else:
-                mixed_mode = mode
+            mixed_mode = "mixed" if len(prepared) > 1 else mode
             for item in run:
                 ref = refs_by_object[id(item.region)]
                 _, y1, _, _, center2x, _ = _raw_geometry(item.region)

@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from scripts.reading_order_v2.evidence import (
     MANDATORY_MEMBERS,
     EvidenceError,
@@ -42,9 +41,7 @@ def _stage(tmp_path: Path) -> Path:
                 ]
             }
             path.write_text(json.dumps(value), encoding="utf-8")
-        elif name.endswith(".json"):
-            path.write_text("{}\n", encoding="utf-8")
-        elif name.endswith(".jsonl"):
+        elif name.endswith(".json") or name.endswith(".jsonl"):
             path.write_text("{}\n", encoding="utf-8")
         else:
             path.write_text("safe evidence\n", encoding="utf-8")

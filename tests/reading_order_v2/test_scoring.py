@@ -3,7 +3,6 @@ from __future__ import annotations
 from fractions import Fraction
 
 import pytest
-
 from scripts.reading_order_v2.contracts import PageGroundTruth, QualificationPair
 from scripts.reading_order_v2.scoring import (
     candidate_only_wrong_pairs,
@@ -38,11 +37,11 @@ def test_zero_one_and_full_reversal_inversions() -> None:
 
 
 def test_scoring_rejects_duplicate_missing_or_unknown_regions() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="observed ordering contains duplicate region IDs"):
         score_page(_gt(), ("a", "b", "b", "noise"))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="observed region set mismatch"):
         score_page(_gt(), ("a", "b", "noise"))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="observed region set mismatch"):
         score_page(_gt(), ("a", "b", "c", "noise", "other"))
 
 

@@ -97,7 +97,8 @@ def main() -> None:
             {item["orderingSha256"] for item in repeat_hashes}
         ) != 1:
             raise RuntimeError(f"{arm.value}: nondeterministic output across fresh-process repeats")
-        assert first_diagnostics is not None and first_ordering is not None
+        assert first_diagnostics is not None
+        assert first_ordering is not None
         page_scores = []
         for order in first_ordering:
             page_id = order["pageId"]
