@@ -162,7 +162,7 @@ def _scheduler_tie_key(value: PageDiagnostic, group: GroupDiagnostic) -> tuple[o
     )
     if not scheduler_ran:
         return ()
-    rank: object = float(group.fallback_rank) if group.fallback_ranc is not None else "inf"
+    rank: object = float(group.fallback_rank) if group.fallback_rank is not None else "inf"
     if value.arm_id.partial_panel_evidence:
         return (rank, 0, group.bbox[1], -group.bbox[2], group.source_group_index)
     return (rank, group.bbox[1], -group.bbox[2], group.source_group_index)
