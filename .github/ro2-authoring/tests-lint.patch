@@ -1,0 +1,100 @@
+--- a/tests/reading_order_v2/test_heldout_corpus.py
++++ b/tests/reading_order_v2/test_heldout_corpus.py
+@@ -5,7 +5,6 @@
+ from xml.etree import ElementTree
+ 
+ from PIL import Image
+-
+ from scripts.reading_order_v2.contracts import (
+     PAGE_IDS,
+     REQUIRED_SLICES,
+@@ -49,11 +48,12 @@
+         source_path = CORPUS_ROOT / "source" / f"{page_id}.svg"
+         source = source_path.read_text(encoding="utf-8")
+         lowered = source.lower()
+-        assert "http://" not in lowered and "https://" not in lowered
++        assert "http://" not in lowered
++        assert "https://" not in lowered
+         assert "<text" not in lowered
+         assert "<image" not in lowered
+         assert "<foreignobject" not in lowered
+-        root = ElementTree.fromstring(source)
++        root = ElementTree.fromstring(source)  # noqa: S314 -- project-authored SVG
+         assert root.attrib["width"] == "1440"
+         assert root.attrib["height"] == "2048"
+         assert root.attrib["data-page-id"] == page_id
+@@ -63,7 +63,8 @@
+             assert local_name not in forbidden
+             for value in element.attrib.values():
+                 value_lower = value.lower()
+-                assert "http://" not in value_lower and "https://" not in value_lower
++                assert "http://" not in value_lower
++                assert "https://" not in value_lower
+         with Image.open(CORPUS_ROOT / "images" / f"{page_id}.png") as image:
+             assert image.format == "PNG"
+             assert image.mode == "RGB"
+@@ -93,7 +94,8 @@
+             "orientationExpectations",
+             "assignmentExpectations",
+         }
+-        assert raw_input["width"] == 1440 and raw_input["height"] == 2048
++        assert raw_input["width"] == 1440
++        assert raw_input["height"] == 2048
+         assert raw_input["pageId"] == raw_annotation["pageId"] == page_id
+         page = load_arm_input(input_path)
+         gt = load_ground_truth(annotation_path)
+@@ -136,12 +138,16 @@
+         ]
+         assert precedence == list(range(len(precedence)))
+         for panel in gt.panels:
+-            assert 0 <= panel.bbox.x < 1440 and 0 <= panel.bbox.y < 2048
+-            assert panel.bbox.width > 0 and panel.bbox.height > 0
++            assert 0 <= panel.bbox.x < 1440
++            assert 0 <= panel.bbox.y < 2048
++            assert panel.bbox.width > 0
++            assert panel.bbox.height > 0
+             assert panel.bbox.x + panel.bbox.width <= 1440
+             assert panel.bbox.y + panel.bbox.height <= 2048
+-    assert a_pairs >= 12 and len(a_pages) >= 5
+-    assert b_pairs >= 12 and len(b_pages) >= 5
++    assert a_pairs >= 12
++    assert len(a_pages) >= 5
++    assert b_pairs >= 12
++    assert len(b_pages) >= 5
+     assert clean_pages >= 4
+     assert fallback_pages >= 2
+     assert open_pages >= 2
+--- a/tests/reading_order_v2/test_heldout_fixture_orientation.py
++++ b/tests/reading_order_v2/test_heldout_fixture_orientation.py
+@@ -46,7 +46,7 @@
+         }
+         assert set(expected) == {region.region_id for region in regions}
+         for region in regions:
+-            assert _normalized_direction(region.block.direction) == expected[region.region_id]
++            assert _normalized_direction(region.region.direction) == expected[region.region_id]
+ 
+ 
+ def test_assignment_expectations_match_authored_panel_geometry() -> None:
+@@ -63,15 +63,18 @@
+         for region in regions:
+             item = expectations[region.region_id]
+             if item["expected"] == "not-applicable":
+-                assert not panels and item["panelId"] is None
++                assert not panels
++                assert item["panelId"] is None
+                 continue
+-            center_x, center_y = (float(value) for value in region.block.center)
++            center_x, center_y = (float(value) for value in region.region.center)
+             matches = _memberships(center_x, center_y, panels)
+             if item["expected"] == "unique":
+                 assert matches == [item["panelId"]]
+             elif item["expected"] == "outside":
+-                assert matches == [] and item["panelId"] is None
++                assert matches == []
++                assert item["panelId"] is None
+             elif item["expected"] == "ambiguous":
+-                assert len(matches) > 1 and item["panelId"] is None
++                assert len(matches) > 1
++                assert item["panelId"] is None
+             else:
+                 raise AssertionError(f"unknown assignment expectation: {item}")
