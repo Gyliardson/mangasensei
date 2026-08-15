@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 import scripts.reading_order_v2.comparison as comparison
-from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ArmId
 from scripts.reading_order_v2.comparison import (
     _derive_a_exercise,
     _derive_b_exercise,
@@ -22,6 +21,8 @@ from scripts.reading_order_v2.contracts import (
 )
 from scripts.reading_order_v2.scoring import CorpusScore, PageScore, PairMetrics
 from scripts.reading_order_v2.verdict import Verdict
+
+from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ArmId
 
 
 def _metric(
@@ -51,7 +52,7 @@ def _page_score(page_id: str) -> PageScore:
 
 
 def _score(*, global_wrong=(), a_wrong=(), b_wrong=()) -> CorpusScore:
-    slices = {name: _metric() for name in REQUIRED_SLICES}
+    slices = {name: _metric(()) for name in REQUIRED_SLICES}
     slices["A"] = _metric(tuple(a_wrong))
     slices["B"] = _metric(tuple(b_wrong))
     return CorpusScore(
