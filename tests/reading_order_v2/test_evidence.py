@@ -86,7 +86,7 @@ def test_evidence_rejects_unexpected_member_symlink_private_path_and_secret(tmp_
         r"C:\Arquivos\GitHub\Projetos\MangaSensei",
         r"D:\research\artifact",
         "/mnt/data/artifact",
-        "/tmp/private-output",
+        "/tmp/private-output",  # noqa: S108 - intentional private-path rejection fixture
         "/home/alice/project",
     ],
 )
