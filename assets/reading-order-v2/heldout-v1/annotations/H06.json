@@ -1,0 +1,117 @@
+{
+  "schemaVersion": "reading-order-v2-annotation-v1",
+  "pageId": "H06",
+  "readingOrder": [
+    "ro2h-H06-r001",
+    "ro2h-H06-r002",
+    "ro2h-H06-r003",
+    "ro2h-H06-r004"
+  ],
+  "unscoredRegionIds": [],
+  "qualificationPairs": [
+    {
+      "id": "ro2h-H06-q001",
+      "earlier": "ro2h-H06-r001",
+      "later": "ro2h-H06-r002",
+      "slices": [
+        "clean-control",
+        "vertical-only"
+      ]
+    },
+    {
+      "id": "ro2h-H06-q002",
+      "earlier": "ro2h-H06-r002",
+      "later": "ro2h-H06-r003",
+      "slices": [
+        "clean-control"
+      ]
+    },
+    {
+      "id": "ro2h-H06-q003",
+      "earlier": "ro2h-H06-r003",
+      "later": "ro2h-H06-r004",
+      "slices": [
+        "clean-control",
+        "horizontal-only"
+      ]
+    }
+  ],
+  "layoutTags": [
+    "clean-control",
+    "panel-precedence",
+    "textless-panel",
+    "top-before-bottom"
+  ],
+  "panels": [
+    {
+      "id": "p-top-right",
+      "bbox": {
+        "x": 760,
+        "y": 160,
+        "width": 560,
+        "height": 700
+      },
+      "precedencePosition": 0
+    },
+    {
+      "id": "p-top-left-textless",
+      "bbox": {
+        "x": 120,
+        "y": 180,
+        "width": 520,
+        "height": 620
+      },
+      "precedencePosition": 1
+    },
+    {
+      "id": "p-bottom",
+      "bbox": {
+        "x": 120,
+        "y": 980,
+        "width": 1200,
+        "height": 900
+      },
+      "precedencePosition": 2
+    }
+  ],
+  "orientationExpectations": [
+    {
+      "regionId": "ro2h-H06-r001",
+      "expected": "vertical"
+    },
+    {
+      "regionId": "ro2h-H06-r002",
+      "expected": "vertical"
+    },
+    {
+      "regionId": "ro2h-H06-r003",
+      "expected": "horizontal"
+    },
+    {
+      "regionId": "ro2h-H06-r004",
+      "expected": "horizontal"
+    }
+  ],
+  "assignmentExpectations": [
+    {
+      "regionId": "ro2h-H06-r001",
+      "expected": "unique",
+      "panelId": "p-top-right"
+    },
+    {
+      "regionId": "ro2h-H06-r002",
+      "expected": "unique",
+      "panelId": "p-top-right"
+    },
+    {
+      "regionId": "ro2h-H06-r003",
+      "expected": "unique",
+      "panelId": "p-bottom"
+    },
+    {
+      "regionId": "ro2h-H06-r004",
+      "expected": "unique",
+      "panelId": "p-bottom"
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "reading-order-v2-annotation-v1",
+  "pageId": "H14",
+  "readingOrder": [
+    "ro2h-H14-r001",
+    "ro2h-H14-r002",
+    "ro2h-H14-r003",
+    "ro2h-H14-r004"
+  ],
+  "unscoredRegionIds": [],
+  "qualificationPairs": [
+    {
+      "id": "ro2h-H14-q001",
+      "earlier": "ro2h-H14-r001",
+      "later": "ro2h-H14-r002",
+      "slices": [
+        "intentional-fallback",
+        "vertical-only"
+      ]
+    },
+    {
+      "id": "ro2h-H14-q002",
+      "earlier": "ro2h-H14-r003",
+      "later": "ro2h-H14-r004",
+      "slices": [
+        "intentional-fallback",
+        "horizontal-only"
+      ]
+    }
+  ],
+  "layoutTags": [
+    "intentional-fallback",
+    "no-panel-evidence",
+    "whole-page-fallback"
+  ],
+  "panels": [],
+  "orientationExpectations": [
+    {
+      "regionId": "ro2h-H14-r001",
+      "expected": "vertical"
+    },
+    {
+      "regionId": "ro2h-H14-r002",
+      "expected": "vertical"
+    },
+    {
+      "regionId": "ro2h-H14-r003",
+      "expected": "horizontal"
+    },
+    {
+      "regionId": "ro2h-H14-r004",
+      "expected": "horizontal"
+    }
+  ],
+  "assignmentExpectations": [
+    {
+      "regionId": "ro2h-H14-r001",
+      "expected": "not-applicable",
+      "panelId": null
+    },
+    {
+      "regionId": "ro2h-H14-r002",
+      "expected": "not-applicable",
+      "panelId": null
+    },
+    {
+      "regionId": "ro2h-H14-r003",
+      "expected": "not-applicable",
+      "panelId": null
+    },
+    {
+      "regionId": "ro2h-H14-r004",
+      "expected": "not-applicable",
+      "panelId": null
+    }
+  ]
+}
