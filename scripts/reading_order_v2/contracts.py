@@ -9,332 +9,281 @@ from typing import Any
 from scripts.public_benchmark.contracts import BBox
 
 CORPUS_ID = "mangasensei-reading-order-heldout-v2"
-QUALIFICATION_VERSION = "1.0.0"
-DESIGN_VERSION = "corpus-design-v1"
+CORPUS_VERSION = "1.0.0"
 PAGE_IDS = tuple(f"H{index:02d}" for index in range(1, 17))
-REQUIRED_PAIR_SLICES = (
+PAGE_ID_RE = re.compile(r"^H(?:0[1-9]|1[0-6])$")
+HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+REQUIRED_SLICES = {
     "A",
     "B",
     "A+B",
-    "control",
     "clean-control",
     "vertical-only",
     "horizontal-only",
     "mixed",
     "partial-assignment",
     "intentional-fallback",
-)
-_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+}
 
 
-class ReadingOrderV2ContractError(ValueError):
+class ContractError(ValueError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class RegionFixture:
+    region_id: str
+    source_index: int
+    lines: tuple[tuple[tuple[int, int], ...], ...]
+    angle: float
+
+
+@dataclass(frozen=True, slots=True)
+class ArmPageInput:
+    page_id: str
+    width: int
+    height: int
+    regions: tuple[RegionFixture, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class QualificationPair:
     pair_id: str
-    before_region_id: str
-    after_region_id: str
+    earlier: str
+    later: str
     slices: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class RegionGroundTruth:
-    region_id: str
-    scored: bool
-    reading_order_position: int | None
-    orientation: str
-    assignment_expectation: str
-    panel_id: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class PanelGroundTruth:
     panel_id: str
     bbox: BBox
-    scored: bool
+    precedence_position: int | None
 
 
 @dataclass(frozen=True, slots=True)
-class AnnotationPage:
+class PageGroundTruth:
     page_id: str
-    width: int
-    height: int
-    image_sha256: str
-    regions: tuple[RegionGroundTruth, ...]
-    reading_order_sequence: tuple[str, ...]
+    reading_order: tuple[str, ...]
+    unscored_region_ids: tuple[str, ...]
     qualification_pairs: tuple[QualificationPair, ...]
     layout_tags: tuple[str, ...]
     panels: tuple[PanelGroundTruth, ...]
-    panel_precedence: tuple[tuple[str, str], ...]
-
-    @property
-    def known_region_ids(self) -> tuple[str, ...]:
-        return tuple(region.region_id for region in self.regions)
 
 
-@dataclass(frozen=True, slots=True)
-class CorpusPageManifest:
-    page_id: str
-    source_file: str
-    source_sha256: str
-    image_file: str
-    image_sha256: str
-    input_file: str
-    input_sha256: str
-    annotation_file: str
-    annotation_sha256: str
-
-
-@dataclass(frozen=True, slots=True)
-class CorpusManifest:
-    corpus_id: str
-    qualification_version: str
-    design_sha256: str
-    pages: tuple[CorpusPageManifest, ...]
-
-
-def _object(value: object, location: str) -> dict[str, Any]:
+def _load_object(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
-        raise ReadingOrderV2ContractError(f"{location}: expected object")
-    return dict(value)
-
-
-def _array(value: object, location: str) -> list[Any]:
-    if not isinstance(value, list):
-        raise ReadingOrderV2ContractError(f"{location}: expected array")
-    return list(value)
-
-
-def _string(value: object, location: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise ReadingOrderV2ContractError(f"{location}: expected non-empty string")
+        raise ContractError(f"{path}: expected JSON object")
     return value
 
 
-def _int(value: object, location: str, *, minimum: int = 0) -> int:
-    if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
-        raise ReadingOrderV2ContractError(f"{location}: expected integer >= {minimum}")
+def _exact_keys(data: dict[str, Any], required: set[str], where: str) -> None:
+    if set(data) != required:
+        raise ContractError(
+            f"{where}: property mismatch: missing={sorted(required-set(data))}, "
+            f"extra={sorted(set(data)-required)}"
+        )
+
+
+def _page_id(value: object, where: str) -> str:
+    if not isinstance(value, str) or PAGE_ID_RE.fullmatch(value) is None:
+        raise ContractError(f"{where}: invalid held-out page ID")
     return value
 
 
-def _bool(value: object, location: str) -> bool:
-    if not isinstance(value, bool):
-        raise ReadingOrderV2ContractError(f"{location}: expected boolean")
-    return value
+def load_arm_input(path: Path) -> ArmPageInput:
+    data = _load_object(path)
+    _exact_keys(data, {"schemaVersion", "pageId", "width", "height", "regions"}, str(path))
+    if data["schemaVersion"] != "reading-order-v2-input-v1":
+        raise ContractError(f"{path}: bad input schema version")
+    page_id = _page_id(data["pageId"], f"{path}.pageId")
+    width = data["width"]
+    height = data["height"]
+    if not isinstance(width, int) or not isinstance(height, int) or min(width, height) <= 0:
+        raise ContractError(f"{path}: invalid page dimensions")
+    raw_regions = data["regions"]
+    if not isinstance(raw_regions, list):
+        raise ContractError(f"{path}.regions: expected array")
+    regions: list[RegionFixture] = []
+    seen_ids: set[str] = set()
+    seen_indexes: set[int] = set()
+    for position, value in enumerate(raw_regions):
+        if not isinstance(value, dict):
+            raise ContractError(f"{path}.regions[{position}]: expected object")
+        _exact_keys(value, {"regionId", "sourceIndex", "lines", "angle"}, f"region {position}")
+        region_id = value["regionId"]
+        source_index = value["sourceIndex"]
+        if not isinstance(region_id, str) or not region_id:
+            raise ContractError(f"{path}.regions[{position}].regionId: invalid")
+        if not isinstance(source_index, int) or source_index < 0:
+            raise ContractError(f"{path}.regions[{position}].sourceIndex: invalid")
+        if region_id in seen_ids or source_index in seen_indexes:
+            raise ContractError(f"{path}: duplicate region identity/index")
+        seen_ids.add(region_id)
+        seen_indexes.add(source_index)
+        raw_lines = value["lines"]
+        if not isinstance(raw_lines, list) or not raw_lines:
+            raise ContractError(f"{path}.regions[{position}].lines: expected nonempty array")
+        lines: list[tuple[tuple[int, int], ...]] = []
+        for line_index, raw_line in enumerate(raw_lines):
+            if not isinstance(raw_line, list) or len(raw_line) != 4:
+                raise ContractError(
+                    f"{path}.regions[{position}].lines[{line_index}]: quadrilateral required"
+                )
+            points: list[tuple[int, int]] = []
+            for raw_point in raw_line:
+                if (
+                    not isinstance(raw_point, list)
+                    or len(raw_point) != 2
+                    or not all(isinstance(item, int) for item in raw_point)
+                ):
+                    raise ContractError("line points must be integer [x,y] pairs")
+                x, y = raw_point
+                if not (0 <= x <= width and 0 <= y <= height):
+                    raise ContractError("line point outside page")
+                points.append((x, y))
+            lines.append(tuple(points))
+        angle = value["angle"]
+        if not isinstance(angle, int | float):
+            raise ContractError(f"{path}.regions[{position}].angle: number required")
+        regions.append(RegionFixture(region_id, source_index, tuple(lines), float(angle)))
+    if sorted(seen_indexes) != list(range(len(seen_indexes))):
+        raise ContractError(f"{path}: sourceIndex must be contiguous from zero")
+    ordered_regions = tuple(sorted(regions, key=lambda item: item.source_index))
+    return ArmPageInput(page_id, width, height, ordered_regions)
 
 
-def _hex64(value: object, location: str) -> str:
-    text = _string(value, location)
-    if _HEX64.fullmatch(text) is None:
-        raise ReadingOrderV2ContractError(f"{location}: expected lowercase SHA-256")
-    return text
-
-
-def load_annotation(path: Path) -> AnnotationPage:
-    raw = _object(json.loads(path.read_text(encoding="utf-8")), str(path))
-    if raw.get("schemaVersion") != "reading-order-v2-annotation-v1":
-        raise ReadingOrderV2ContractError(f"{path}: wrong annotation schema version")
-    page = _object(raw.get("page"), f"{path}.page")
-    page_id = _string(page.get("id"), f"{path}.page.id")
-    width = _int(page.get("width"), f"{path}.page.width", minimum=1)
-    height = _int(page.get("height"), f"{path}.page.height", minimum=1)
-    image_sha256 = _hex64(page.get("imageSha256"), f"{path}.page.imageSha256")
-
-    region_values = _array(raw.get("regions"), f"{path}.regions")
-    regions: list[RegionGroundTruth] = []
-    for index, value in enumerate(region_values):
-        item = _object(value, f"{path}.regions[{index}]")
-        scored = _bool(item.get("scored"), f"{path}.regions[{index}].scored")
-        position_value = item.get("readingOrderPosition")
-        position = None if position_value is None else _int(
-            position_value, f"{path}.regions[{index}].readingOrderPosition"
-        )
-        orientation = _string(item.get("orientation"), f"{path}.regions[{index}].orientation")
-        if orientation not in {"horizontal", "vertical", "ambiguous"}:
-            raise ReadingOrderV2ContractError(f"{path}.regions[{index}]: bad orientation")
-        assignment = _string(
-            item.get("assignmentExpectation"),
-            f"{path}.regions[{index}].assignmentExpectation",
-        )
-        if assignment not in {"unique", "outside", "ambiguous", "not-applicable"}:
-            raise ReadingOrderV2ContractError(
-                f"{path}.regions[{index}]: bad assignment expectation"
-            )
-        panel_id_value = item.get("panelId")
-        panel_id = None if panel_id_value is None else _string(
-            panel_id_value, f"{path}.regions[{index}].panelId"
-        )
-        regions.append(
-            RegionGroundTruth(
-                region_id=_string(item.get("id"), f"{path}.regions[{index}].id"),
-                scored=scored,
-                reading_order_position=position,
-                orientation=orientation,
-                assignment_expectation=assignment,
-                panel_id=panel_id,
-            )
-        )
-    ids = [region.region_id for region in regions]
-    if len(ids) != len(set(ids)):
-        raise ReadingOrderV2ContractError(f"{path}: duplicate region IDs")
-    scored = [region for region in regions if region.scored]
-    positions = [region.reading_order_position for region in scored]
-    if any(position is None for position in positions):
-        raise ReadingOrderV2ContractError(f"{path}: scored region missing reading-order position")
-    if sorted(position for position in positions if position is not None) != list(
-        range(len(scored))
-    ):
-        raise ReadingOrderV2ContractError(f"{path}: scored positions must be contiguous from zero")
-    if any(region.reading_order_position is not None for region in regions if not region.scored):
-        raise ReadingOrderV2ContractError(f"{path}: unscored region has reading-order position")
-
-    sequence = tuple(
-        _string(value, f"{path}.readingOrderSequence")
-        for value in _array(raw.get("readingOrderSequence"), f"{path}.readingOrderSequence")
+def load_ground_truth(path: Path) -> PageGroundTruth:
+    data = _load_object(path)
+    _exact_keys(
+        data,
+        {
+            "schemaVersion",
+            "pageId",
+            "readingOrder",
+            "unscoredRegionIds",
+            "qualificationPairs",
+            "layoutTags",
+            "panels",
+            "orientationExpectations",
+            "assignmentExpectations",
+        },
+        str(path),
     )
-    expected_sequence = tuple(
-        region.region_id
-        for region in sorted(scored, key=lambda item: item.reading_order_position or 0)
-    )
-    if sequence != expected_sequence:
-        raise ReadingOrderV2ContractError(
-            f"{path}: reading-order sequence disagrees with positions"
-        )
-
-    pair_values = _array(raw.get("qualificationPairs"), f"{path}.qualificationPairs")
+    if data["schemaVersion"] != "reading-order-v2-annotation-v1":
+        raise ContractError(f"{path}: bad annotation schema version")
+    page_id = _page_id(data["pageId"], f"{path}.pageId")
+    reading = data["readingOrder"]
+    unscored = data["unscoredRegionIds"]
+    tags = data["layoutTags"]
+    if not isinstance(reading, list) or not all(isinstance(item, str) for item in reading):
+        raise ContractError(f"{path}.readingOrder: string array required")
+    if len(set(reading)) != len(reading):
+        raise ContractError(f"{path}.readingOrder: duplicate scored region ID")
+    if not isinstance(unscored, list) or not all(isinstance(item, str) for item in unscored):
+        raise ContractError(f"{path}.unscoredRegionIds: string array required")
+    if set(reading) & set(unscored):
+        raise ContractError(f"{path}: scored and unscored IDs overlap")
+    if not isinstance(tags, list) or not all(isinstance(item, str) for item in tags):
+        raise ContractError(f"{path}.layoutTags: string array required")
+    position = {region_id: index for index, region_id in enumerate(reading)}
+    pairs_raw = data["qualificationPairs"]
+    if not isinstance(pairs_raw, list):
+        raise ContractError(f"{path}.qualificationPairs: array required")
     pairs: list[QualificationPair] = []
-    pair_ids: set[str] = set()
-    pair_keys: set[tuple[str, str]] = set()
-    position_by_id = {region_id: index for index, region_id in enumerate(sequence)}
-    for index, value in enumerate(pair_values):
-        item = _object(value, f"{path}.qualificationPairs[{index}]")
-        pair_id = _string(item.get("id"), f"{path}.qualificationPairs[{index}].id")
-        before = _string(item.get("before"), f"{path}.qualificationPairs[{index}].before")
-        after = _string(item.get("after"), f"{path}.qualificationPairs[{index}].after")
-        slices = tuple(
-            _string(slice_value, f"{path}.qualificationPairs[{index}].slices")
-            for slice_value in _array(
-                item.get("slices"), f"{path}.qualificationPairs[{index}].slices"
+    seen_pair_ids: set[str] = set()
+    seen_pair_keys: set[tuple[str, str]] = set()
+    for index, raw in enumerate(pairs_raw):
+        if not isinstance(raw, dict):
+            raise ContractError(f"{path}.qualificationPairs[{index}]: object required")
+        _exact_keys(raw, {"id", "earlier", "later", "slices"}, f"pair {index}")
+        pair_id, earlier, later, slices = raw["id"], raw["earlier"], raw["later"], raw["slices"]
+        if not all(isinstance(item, str) for item in (pair_id, earlier, later)):
+            raise ContractError(f"{path}.qualificationPairs[{index}]: string IDs required")
+        if earlier not in position or later not in position or position[earlier] >= position[later]:
+            raise ContractError(f"{path}.qualificationPairs[{index}]: pair must follow GT order")
+        if (
+            not isinstance(slices, list)
+            or not slices
+            or not all(isinstance(item, str) for item in slices)
+        ):
+            raise ContractError(
+                f"{path}.qualificationPairs[{index}].slices: nonempty string array required"
             )
-        )
-        if pair_id in pair_ids or (before, after) in pair_keys:
-            raise ReadingOrderV2ContractError(f"{path}: duplicate qualification pair")
-        if before == after or before not in position_by_id or after not in position_by_id:
-            raise ReadingOrderV2ContractError(f"{path}: invalid qualification-pair regions")
-        if position_by_id[before] >= position_by_id[after]:
-            raise ReadingOrderV2ContractError(f"{path}: qualification pair reverses GT order")
-        if not slices or any(slice_name not in REQUIRED_PAIR_SLICES for slice_name in slices):
-            raise ReadingOrderV2ContractError(f"{path}: invalid qualification-pair slice")
-        if len(set(slices)) != len(slices):
-            raise ReadingOrderV2ContractError(f"{path}: duplicate qualification-pair slice")
-        pair_ids.add(pair_id)
-        pair_keys.add((before, after))
-        pairs.append(QualificationPair(pair_id, before, after, slices))
-
-    layout_tags = tuple(
-        sorted(
-            _string(value, f"{path}.layoutTags")
-            for value in _array(raw.get("layoutTags"), f"{path}.layoutTags")
-        )
-    )
-    panel_values = _array(raw.get("panels"), f"{path}.panels")
+        if pair_id in seen_pair_ids or (earlier, later) in seen_pair_keys:
+            raise ContractError(f"{path}: duplicate qualification pair")
+        seen_pair_ids.add(pair_id)
+        seen_pair_keys.add((earlier, later))
+        pairs.append(QualificationPair(pair_id, earlier, later, tuple(sorted(set(slices)))))
+    panels_raw = data["panels"]
+    if not isinstance(panels_raw, list):
+        raise ContractError(f"{path}.panels: array required")
     panels: list[PanelGroundTruth] = []
-    panel_ids: set[str] = set()
-    for index, value in enumerate(panel_values):
-        item = _object(value, f"{path}.panels[{index}]")
-        panel_id = _string(item.get("id"), f"{path}.panels[{index}].id")
-        bbox_value = _object(item.get("bbox"), f"{path}.panels[{index}].bbox")
-        bbox = BBox(
-            x=_int(bbox_value.get("x"), f"{path}.panels[{index}].bbox.x"),
-            y=_int(bbox_value.get("y"), f"{path}.panels[{index}].bbox.y"),
-            width=_int(bbox_value.get("width"), f"{path}.panels[{index}].bbox.width", minimum=1),
-            height=_int(bbox_value.get("height"), f"{path}.panels[{index}].bbox.height", minimum=1),
-        )
-        if bbox.x + bbox.width > width or bbox.y + bbox.height > height:
-            raise ReadingOrderV2ContractError(f"{path}: panel bbox outside page")
-        if panel_id in panel_ids:
-            raise ReadingOrderV2ContractError(f"{path}: duplicate panel ID")
-        panel_ids.add(panel_id)
-        panels.append(
-            PanelGroundTruth(
-                panel_id,
-                bbox,
-                _bool(item.get("scored"), f"{path}.panels[{index}].scored"),
-            )
-        )
-
-    for region in regions:
-        if region.panel_id is not None and region.panel_id not in panel_ids:
-            raise ReadingOrderV2ContractError(
-                f"{path}: region {region.region_id} references unknown panel {region.panel_id}"
-            )
-
-    precedence_values = _array(raw.get("panelPrecedence"), f"{path}.panelPrecedence")
-    precedence: list[tuple[str, str]] = []
-    for index, value in enumerate(precedence_values):
-        item = _array(value, f"{path}.panelPrecedence[{index}]")
-        if len(item) != 2:
-            raise ReadingOrderV2ContractError(f"{path}: panel precedence pair must have two IDs")
-        before = _string(item[0], f"{path}.panelPrecedence[{index}][0]")
-        after = _string(item[1], f"{path}.panelPrecedence[{index}][1]")
-        if before == after or before not in panel_ids or after not in panel_ids:
-            raise ReadingOrderV2ContractError(f"{path}: invalid panel precedence")
-        precedence.append((before, after))
-    if len(set(precedence)) != len(precedence):
-        raise ReadingOrderV2ContractError(f"{path}: duplicate panel precedence")
-
-    return AnnotationPage(
-        page_id=page_id,
-        width=width,
-        height=height,
-        image_sha256=image_sha256,
-        regions=tuple(regions),
-        reading_order_sequence=sequence,
-        qualification_pairs=tuple(pairs),
-        layout_tags=layout_tags,
-        panels=tuple(panels),
-        panel_precedence=tuple(precedence),
+    for index, raw in enumerate(panels_raw):
+        if not isinstance(raw, dict):
+            raise ContractError(f"{path}.panels[{index}]: object required")
+        _exact_keys(raw, {"id", "bbox", "precedencePosition"}, f"panel {index}")
+        bbox = raw["bbox"]
+        if not isinstance(raw["id"], str) or not isinstance(bbox, dict):
+            raise ContractError(f"{path}.panels[{index}]: invalid panel")
+        _exact_keys(bbox, {"x", "y", "width", "height"}, f"panel {index}.bbox")
+        values = tuple(bbox[key] for key in ("x", "y", "width", "height"))
+        if (
+            not all(isinstance(value, int) for value in values)
+            or min(values) < 0
+            or values[2] <= 0
+            or values[3] <= 0
+        ):
+            raise ContractError(f"{path}.panels[{index}].bbox: invalid")
+        precedence = raw["precedencePosition"]
+        if precedence is not None and (not isinstance(precedence, int) or precedence < 0):
+            raise ContractError(f"{path}.panels[{index}].precedencePosition: invalid")
+        panels.append(PanelGroundTruth(raw["id"], BBox(*values), precedence))
+    return PageGroundTruth(
+        page_id,
+        tuple(reading),
+        tuple(unscored),
+        tuple(pairs),
+        tuple(sorted(set(tags))),
+        tuple(panels),
     )
 
 
-def load_manifest(path: Path) -> CorpusManifest:
-    raw = _object(json.loads(path.read_text(encoding="utf-8")), str(path))
-    if raw.get("schemaVersion") != "reading-order-v2-manifest-v1":
-        raise ReadingOrderV2ContractError(f"{path}: wrong manifest schema version")
-    corpus_id = _string(raw.get("corpusId"), f"{path}.corpusId")
-    qualification_version = _string(
-        raw.get("qualificationVersion"), f"{path}.qualificationVersion"
+def validate_corpus_design(data: dict[str, Any]) -> None:
+    _exact_keys(
+        data,
+        {"schemaVersion", "corpusId", "version", "pageCount", "requirements", "slots"},
+        "corpus-design",
     )
-    if corpus_id != CORPUS_ID or qualification_version != QUALIFICATION_VERSION:
-        raise ReadingOrderV2ContractError(f"{path}: wrong frozen corpus identity")
-    design_sha256 = _hex64(raw.get("designSha256"), f"{path}.designSha256")
-    page_values = _array(raw.get("pages"), f"{path}.pages")
-    pages: list[CorpusPageManifest] = []
-    for index, value in enumerate(page_values):
-        item = _object(value, f"{path}.pages[{index}]")
-        page_id = _string(item.get("id"), f"{path}.pages[{index}].id")
-        entries: dict[str, tuple[str, str]] = {}
-        for key in ("source", "image", "input", "annotation"):
-            entry = _object(item.get(key), f"{path}.pages[{index}].{key}")
-            entries[key] = (
-                _string(entry.get("file"), f"{path}.pages[{index}].{key}.file"),
-                _hex64(entry.get("sha256"), f"{path}.pages[{index}].{key}.sha256"),
-            )
-        pages.append(
-            CorpusPageManifest(
-                page_id=page_id,
-                source_file=entries["source"][0],
-                source_sha256=entries["source"][1],
-                image_file=entries["image"][0],
-                image_sha256=entries["image"][1],
-                input_file=entries["input"][0],
-                input_sha256=entries["input"][1],
-                annotation_file=entries["annotation"][0],
-                annotation_sha256=entries["annotation"][1],
-            )
-        )
-    if tuple(page.page_id for page in pages) != PAGE_IDS:
-        raise ReadingOrderV2ContractError(f"{path}: manifest must contain exactly H01..H16")
-    return CorpusManifest(corpus_id, qualification_version, design_sha256, tuple(pages))
+    if data["schemaVersion"] != "reading-order-v2-corpus-design-v1":
+        raise ContractError("corpus-design: wrong schema version")
+    if data["corpusId"] != CORPUS_ID or data["version"] != CORPUS_VERSION:
+        raise ContractError("corpus-design: wrong corpus identity")
+    if data["pageCount"] != 16:
+        raise ContractError("corpus-design: pageCount must be exactly 16")
+    slots = data["slots"]
+    slot_ids = (
+        [slot.get("id") for slot in slots if isinstance(slot, dict)]
+        if isinstance(slots, list)
+        else []
+    )
+    if slot_ids != list(PAGE_IDS):
+        raise ContractError("corpus-design: slots must be exactly ordered H01..H16")
+    requirements = data["requirements"]
+    expected = {
+        "minAQualificationPairs": 12,
+        "minAPages": 5,
+        "minBQualificationPairs": 12,
+        "minBPages": 5,
+        "minCleanOrdinaryControls": 4,
+        "minIntentionalWholePageFallbackPages": 2,
+        "minOpenOrIncompleteFramePages": 2,
+    }
+    if requirements != expected:
+        raise ContractError("corpus-design: frozen minima do not match spec v1")
+
+
+def arm_asset_paths(corpus_root: Path, page_id: str) -> tuple[Path, Path]:
+    safe_id = _page_id(page_id, "pageId")
+    return corpus_root / "images" / f"{safe_id}.png", corpus_root / "inputs" / f"{safe_id}.json"

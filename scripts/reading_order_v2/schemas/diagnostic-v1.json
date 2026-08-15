@@ -1,0 +1,31 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"reading-order-v2-diagnostic-v1",
+  "$defs":{
+    "rational":{"type":"object","additionalProperties":false,"required":["numerator","denominator"],"properties":{"numerator":{"type":"integer","minimum":0},"denominator":{"type":"integer","minimum":1}}},
+    "edge":{"type":"object","additionalProperties":false,"required":["targetGroupId","rule","xOverlap","yOverlap"],"properties":{"targetGroupId":{"type":"string","pattern":"^g[0-9]{3}$"},"rule":{"enum":["same-level-right-before-left","aligned-top-before-bottom","nonoverlap-top-before-bottom"]},"xOverlap":{"$ref":"#/$defs/rational"},"yOverlap":{"$ref":"#/$defs/rational"}}},
+    "group":{"type":"object","additionalProperties":false,"required":["groupId","sourceGroupIndex","bbox","polygon","center2x","center2y","candidateRegionIds","confidentRegionIds","fallbackRank","precedenceIndex","tieKey","precedenceEdges"],"properties":{"groupId":{"type":"string","pattern":"^g[0-9]{3}$"},"sourceGroupIndex":{"type":"integer","minimum":0},"bbox":{"type":"array","minItems":4,"maxItems":4,"items":{"type":"integer"}},"polygon":{"type":"null"},"center2x":{"type":"integer"},"center2y":{"type":"integer"},"candidateRegionIds":{"type":"array","items":{"type":"string"}},"confidentRegionIds":{"type":"array","items":{"type":"string"}},"fallbackRank":{"type":["integer","null"],"minimum":0},"precedenceIndex":{"type":["integer","null"],"minimum":0},"tieKey":{"type":"array"},"precedenceEdges":{"type":"array","items":{"$ref":"#/$defs/edge"}}}},
+    "region":{"type":"object","additionalProperties":false,"required":["regionId","sourceIndex","bbox","polygon","center2x","center2y","directionRaw","orientationClass","candidateGroupIds","assignmentStatus","assignmentReason","ambiguityCount","assignedGroupId","fallbackIndex","localTierId","localRunId","localOrderingMode","localOrderingKey","finalPageIndex"],"properties":{"regionId":{"type":"string","minLength":1},"sourceIndex":{"type":"integer","minimum":0},"bbox":{"type":"array","minItems":4,"maxItems":4,"items":{"type":"integer"}},"polygon":{"type":"array","minItems":4,"items":{"type":"array","minItems":2,"maxItems":2,"items":{"type":"integer"}}},"center2x":{"type":"integer"},"center2y":{"type":"integer"},"directionRaw":{"type":"string"},"orientationClass":{"enum":["horizontal","vertical","ambiguous"]},"candidateGroupIds":{"type":"array","items":{"type":"string","pattern":"^g[0-9]{3}$"}},"assignmentStatus":{"enum":["confident","unassigned","ambiguous"]},"assignmentReason":{"enum":["unique-center-containment","no-center-containment","multiple-center-containment","not-attempted"]},"ambiguityCount":{"type":"integer","minimum":0},"assignedGroupId":{"type":["string","null"]},"fallbackIndex":{"type":"integer","minimum":0},"localTierId":{"type":["string","null"]},"localRunId":{"type":["string","null"]},"localOrderingMode":{"type":"string"},"localOrderingKey":{"type":"array"},"finalPageIndex":{"type":"integer","minimum":0}}}
+  },
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schemaVersion","specVersion","repositorySha","armId","pageId","inputRegionCount","inputRegionIds","fallbackOrder","segmentation","assignmentPolicy","panelEvidenceMode","usedPanelEvidence","fallbackReason","finalOrder","groups","regions"],
+  "properties":{
+    "schemaVersion":{"const":"reading-order-v2-diagnostic-v1"},
+    "specVersion":{"const":"reading-order-v2-experiment-spec-v1"},
+    "repositorySha":{"type":"string","pattern":"^[0-9a-f]{40}$"},
+    "armId":{"enum":["A0_B0_CONTROL","A1_B0_PANEL_ONLY","A0_B1_ORDER_ONLY","A1_B1_COMBINED"]},
+    "pageId":{"type":"string","minLength":1},
+    "inputRegionCount":{"type":"integer","minimum":0},
+    "inputRegionIds":{"type":"array","items":{"type":"string"}},
+    "fallbackOrder":{"type":"array","items":{"type":"string"}},
+    "segmentation":{"type":"object","additionalProperties":false,"required":["attempted","reliable","reason","detectedGroupCount"],"properties":{"attempted":{"type":"boolean"},"reliable":{"type":"boolean"},"reason":{"type":"string"},"detectedGroupCount":{"type":"integer","minimum":0}}},
+    "assignmentPolicy":{"enum":["all-or-nothing-v1","partial-panel-evidence-v1"]},
+    "panelEvidenceMode":{"enum":["none","full","partial"]},
+    "usedPanelEvidence":{"type":"boolean"},
+    "fallbackReason":{"type":["string","null"]},
+    "finalOrder":{"type":"array","items":{"type":"string"}},
+    "groups":{"type":"array","items":{"$ref":"#/$defs/group"}},
+    "regions":{"type":"array","items":{"$ref":"#/$defs/region"}}
+  }
+}

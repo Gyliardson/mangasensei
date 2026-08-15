@@ -1,35 +1,52 @@
 from __future__ import annotations
 
-import hashlib
-import sys
+import json
 from pathlib import Path
+from typing import Any
 
 from PIL import Image
 
-from .contracts import PAGE_IDS, ReadingOrderV2ContractError, load_annotation, load_manifest
-from .validate_design import validate_design
+from .canonical import sha256_path
+from .contracts import (
+    CORPUS_ID,
+    CORPUS_VERSION,
+    PAGE_IDS,
+    ContractError,
+    load_arm_input,
+    load_ground_truth,
+    validate_corpus_design,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CORPUS_ROOT = REPO_ROOT / "assets" / "reading-order-v2" / "heldout-v1"
 
 
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def _object(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ContractError(f"{path}: expected object")
+    return value
 
 
-def _safe_member(root: Path, relative: str, expected_prefix: str) -> Path:
-    if relative.startswith(("/", "\\")) or "\\" in relative:
-        raise ReadingOrderV2ContractError(f"unsafe corpus path {relative!r}")
-    parts = Path(relative).parts
-    if ".." in parts or not parts or parts[0] != expected_prefix:
-        raise ReadingOrderV2ContractError(f"unexpected corpus path {relative!r}")
-    return root / relative
-
-
-def validate_corpus(root: Path) -> None:
-    design = root / "corpus-design.json"
-    validate_design(design)
+def validate_corpus(root: Path = CORPUS_ROOT) -> None:
+    design = _object(root / "corpus-design.json")
+    validate_corpus_design(design)
     manifest_path = root / "manifest.json"
-    manifest = load_manifest(manifest_path)
-    if manifest.design_sha256 != _sha256(design):
-        raise ReadingOrderV2ContractError("manifest design SHA-256 mismatch")
+    manifest = _object(manifest_path)
+    if manifest.get("schemaVersion") != "reading-order-v2-manifest-v1":
+        raise ContractError("manifest: bad schema version")
+    if manifest.get("corpusId") != CORPUS_ID or manifest.get("version") != CORPUS_VERSION:
+        raise ContractError("manifest: wrong corpus identity")
+    if manifest.get("designSha256") != sha256_path(root / "corpus-design.json"):
+        raise ContractError("manifest: corpus-design SHA mismatch")
+    pages = manifest.get("pages")
+    page_ids = (
+        [page.get("id") for page in pages if isinstance(page, dict)]
+        if isinstance(pages, list)
+        else []
+    )
+    if page_ids != list(PAGE_IDS):
+        raise ContractError("manifest: pages must be exactly H01..H16")
 
     a_pairs = 0
     b_pairs = 0
@@ -38,78 +55,78 @@ def validate_corpus(root: Path) -> None:
     clean_pages = 0
     fallback_pages = 0
     open_pages = 0
-    for page in manifest.pages:
-        expected_relative = {
-            "source": f"source/{page.page_id}.svg",
-            "image": f"images/{page.page_id}.png",
-            "input": f"inputs/{page.page_id}.json",
-            "annotation": f"annotations/{page.page_id}.json",
+    for page_record in pages:
+        assert isinstance(page_record, dict)
+        page_id = page_record["id"]
+        expected_paths = {
+            "source": f"source/{page_id}.svg",
+            "image": f"images/{page_id}.png",
+            "input": f"inputs/{page_id}.json",
+            "annotation": f"annotations/{page_id}.json",
         }
-        actual_relative = {
-            "source": page.source_file,
-            "image": page.image_file,
-            "input": page.input_file,
-            "annotation": page.annotation_file,
-        }
-        if actual_relative != expected_relative:
-            raise ReadingOrderV2ContractError(
-                f"{page.page_id}: manifest paths must use the frozen directory layout"
-            )
-        paths = {
-            kind: _safe_member(root, relative, expected_relative[kind].split("/", 1)[0])
-            for kind, relative in actual_relative.items()
-        }
-        expected_hashes = {
-            "source": page.source_sha256,
-            "image": page.image_sha256,
-            "input": page.input_sha256,
-            "annotation": page.annotation_sha256,
-        }
-        for kind, path in paths.items():
-            if not path.is_file() or path.is_symlink() or _sha256(path) != expected_hashes[kind]:
-                raise ReadingOrderV2ContractError(f"{page.page_id}: {kind} integrity mismatch")
-        with Image.open(paths["image"]) as image:
+        for role, relative in expected_paths.items():
+            record = page_record.get(role)
+            if not isinstance(record, dict) or record.get("file") != relative:
+                raise ContractError(f"manifest {page_id}: bad {role} path")
+            path = root / relative
+            if record.get("sha256") != sha256_path(path):
+                raise ContractError(f"manifest {page_id}: {role} SHA mismatch")
+        with Image.open(root / expected_paths["image"]) as image:
             if image.format != "PNG" or image.mode != "RGB" or image.size != (1440, 2048):
-                raise ReadingOrderV2ContractError(f"{page.page_id}: image contract mismatch")
-        annotation = load_annotation(paths["annotation"])
-        if annotation.page_id != page.page_id or annotation.image_sha256 != page.image_sha256:
-            raise ReadingOrderV2ContractError(f"{page.page_id}: annotation identity mismatch")
-        page_a = [pair for pair in annotation.qualification_pairs if "A" in pair.slices]
-        page_b = [pair for pair in annotation.qualification_pairs if "B" in pair.slices]
-        a_pairs += len(page_a)
-        b_pairs += len(page_b)
-        if page_a:
-            a_pages.add(page.page_id)
-        if page_b:
-            b_pages.add(page.page_id)
-        tags = set(annotation.layout_tags)
-        clean_pages += "clean-control" in tags
-        fallback_pages += "intentional-fallback" in tags
-        open_pages += "open-incomplete-frame" in tags
-    if tuple(page.page_id for page in manifest.pages) != PAGE_IDS:
-        raise ReadingOrderV2ContractError("held-out corpus must contain exactly H01..H16")
-    failures = []
+                raise ContractError(f"{page_id}: image must be single RGB 1440x2048 PNG")
+        arm_input = load_arm_input(root / expected_paths["input"])
+        gt = load_ground_truth(root / expected_paths["annotation"])
+        if arm_input.page_id != page_id or gt.page_id != page_id:
+            raise ContractError(f"{page_id}: page IDs disagree")
+        input_ids = {region.region_id for region in arm_input.regions}
+        gt_ids = set(gt.reading_order) | set(gt.unscored_region_ids)
+        if input_ids != gt_ids:
+            raise ContractError(f"{page_id}: arm-visible and scorer ID sets differ")
+        a_count = sum("A" in pair.slices or "A+B" in pair.slices for pair in gt.qualification_pairs)
+        b_count = sum("B" in pair.slices or "A+B" in pair.slices for pair in gt.qualification_pairs)
+        a_pairs += a_count
+        b_pairs += b_count
+        if a_count:
+            a_pages.add(page_id)
+        if b_count:
+            b_pages.add(page_id)
+        clean_pages += int("clean-control" in gt.layout_tags)
+        fallback_pages += int("intentional-fallback" in gt.layout_tags)
+        open_pages += int("open-frame" in gt.layout_tags or "incomplete-frame" in gt.layout_tags)
+
     if a_pairs < 12 or len(a_pages) < 5:
-        failures.append("A qualification minimum")
+        raise ContractError("held-out corpus does not meet frozen A pair/page minima")
     if b_pairs < 12 or len(b_pages) < 5:
-        failures.append("B qualification minimum")
-    if clean_pages < 4:
-        failures.append("clean ordinary control minimum")
-    if fallback_pages < 2:
-        failures.append("intentional fallback minimum")
-    if open_pages < 2:
-        failures.append("open/incomplete-frame minimum")
-    if failures:
-        raise ReadingOrderV2ContractError(f"corpus coverage minima failed: {failures!r}")
+        raise ContractError("held-out corpus does not meet frozen B pair/page minima")
+    if clean_pages < 4 or fallback_pages < 2 or open_pages < 2:
+        raise ContractError("held-out corpus does not meet frozen layout minima")
+
+    inventory = manifest.get("inventory")
+    if not isinstance(inventory, list):
+        raise ContractError("manifest.inventory must be an array")
+    actual = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and path != manifest_path
+    }
+    declared = {item.get("file") for item in inventory if isinstance(item, dict)}
+    if actual != declared:
+        raise ContractError(
+            "manifest inventory mismatch: "
+            f"missing={sorted(actual-declared)}, extra={sorted(declared-actual)}"
+        )
+    for item in inventory:
+        if not isinstance(item, dict) or not isinstance(item.get("file"), str):
+            raise ContractError("malformed manifest inventory")
+        path = root / item["file"]
+        if item.get("bytes") != path.stat().st_size or item.get("sha256") != sha256_path(path):
+            raise ContractError(f"inventory integrity mismatch: {item['file']}")
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = sys.argv[1:] if argv is None else argv
-    root = Path(args[0]) if args else Path("assets/reading-order-v2/heldout-v1")
-    validate_corpus(root)
-    print(f"validated {root}")
-    return 0
+def main() -> None:
+    validate_corpus()
+    print("reading-order-v2 held-out corpus: valid")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

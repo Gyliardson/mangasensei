@@ -1,158 +1,103 @@
 from __future__ import annotations
 
-import pytest
+from fractions import Fraction
 
-from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ReadingOrderArm
-from scripts.reading_order_v2.scoring import ReadingOrderScores, SliceScore
-from scripts.reading_order_v2.verdict import (
-    ArmSignals,
-    CombinedStatus,
-    FormalVerdict,
-    HarnessSignals,
-    HypothesisStatus,
-    evaluate_verdict,
-)
+from scripts.reading_order_v2.scoring import CorpusScore, PairMetrics
+from scripts.reading_order_v2.verdict import Verdict, evaluate_verdict
 
 
-def scores(wrong: set[str]) -> ReadingOrderScores:
-    names = (
-        "aggregate",
-        "A",
-        "B",
-        "A+B",
-        "control",
-        "clean-control",
-        "vertical-only",
-        "horizontal-only",
-        "mixed",
-        "partial-assignment",
-        "intentional-fallback",
-    )
-    slices = tuple(
-        SliceScore(name, max(1, len(wrong)), len(wrong), tuple(sorted(wrong)))
-        for name in names
-    )
-    return ReadingOrderScores((), slices)
-
-
-def signals(**kwargs: object) -> ArmSignals:
-    defaults: dict[str, object] = dict(
-        integrity_passed=True,
-        deterministic=True,
-        uncertainty_explicit=True,
-        a_mechanism_exercised=True,
-        b_horizontal_exercised=True,
-        b_mixed_exercised=True,
-        b_vertical_control_exercised=True,
-    )
-    defaults.update(kwargs)
-    return ArmSignals(**defaults)  # type: ignore[arg-type]
-
-
-def bundle(
-    control_wrong: set[str],
-    a_wrong: set[str],
-    b_wrong: set[str],
-    combined_wrong: set[str],
-) -> dict[ReadingOrderArm, ReadingOrderScores]:
-    return {
-        ReadingOrderArm.A0_B0_CONTROL: scores(control_wrong),
-        ReadingOrderArm.A1_B0_PANEL_ONLY: scores(a_wrong),
-        ReadingOrderArm.A0_B1_ORDER_ONLY: scores(b_wrong),
-        ReadingOrderArm.A1_B1_COMBINED: scores(combined_wrong),
-    }
-
-
-def signal_bundle(
-    **overrides: ArmSignals,
-) -> dict[ReadingOrderArm, ArmSignals]:
-    result = {arm: signals() for arm in ReadingOrderArm}
-    for key, value in overrides.items():
-        result[ReadingOrderArm(key)] = value
-    return result
-
-
-def harness(**overrides: bool) -> HarnessSignals:
-    values = dict(
-        a0_matches_production=True,
-        all_arms_preserve_regions=True,
-        all_repeat_hashes_identical=True,
-        forbidden_input_access_absent=True,
-    )
-    values.update(overrides)
-    return HarnessSignals(**values)
-
-
-def test_formal_pass_requires_a_b_and_combined_strict_progress() -> None:
-    result = evaluate_verdict(
-        harness=harness(),
-        scores=bundle({"x", "y", "z"}, {"y", "z"}, {"x", "z"}, {"z"}),
-        signals={arm: signals() for arm in ReadingOrderArm},
-    )
-    assert result.verdict is FormalVerdict.READING_ORDER_V2_HELDOUT_PASS
-    assert result.a_status is HypothesisStatus.PASS
-    assert result.b_status is HypothesisStatus.PASS
-    assert result.combined_status is CombinedStatus.PASS
-
-
-def test_invalid_experiment_precedes_quality_outcomes() -> None:
-    result = evaluate_verdict(
-        harness=harness(a0_matches_production=False),
-        scores=bundle({"x"}, {"new"}, {"new"}, {"new"}),
-        signals={arm: signals() for arm in ReadingOrderArm},
-    )
-    assert result.verdict is FormalVerdict.INVALID_EXPERIMENT
-    assert any(
-        reason.gate == "harness.a0-production-fidelity" for reason in result.reasons
+def _metric(
+    wrong: tuple[tuple[str, str], ...], *, total: int = 4
+) -> PairMetrics:
+    inversions = len(wrong)
+    return PairMetrics(
+        total,
+        inversions,
+        total - inversions,
+        Fraction(total - inversions, total),
+        Fraction(inversions, total),
+        wrong,
     )
 
 
-def test_a_failure_and_a_inconclusive_are_distinct() -> None:
-    failed = evaluate_verdict(
-        harness=harness(),
-        scores=bundle({"x"}, {"new"}, set(), set()),
-        signals={arm: signals() for arm in ReadingOrderArm},
+def _score(global_wrong=(), a_wrong=(), b_wrong=()) -> CorpusScore:
+    return CorpusScore(
+        page_count=16,
+        exact_sequence_pages=16 - len(global_wrong),
+        aggregate=_metric(tuple(global_wrong)),
+        slices={"A": _metric(tuple(a_wrong)), "B": _metric(tuple(b_wrong))},
+        pages=(),
     )
-    assert failed.verdict is FormalVerdict.A_FAIL
-    inconclusive = evaluate_verdict(
-        harness=harness(),
-        scores=bundle({"x"}, {"x"}, set(), set()),
-        signals={arm: signals() for arm in ReadingOrderArm},
+
+
+def _evaluate(
+    control: CorpusScore,
+    panel_only: CorpusScore,
+    order_only: CorpusScore,
+    combined: CorpusScore,
+    *,
+    harness_valid: bool = True,
+    a_exercised: bool = True,
+    b_exercised: bool = True,
+):
+    return evaluate_verdict(
+        harness_valid=harness_valid,
+        control=control,
+        panel_only=panel_only,
+        order_only=order_only,
+        combined=combined,
+        a_exercised=a_exercised,
+        b_exercised=b_exercised,
     )
-    assert inconclusive.verdict is FormalVerdict.A_INCONCLUSIVE
 
 
-def test_b_failure_and_b_inconclusive_are_distinct() -> None:
-    failed = evaluate_verdict(
-        harness=harness(),
-        scores=bundle({"x", "y"}, {"y"}, {"new"}, set()),
-        signals={arm: signals() for arm in ReadingOrderArm},
+def test_invalid_experiment_precedes_quality() -> None:
+    score = _score()
+    result = _evaluate(score, score, score, score, harness_valid=False)
+    assert result.verdict is Verdict.INVALID_EXPERIMENT
+
+
+def test_a_and_b_inconclusive_are_formal_outcomes() -> None:
+    control = _score((("a", "b"),), (("a", "b"),), (("c", "d"),))
+    improved = _score()
+    result = _evaluate(control, improved, improved, improved, a_exercised=False)
+    assert result.verdict is Verdict.A_INCONCLUSIVE
+    result = _evaluate(control, improved, improved, improved, b_exercised=False)
+    assert result.verdict is Verdict.B_INCONCLUSIVE
+
+
+def test_a_b_combined_fail_and_pass_paths() -> None:
+    control = _score(
+        (("a", "b"), ("c", "d")),
+        (("a", "b"),),
+        (("c", "d"),),
     )
-    assert failed.verdict is FormalVerdict.B_FAIL
-    inconclusive = evaluate_verdict(
-        harness=harness(),
-        scores=bundle({"x", "y"}, {"y"}, {"x", "y"}, set()),
-        signals={arm: signals() for arm in ReadingOrderArm},
-    )
-    assert inconclusive.verdict is FormalVerdict.B_INCONCLUSIVE
+    a_pass = _score((("c", "d"),), (), (("c", "d"),))
+    b_pass = _score((("a", "b"),), (("a", "b"),), ())
+    combined_pass = _score((), (), ())
+    result = _evaluate(control, a_pass, b_pass, combined_pass)
+    assert result.verdict is Verdict.READING_ORDER_V2_HELDOUT_PASS
+
+    a_fail = _score((("c", "d"), ("x", "y")), (("x", "y"),), (("c", "d"),))
+    assert _evaluate(control, a_fail, b_pass, combined_pass).verdict is Verdict.A_FAIL
+
+    b_fail = _score((("a", "b"), ("x", "y")), (("a", "b"),), (("x", "y"),))
+    assert _evaluate(control, a_pass, b_fail, combined_pass).verdict is Verdict.B_FAIL
+
+    combined_fail = _score((("a", "b"),), (("a", "b"),), ())
+    result = _evaluate(control, a_pass, b_pass, combined_fail)
+    assert result.verdict is Verdict.COMBINED_FAIL
 
 
-def test_combined_failure_is_reported_after_a_and_b_pass() -> None:
-    result = evaluate_verdict(
-        harness=harness(),
-        scores=bundle({"x", "y", "z"}, {"y", "z"}, {"x", "z"}, {"x", "y"}),
-        signals={arm: signals() for arm in ReadingOrderArm},
-    )
-    assert result.verdict is FormalVerdict.COMBINED_FAIL
-    assert result.combined_status is CombinedStatus.FAIL
+def test_exercised_hypothesis_without_control_failure_is_inconclusive() -> None:
+    no_a_failure = _score((("c", "d"),), (), (("c", "d"),))
+    b_pass = _score((), (), ())
+    result = _evaluate(no_a_failure, no_a_failure, b_pass, b_pass)
+    assert result.verdict is Verdict.A_INCONCLUSIVE
+    assert result.a_status == "INCONCLUSIVE"
 
-
-def test_missing_frozen_arm_is_rejected() -> None:
-    score_map = bundle({"x"}, set(), set(), set())
-    del score_map[ReadingOrderArm.A1_B1_COMBINED]
-    with pytest.raises(ValueError, match="exactly the four frozen arms"):
-        evaluate_verdict(
-            harness=harness(),
-            scores=score_map,
-            signals={arm: signals() for arm in ReadingOrderArm},
-        )
+    no_b_failure = _score((("a", "b"),), (("a", "b"),), ())
+    a_pass = _score((), (), ())
+    result = _evaluate(no_b_failure, a_pass, no_b_failure, a_pass)
+    assert result.verdict is Verdict.B_INCONCLUSIVE
+    assert result.b_status == "INCONCLUSIVE"

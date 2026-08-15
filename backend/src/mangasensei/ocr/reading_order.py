@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from statistics import median
 from typing import Any
@@ -78,10 +78,43 @@ class _ReadingOrderItem:
     height: float
 
 
-def manga_tier_order(regions: Sequence[Any], *, page_height: int) -> list[Any]:
-    """Preserve the proven text-only manga-tier order used as the explicit fallback."""
-    if len(regions) < 2:
-        return list(regions)
+@dataclass(frozen=True, slots=True)
+class _OverlapEvidence:
+    numerator: int
+    denominator: int
+
+    @property
+    def value(self) -> float:
+        return self.numerator / self.denominator if self.denominator > 0 else 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class _PanelPrecedenceEdge:
+    source_index: int
+    target_index: int
+    rule: str
+    x_overlap: _OverlapEvidence
+    y_overlap: _OverlapEvidence
+
+
+@dataclass(frozen=True, slots=True)
+class _PanelFlowV1Resolution:
+    fallback: tuple[Any, ...]
+    segmentation: PanelSegmentation | None
+    assignment: PanelAssignment | None
+    fallback_ranks: tuple[int | None, ...]
+    precedence_edges: tuple[_PanelPrecedenceEdge, ...]
+    panel_order: tuple[int, ...] | None
+    fallback_reason: str | None
+    used_panel_evidence: bool
+
+
+def _partition_manga_tiers(
+    regions: Sequence[Any], *, page_height: int
+) -> tuple[tuple[_ReadingOrderItem, ...], ...]:
+    """Build the exact production manga-tier partition without local reordering."""
+    if not regions:
+        return ()
 
     items: list[_ReadingOrderItem] = []
     for source_index, region in enumerate(regions):
@@ -112,9 +145,17 @@ def manga_tier_order(regions: Sequence[Any], *, page_height: int) -> list[Any]:
             tiers.append((item.y_top, [item]))
         else:
             tiers[-1][1].append(item)
+    return tuple(tuple(tier_items) for _, tier_items in tiers)
+
+
+def manga_tier_order(regions: Sequence[Any], *, page_height: int) -> list[Any]:
+    """Preserve the proven text-only manga-tier order used as the explicit fallback."""
+    if len(regions) < 2:
+        return list(regions)
 
     ordered: list[Any] = []
-    for _, tier_items in tiers:
+    for tier in _partition_manga_tiers(regions, page_height=page_height):
+        tier_items = list(tier)
         tier_items.sort(key=lambda item: (-item.x_center, item.y_top, item.source_index))
         ordered.extend(item.region for item in tier_items)
     return ordered
@@ -134,20 +175,25 @@ def segment_panel_groups(pixels: Any) -> PanelSegmentation:
     return _validate_boxes(boxes, page_width, page_height)
 
 
+def _candidate_group_indices(boxes: Sequence[PanelBox], region: Any) -> tuple[int, ...]:
+    """Return the exact production strict-center containment memberships."""
+    x1, y1, x2, y2 = (float(value) for value in region.xyxy)
+    center_x = (x1 + x2) / 2
+    center_y = (y1 + y2) / 2
+    return tuple(
+        index
+        for index, box in enumerate(boxes)
+        if box.x1 <= center_x <= box.x2 and box.y1 <= center_y <= box.y2
+    )
+
+
 def assign_regions_to_groups(
     boxes: Sequence[PanelBox], regions: Sequence[Any]
 ) -> PanelAssignment:
     """Assign by strict center containment; ambiguity forces a page-level fallback."""
     groups: list[list[int]] = [[] for _ in boxes]
     for region_index, region in enumerate(regions):
-        x1, y1, x2, y2 = (float(value) for value in region.xyxy)
-        center_x = (x1 + x2) / 2
-        center_y = (y1 + y2) / 2
-        matches = [
-            index
-            for index, box in enumerate(boxes)
-            if box.x1 <= center_x <= box.x2 and box.y1 <= center_y <= box.y2
-        ]
+        matches = _candidate_group_indices(boxes, region)
         if len(matches) != 1:
             return PanelAssignment(
                 groups=tuple(tuple(group) for group in groups),
@@ -169,22 +215,32 @@ def assign_regions_to_groups(
     )
 
 
-def panel_precedence_order(
-    boxes: Sequence[PanelBox], fallback_ranks: Sequence[int | None]
-) -> tuple[int, ...] | None:
-    """Topologically order groups using explicit vertical and right-to-left precedence."""
-    if len(boxes) != len(fallback_ranks):
-        raise ValueError("panel boxes and fallback ranks must have matching lengths")
+def _overlap_evidence(
+    first_start: int,
+    first_end: int,
+    second_start: int,
+    second_end: int,
+) -> _OverlapEvidence:
+    numerator = max(0, min(first_end, second_end) - max(first_start, second_start))
+    denominator = min(first_end - first_start, second_end - second_start)
+    if denominator <= 0:
+        return _OverlapEvidence(0, 1)
+    return _OverlapEvidence(numerator, denominator)
 
-    outgoing: list[set[int]] = [set() for _ in boxes]
-    indegree = [0 for _ in boxes]
 
+def _panel_precedence_edges(boxes: Sequence[PanelBox]) -> tuple[_PanelPrecedenceEdge, ...]:
+    """Build the exact edge set consumed by production panel precedence."""
+    edges: list[_PanelPrecedenceEdge] = []
+    seen: set[tuple[int, int]] = set()
     for first_index, first in enumerate(boxes):
         for second_index in range(first_index + 1, len(boxes)):
             second = boxes[second_index]
-            x_overlap = _overlap_ratio(first.x1, first.x2, second.x1, second.x2)
-            y_overlap = _overlap_ratio(first.y1, first.y2, second.y1, second.y2)
+            x_evidence = _overlap_evidence(first.x1, first.x2, second.x1, second.x2)
+            y_evidence = _overlap_evidence(first.y1, first.y2, second.y1, second.y2)
+            x_overlap = x_evidence.value
+            y_overlap = y_evidence.value
             edge: tuple[int, int] | None = None
+            rule: str | None = None
 
             if y_overlap >= 0.25 and x_overlap <= 0.15:
                 edge = (
@@ -192,31 +248,49 @@ def panel_precedence_order(
                     if first.center[0] > second.center[0]
                     else (second_index, first_index)
                 )
+                rule = "same-level-right-before-left"
             elif x_overlap >= 0.25 and y_overlap <= 0.20:
                 edge = (
                     (first_index, second_index)
                     if first.center[1] < second.center[1]
                     else (second_index, first_index)
                 )
+                rule = "aligned-top-before-bottom"
             elif first.y2 <= second.y1:
                 edge = (first_index, second_index)
+                rule = "nonoverlap-top-before-bottom"
             elif second.y2 <= first.y1:
                 edge = (second_index, first_index)
+                rule = "nonoverlap-top-before-bottom"
 
-            if edge is not None and edge[1] not in outgoing[edge[0]]:
-                outgoing[edge[0]].add(edge[1])
-                indegree[edge[1]] += 1
+            if edge is not None and rule is not None and edge not in seen:
+                seen.add(edge)
+                edges.append(
+                    _PanelPrecedenceEdge(
+                        source_index=edge[0],
+                        target_index=edge[1],
+                        rule=rule,
+                        x_overlap=x_evidence,
+                        y_overlap=y_evidence,
+                    )
+                )
+    return tuple(edges)
 
-    def tie_key(index: int) -> tuple[float, int, int, int]:
-        fallback_rank = fallback_ranks[index]
-        rank = float(fallback_rank) if fallback_rank is not None else float("inf")
-        box = boxes[index]
-        return (rank, box.y1, -box.x2, index)
 
-    ready = sorted(
-        (index for index, value in enumerate(indegree) if value == 0),
-        key=tie_key,
-    )
+def _deterministic_topological_order(
+    node_count: int,
+    edges: Sequence[tuple[int, int]],
+    *,
+    tie_key: Callable[[int], tuple[Any, ...]],
+) -> tuple[int, ...] | None:
+    outgoing: list[set[int]] = [set() for _ in range(node_count)]
+    indegree = [0 for _ in range(node_count)]
+    for source, target in edges:
+        if target not in outgoing[source]:
+            outgoing[source].add(target)
+            indegree[target] += 1
+
+    ready = sorted((index for index, value in enumerate(indegree) if value == 0), key=tie_key)
     ordered: list[int] = []
     while ready:
         current = ready.pop(0)
@@ -226,9 +300,122 @@ def panel_precedence_order(
             if indegree[target] == 0:
                 ready.append(target)
                 ready.sort(key=tie_key)
-
-    if len(ordered) != len(boxes):
+    if len(ordered) != node_count:
         return None
+    return tuple(ordered)
+
+
+def panel_precedence_order(
+    boxes: Sequence[PanelBox], fallback_ranks: Sequence[int | None]
+) -> tuple[int, ...] | None:
+    """Topologically order groups using explicit vertical and right-to-left precedence."""
+    if len(boxes) != len(fallback_ranks):
+        raise ValueError("panel boxes and fallback ranks must have matching lengths")
+
+    def tie_key(index: int) -> tuple[float, int, int, int]:
+        fallback_rank = fallback_ranks[index]
+        rank = float(fallback_rank) if fallback_rank is not None else float("inf")
+        box = boxes[index]
+        return (rank, box.y1, -box.x2, index)
+
+    edges = _panel_precedence_edges(boxes)
+    return _deterministic_topological_order(
+        len(boxes),
+        tuple((edge.source_index, edge.target_index) for edge in edges),
+        tie_key=tie_key,
+    )
+
+
+def _resolve_panel_flow_v1(
+    pixels: Any, regions: Sequence[Any], *, page_height: int
+) -> _PanelFlowV1Resolution:
+    fallback = tuple(manga_tier_order(regions, page_height=page_height))
+    if len(regions) < 2:
+        return _PanelFlowV1Resolution(
+            fallback=fallback,
+            segmentation=None,
+            assignment=None,
+            fallback_ranks=(),
+            precedence_edges=(),
+            panel_order=None,
+            fallback_reason="fewer-than-two-regions",
+            used_panel_evidence=False,
+        )
+
+    segmentation = segment_panel_groups(pixels)
+    if not segmentation.reliable:
+        return _PanelFlowV1Resolution(
+            fallback=fallback,
+            segmentation=segmentation,
+            assignment=None,
+            fallback_ranks=(),
+            precedence_edges=(),
+            panel_order=None,
+            fallback_reason=segmentation.reason,
+            used_panel_evidence=False,
+        )
+
+    assignment = assign_regions_to_groups(segmentation.boxes, regions)
+    if not assignment.reliable:
+        return _PanelFlowV1Resolution(
+            fallback=fallback,
+            segmentation=segmentation,
+            assignment=assignment,
+            fallback_ranks=(),
+            precedence_edges=(),
+            panel_order=None,
+            fallback_reason=assignment.reason,
+            used_panel_evidence=False,
+        )
+
+    fallback_position = {id(region): index for index, region in enumerate(fallback)}
+    fallback_ranks = tuple(
+        min((fallback_position[id(regions[index])] for index in group), default=None)
+        for group in assignment.groups
+    )
+    precedence_edges = _panel_precedence_edges(segmentation.boxes)
+    panel_order = panel_precedence_order(segmentation.boxes, fallback_ranks)
+    if panel_order is None:
+        return _PanelFlowV1Resolution(
+            fallback=fallback,
+            segmentation=segmentation,
+            assignment=assignment,
+            fallback_ranks=fallback_ranks,
+            precedence_edges=precedence_edges,
+            panel_order=None,
+            fallback_reason="precedence-cycle",
+            used_panel_evidence=False,
+        )
+    return _PanelFlowV1Resolution(
+        fallback=fallback,
+        segmentation=segmentation,
+        assignment=assignment,
+        fallback_ranks=fallback_ranks,
+        precedence_edges=precedence_edges,
+        panel_order=panel_order,
+        fallback_reason=None,
+        used_panel_evidence=True,
+    )
+
+
+def _materialize_panel_flow_v1(
+    resolution: _PanelFlowV1Resolution,
+    regions: Sequence[Any],
+    *,
+    page_height: int,
+) -> tuple[Any, ...]:
+    if not resolution.used_panel_evidence:
+        return resolution.fallback
+    assert resolution.assignment is not None
+    assert resolution.panel_order is not None
+    ordered: list[Any] = []
+    for group_index in resolution.panel_order:
+        group_regions = [regions[index] for index in resolution.assignment.groups[group_index]]
+        ordered.extend(manga_tier_order(group_regions, page_height=page_height))
+    if len(ordered) != len(regions) or {id(region) for region in ordered} != {
+        id(region) for region in regions
+    }:
+        raise AssertionError("panel-aware reading order changed the OCR region set")
     return tuple(ordered)
 
 
@@ -236,62 +423,14 @@ def panel_aware_reading_order(
     pixels: Any, regions: Sequence[Any], *, page_height: int
 ) -> ReadingOrderResult:
     """Order by panel flow when evidence is reliable, otherwise use manga tiers verbatim."""
-    fallback = manga_tier_order(regions, page_height=page_height)
-    if len(regions) < 2:
-        return ReadingOrderResult(
-            regions=tuple(fallback),
-            used_panel_evidence=False,
-            fallback_reason="fewer-than-two-regions",
-            panel_count=0,
-        )
-
-    segmentation = segment_panel_groups(pixels)
-    if not segmentation.reliable:
-        return ReadingOrderResult(
-            regions=tuple(fallback),
-            used_panel_evidence=False,
-            fallback_reason=segmentation.reason,
-            panel_count=len(segmentation.boxes),
-        )
-
-    assignment = assign_regions_to_groups(segmentation.boxes, regions)
-    if not assignment.reliable:
-        return ReadingOrderResult(
-            regions=tuple(fallback),
-            used_panel_evidence=False,
-            fallback_reason=assignment.reason,
-            panel_count=len(segmentation.boxes),
-        )
-
-    fallback_position = {id(region): index for index, region in enumerate(fallback)}
-    fallback_ranks = [
-        min((fallback_position[id(regions[index])] for index in group), default=None)
-        for group in assignment.groups
-    ]
-    panel_order = panel_precedence_order(segmentation.boxes, fallback_ranks)
-    if panel_order is None:
-        return ReadingOrderResult(
-            regions=tuple(fallback),
-            used_panel_evidence=False,
-            fallback_reason="precedence-cycle",
-            panel_count=len(segmentation.boxes),
-        )
-
-    ordered: list[Any] = []
-    for group_index in panel_order:
-        group_regions = [regions[index] for index in assignment.groups[group_index]]
-        ordered.extend(manga_tier_order(group_regions, page_height=page_height))
-
-    if len(ordered) != len(regions) or {id(region) for region in ordered} != {
-        id(region) for region in regions
-    }:
-        raise AssertionError("panel-aware reading order changed the OCR region set")
-
+    resolution = _resolve_panel_flow_v1(pixels, regions, page_height=page_height)
+    ordered = _materialize_panel_flow_v1(resolution, regions, page_height=page_height)
+    panel_count = len(resolution.segmentation.boxes) if resolution.segmentation is not None else 0
     return ReadingOrderResult(
-        regions=tuple(ordered),
-        used_panel_evidence=True,
-        fallback_reason=None,
-        panel_count=len(segmentation.boxes),
+        regions=ordered,
+        used_panel_evidence=resolution.used_panel_evidence,
+        fallback_reason=resolution.fallback_reason,
+        panel_count=panel_count,
     )
 
 
@@ -309,24 +448,10 @@ def _sobel_external_boxes(pixels: Any) -> tuple[PanelBox, ...]:
         0.5,
         0,
     )
-    _, thresholded = cv2.threshold(
-        sobel,
-        0,
-        255,
-        cv2.THRESH_BINARY + cv2.THRESH_OTSU,
-    )
+    _, thresholded = cv2.threshold(sobel, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    thresholded = cv2.morphologyEx(
-        thresholded,
-        cv2.MORPH_CLOSE,
-        kernel,
-        iterations=1,
-    )
-    contours, _ = cv2.findContours(
-        thresholded,
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE,
-    )
+    thresholded = cv2.morphologyEx(thresholded, cv2.MORPH_CLOSE, kernel, iterations=1)
+    contours, _ = cv2.findContours(thresholded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     page_area = page_width * page_height
     boxes: list[PanelBox] = []
@@ -466,13 +591,7 @@ def _split_box(
     result: list[PanelBox] = []
     for child in children:
         result.extend(
-            _split_box(
-                child,
-                lines,
-                page_width,
-                page_height,
-                depth=depth + 1,
-            )
+            _split_box(child, lines, page_width, page_height, depth=depth + 1)
         )
     return tuple(result)
 
@@ -496,14 +615,8 @@ def _validate_boxes(
 
     for index, first in enumerate(boxes):
         for second in boxes[index + 1 :]:
-            intersection_width = max(
-                0,
-                min(first.x2, second.x2) - max(first.x1, second.x1),
-            )
-            intersection_height = max(
-                0,
-                min(first.y2, second.y2) - max(first.y1, second.y1),
-            )
+            intersection_width = max(0, min(first.x2, second.x2) - max(first.x1, second.x1))
+            intersection_height = max(0, min(first.y2, second.y2) - max(first.y1, second.y1))
             intersection_area = intersection_width * intersection_height
             if intersection_area == 0:
                 continue
@@ -522,8 +635,4 @@ def _overlap_ratio(
     second_start: int,
     second_end: int,
 ) -> float:
-    overlap = max(0, min(first_end, second_end) - max(first_start, second_start))
-    denominator = min(first_end - first_start, second_end - second_start)
-    if denominator <= 0:
-        return 0.0
-    return overlap / denominator
+    return _overlap_evidence(first_start, first_end, second_start, second_end).value

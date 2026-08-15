@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"reading-order-v2-verdict-v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["verdict","harness_status","a_status","b_status","combined_status","reasons"],
+  "properties":{
+    "verdict":{"enum":["READING_ORDER_V2_HELDOUT_PASS","INVALID_EXPERIMENT","A_FAIL","B_FAIL","COMBINED_FAIL","A_INCONCLUSIVE","B_INCONCLUSIVE"]},
+    "harness_status":{"enum":["VALID","INVALID"]},
+    "a_status":{"enum":["PASS","FAIL","INCONCLUSIVE","NOT_EVALUATED"]},
+    "b_status":{"enum":["PASS","FAIL","INCONCLUSIVE","NOT_EVALUATED"]},
+    "combined_status":{"enum":["PASS","FAIL","NOT_EVALUATED"]},
+    "reasons":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["gate","arm","status","detail"],"properties":{"gate":{"type":"string"},"arm":{"type":"string"},"status":{"enum":["fail","inconclusive"]},"detail":{"type":"string"}}}}
+  }
+}

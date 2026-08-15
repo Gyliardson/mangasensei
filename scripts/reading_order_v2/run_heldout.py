@@ -1,222 +1,122 @@
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from shutil import which
 
-from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ReadingOrderArm
+from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ArmId
 
-from .canonical import sha256_path, write_canonical_json, write_canonical_jsonl
-from .contracts import PAGE_IDS, load_manifest
-from .validate_corpus import validate_corpus
+from .canonical import canonical_json_bytes, sha256_bytes, write_canonical_json
+from .contracts import PAGE_IDS, load_ground_truth
+from .scoring import score_corpus, score_page
+from .validate_corpus import CORPUS_ROOT, validate_corpus
 
-_HASH_SEEDS = (101, 202, 303)
-
-
-def _run(command: list[str], *, hash_seed: int | None = None) -> None:
-    environment = dict(os.environ)
-    if hash_seed is not None:
-        environment["PYTHONHASHSEED"] = str(hash_seed)
-    subprocess.run(command, check=True, env=environment)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+RAW_ROOT = REPO_ROOT / "var" / "research" / "reading-order-v2" / "raw"
+SUMMARY_ROOT = REPO_ROOT / "var" / "research" / "reading-order-v2" / "summary"
+HASH_SEEDS = (101, 202, 303)
 
 
-def _load_json(path: Path) -> dict[str, object]:
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict):
-        raise ValueError(f"{path}: expected JSON object")
-    return raw
-
-
-def _aggregate_repeat(
-    repeat_dir: Path, *, output_dir: Path, arm: ReadingOrderArm
-) -> None:
-    diagnostics = []
-    orderings: dict[str, list[str]] = {}
-    production_fidelity_values: list[bool] = []
-    for page_id in PAGE_IDS:
-        diagnostic = _load_json(repeat_dir / f"{page_id}.diagnostic.json")
-        ordering = _load_json(repeat_dir / f"{page_id}.ordering.json")
-        diagnostics.append(diagnostic)
-        values = ordering.get("regionIds")
-        if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
-            raise ValueError(f"{page_id}: malformed arm ordering")
-        orderings[page_id] = values
-        fidelity = ordering.get("productionFidelityVerified")
-        if fidelity is not None:
-            if not isinstance(fidelity, bool):
-                raise ValueError(f"{page_id}: malformed A0 fidelity signal")
-            production_fidelity_values.append(fidelity)
-    write_canonical_jsonl(output_dir / "diagnostics.jsonl", diagnostics)
-    write_canonical_json(
-        output_dir / "ordering.json",
-        {
-            "schemaVersion": "reading-order-v2-ordering-v1",
-            "armId": arm.value,
-            "productionFidelityVerified": (
-                all(production_fidelity_values) if production_fidelity_values else None
-            ),
-            "pages": orderings,
-        },
+def _git_head() -> str:
+    git = which("git")
+    if git is None:
+        raise RuntimeError("git executable is required to identify the execution SHA")
+    result = subprocess.run(  # noqa: S603
+        [git, "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
     )
+    return result.stdout.strip()
 
 
-def _run_ordering_phase(
-    *,
-    corpus_root: Path,
-    output_root: Path,
-    repository_sha: str,
-) -> dict[ReadingOrderArm, list[Path]]:
-    """Finish every arm/repeat before any scorer process receives annotation access."""
-    repeat_dirs: dict[ReadingOrderArm, list[Path]] = {}
-    for arm in ReadingOrderArm:
-        arm_repeats: list[Path] = []
-        for repeat_index, hash_seed in enumerate(_HASH_SEEDS, start=1):
-            repeat_dir = output_root / "raw" / arm.value / f"repeat-{repeat_index}"
-            repeat_dir.mkdir(parents=True, exist_ok=True)
-            for page_id in PAGE_IDS:
-                _run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "scripts.reading_order_v2.run_arm",
-                        "--corpus-root",
-                        str(corpus_root),
-                        "--page-id",
-                        page_id,
-                        "--arm",
-                        arm.value,
-                        "--repository-sha",
-                        repository_sha,
-                        "--output-dir",
-                        str(repeat_dir),
-                    ],
-                    hash_seed=hash_seed,
-                )
-            _aggregate_repeat(repeat_dir, output_dir=repeat_dir, arm=arm)
-            arm_repeats.append(repeat_dir)
-        repeat_dirs[arm] = arm_repeats
-    return repeat_dirs
-
-
-def _same_hashes(repeat_dirs: list[Path]) -> tuple[dict[str, object], bool]:
-    records: dict[str, object] = {}
-    triples: list[tuple[str, str]] = []
-    for index, directory in enumerate(repeat_dirs, start=1):
-        record = {
-            "diagnosticsSha256": sha256_path(directory / "diagnostics.jsonl"),
-            "orderingSha256": sha256_path(directory / "ordering.json"),
-        }
-        records[f"repeat-{index}"] = record
-        triples.append((str(record["diagnosticsSha256"]), str(record["orderingSha256"])))
-    return records, len(set(triples)) == 1
-
-
-def _score_phase(
-    *,
-    corpus_root: Path,
-    output_root: Path,
-    repeat_dirs: dict[ReadingOrderArm, list[Path]],
-) -> None:
-    """Only this later phase passes corpus-root to a scorer that may open annotations."""
-    for arm in ReadingOrderArm:
-        arm_output = output_root / "arms" / arm.value
-        arm_output.mkdir(parents=True, exist_ok=True)
-        repeat_hashes, deterministic = _same_hashes(repeat_dirs[arm])
-        if not deterministic:
-            raise RuntimeError(f"{arm.value}: non-deterministic ordering diagnostics/reports")
-        score_hashes: list[str] = []
-        for index, repeat_dir in enumerate(repeat_dirs[arm], start=1):
-            scores_path = repeat_dir / "scores.json"
-            _run(
-                [
-                    sys.executable,
-                    "-m",
-                    "scripts.reading_order_v2.scoring",
-                    "--corpus-root",
-                    str(corpus_root),
-                    "--ordering",
-                    str(repeat_dir / "ordering.json"),
-                    "--output",
-                    str(scores_path),
-                ]
-            )
-            score_hash = sha256_path(scores_path)
-            score_hashes.append(score_hash)
-            record = repeat_hashes[f"repeat-{index}"]
-            assert isinstance(record, dict)
-            record["scoresSha256"] = score_hash
-        if len(set(score_hashes)) != 1:
-            raise RuntimeError(f"{arm.value}: score report changed across identical arm outputs")
-        first = repeat_dirs[arm][0]
-        for name in ("diagnostics.jsonl", "ordering.json", "scores.json"):
-            (arm_output / name).write_bytes((first / name).read_bytes())
-        write_canonical_json(
-            arm_output / "repeat-hashes.json",
-            {
-                "schemaVersion": "reading-order-v2-repeat-hashes-v1",
-                "armId": arm.value,
-                "deterministic": True,
-                "repeats": repeat_hashes,
-            },
-        )
-
-
-def run_heldout(*, corpus_root: Path, output_root: Path, repository_sha: str) -> None:
-    if len(repository_sha) != 40 or any(
-        character not in "0123456789abcdef" for character in repository_sha
-    ):
-        raise ValueError("repository SHA must be lowercase 40-hex")
-    manifest = load_manifest(corpus_root / "manifest.json")
-    if tuple(page.page_id for page in manifest.pages) != PAGE_IDS:
-        raise ValueError("frozen held-out manifest must contain exactly H01..H16")
-
-    # Phase 1 intentionally validates only manifest identity. Arm subprocesses receive no
-    # annotation path and fixture inputs contain only structural geometry.
-    repeat_dirs = _run_ordering_phase(
-        corpus_root=corpus_root,
-        output_root=output_root,
-        repository_sha=repository_sha,
-    )
-
-    # Ground truth is first opened after all arm/repeat subprocesses have terminated.
-    validate_corpus(corpus_root)
-    _score_phase(
-        corpus_root=corpus_root,
-        output_root=output_root,
-        repeat_dirs=repeat_dirs,
-    )
-    _run(
+def _run_fresh_process(page_id: str, arm: ArmId, repository_sha: str, repeat: int) -> None:
+    env = os.environ.copy()
+    env["PYTHONHASHSEED"] = str(HASH_SEEDS[repeat - 1])
+    subprocess.run(  # noqa: S603
         [
             sys.executable,
             "-m",
-            "scripts.reading_order_v2.verdict",
-            "--corpus-root",
-            str(corpus_root),
-            "--output-root",
-            str(output_root),
-        ]
+            "scripts.reading_order_v2.run_arm",
+            "--page-id",
+            page_id,
+            "--arm",
+            arm.value,
+            "--repository-sha",
+            repository_sha,
+            "--repeat",
+            str(repeat),
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        check=True,
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Future Reading Order v2 held-out orchestrator; do not use before corpus freeze"
-    )
-    parser.add_argument("--corpus-root", type=Path, required=True)
-    parser.add_argument("--output-root", type=Path, required=True)
-    parser.add_argument("--repository-sha", required=True)
-    args = parser.parse_args(argv)
-    run_heldout(
-        corpus_root=args.corpus_root,
-        output_root=args.output_root,
-        repository_sha=args.repository_sha,
-    )
-    return 0
+def _aggregate_repeat(
+    arm: ArmId, repeat: int
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    diagnostics: list[dict[str, object]] = []
+    ordering: list[dict[str, object]] = []
+    root = RAW_ROOT / arm.value / f"repeat-{repeat}"
+    for page_id in PAGE_IDS:
+        diagnostic = json.loads((root / f"{page_id}.diagnostic.json").read_text(encoding="utf-8"))
+        order = json.loads((root / f"{page_id}.ordering.json").read_text(encoding="utf-8"))
+        if not isinstance(diagnostic, dict) or not isinstance(order, dict):
+            raise ValueError("arm output must contain JSON objects")
+        diagnostics.append(diagnostic)
+        ordering.append(order)
+    return diagnostics, ordering
+
+
+def main() -> None:
+    # Qualification remains impossible until PR2 supplies and freezes all H01-H16 assets.
+    validate_corpus(CORPUS_ROOT)
+    repository_sha = _git_head()
+    arm_scores = {}
+    for arm in ArmId:
+        repeat_hashes: list[dict[str, str]] = []
+        first_diagnostics: list[dict[str, object]] | None = None
+        first_ordering: list[dict[str, object]] | None = None
+        for repeat in (1, 2, 3):
+            for page_id in PAGE_IDS:
+                _run_fresh_process(page_id, arm, repository_sha, repeat)
+            diagnostics, ordering = _aggregate_repeat(arm, repeat)
+            hashes = {
+                "diagnosticsSha256": sha256_bytes(canonical_json_bytes(diagnostics)),
+                "orderingSha256": sha256_bytes(canonical_json_bytes(ordering)),
+            }
+            repeat_hashes.append(hashes)
+            if repeat == 1:
+                first_diagnostics, first_ordering = diagnostics, ordering
+        if len({item["diagnosticsSha256"] for item in repeat_hashes}) != 1 or len(
+            {item["orderingSha256"] for item in repeat_hashes}
+        ) != 1:
+            raise RuntimeError(f"{arm.value}: nondeterministic output across fresh-process repeats")
+        assert first_diagnostics is not None and first_ordering is not None
+        page_scores = []
+        for order in first_ordering:
+            page_id = order["pageId"]
+            final_order = order["finalOrder"]
+            if (
+                not isinstance(page_id, str)
+                or not isinstance(final_order, list)
+                or not all(isinstance(item, str) for item in final_order)
+            ):
+                raise ValueError("malformed ordering output")
+            gt = load_ground_truth(CORPUS_ROOT / "annotations" / f"{page_id}.json")
+            page_scores.append(score_page(gt, tuple(final_order)))
+        corpus_score = score_corpus(tuple(page_scores))
+        arm_scores[arm.value] = corpus_score
+        write_canonical_json(SUMMARY_ROOT / arm.value / "repeat-hashes.json", repeat_hashes)
+        write_canonical_json(SUMMARY_ROOT / arm.value / "scores.json", corpus_score)
+    # Formal verdict/evidence assembly intentionally occurs in a separate reviewed execution step.
+    write_canonical_json(SUMMARY_ROOT / "arm-scores.json", arm_scores)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -44,7 +44,6 @@ def observation_coverage_ppm(observation: BBox, target: BBox) -> tuple[int, int,
 
 def _hungarian_minimize(costs: list[list[Fraction]]) -> list[int]:
     """Return columns selected by deterministic rectangular Hungarian minimization."""
-
     row_count = len(costs)
     if row_count == 0:
         return []
@@ -58,13 +57,11 @@ def _hungarian_minimize(costs: list[list[Fraction]]) -> list[int]:
     v = [Fraction(0) for _ in range(column_count + 1)]
     p = [0 for _ in range(column_count + 1)]
     way = [0 for _ in range(column_count + 1)]
-
     for row_index in range(1, row_count + 1):
         p[0] = row_index
         current_column = 0
         min_values: list[Fraction | None] = [None for _ in range(column_count + 1)]
         used = [False for _ in range(column_count + 1)]
-
         while True:
             used[current_column] = True
             current_row = p[current_column]
@@ -89,7 +86,6 @@ def _hungarian_minimize(costs: list[list[Fraction]]) -> list[int]:
                     next_column = column_index
             if delta is None:
                 raise RuntimeError("Hungarian algorithm could not advance")
-
             for column_index in range(column_count + 1):
                 if used[column_index]:
                     u[p[column_index]] += delta
@@ -98,18 +94,15 @@ def _hungarian_minimize(costs: list[list[Fraction]]) -> list[int]:
                     current_min = min_values[column_index]
                     if current_min is not None:
                         min_values[column_index] = current_min - delta
-
             current_column = next_column
             if p[current_column] == 0:
                 break
-
         while True:
             previous_column = way[current_column]
             p[current_column] = p[previous_column]
             current_column = previous_column
             if current_column == 0:
                 break
-
     assignment = [-1 for _ in range(row_count)]
     for column_index in range(1, column_count + 1):
         assigned_row = p[column_index]
@@ -120,24 +113,23 @@ def _hungarian_minimize(costs: list[list[Fraction]]) -> list[int]:
     return assignment
 
 
-def assign_one_to_one(
-    ground_truth: tuple[GroundTruthRegion, ...],
-    observations: tuple[ObservedRegion, ...],
+def assign_bbox_ids_one_to_one(
+    ground_truth: tuple[tuple[str, BBox], ...],
+    observations: tuple[tuple[str, BBox], ...],
 ) -> tuple[Match, ...]:
-    """Globally maximize eligible match count, then aggregate exact IoU, with stable ties."""
-
-    sorted_gt = tuple(sorted(ground_truth, key=lambda region: region.id))
-    sorted_observations = tuple(sorted(observations, key=lambda region: region.id))
+    """Match arbitrary named bboxes with the frozen public-benchmark semantics."""
+    sorted_gt = tuple(sorted(ground_truth, key=lambda item: item[0]))
+    sorted_observations = tuple(sorted(observations, key=lambda item: item[0]))
     if not sorted_gt or not sorted_observations:
         return ()
 
     cardinality_bonus = len(sorted_gt) + 1
     costs: list[list[Fraction]] = []
     geometry: dict[tuple[int, int], tuple[int, int]] = {}
-    for gt_index, gt_region in enumerate(sorted_gt):
+    for gt_index, (_, gt_bbox) in enumerate(sorted_gt):
         row: list[Fraction] = []
-        for obs_index, observation in enumerate(sorted_observations):
-            intersection, union = intersection_union(gt_region.bbox, observation.bbox)
+        for obs_index, (_, observation_bbox) in enumerate(sorted_observations):
+            intersection, union = intersection_union(gt_bbox, observation_bbox)
             geometry[(gt_index, obs_index)] = (intersection, union)
             if eligible_at_half(intersection, union):
                 score = Fraction(cardinality_bonus, 1) + Fraction(intersection, union)
@@ -157,11 +149,22 @@ def assign_one_to_one(
             continue
         matches.append(
             Match(
-                ground_truth_id=sorted_gt[gt_index].id,
-                observation_id=sorted_observations[selected_column].id,
+                ground_truth_id=sorted_gt[gt_index][0],
+                observation_id=sorted_observations[selected_column][0],
                 intersection_area=intersection,
                 union_area=union,
                 iou_ppm=iou_ppm(intersection, union),
             )
         )
     return tuple(sorted(matches, key=lambda match: match.ground_truth_id))
+
+
+def assign_one_to_one(
+    ground_truth: tuple[GroundTruthRegion, ...],
+    observations: tuple[ObservedRegion, ...],
+) -> tuple[Match, ...]:
+    """Globally maximize eligible match count, then aggregate exact IoU, with stable ties."""
+    return assign_bbox_ids_one_to_one(
+        tuple((region.id, region.bbox) for region in ground_truth),
+        tuple((region.id, region.bbox) for region in observations),
+    )

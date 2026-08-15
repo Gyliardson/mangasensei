@@ -1,95 +1,54 @@
 from __future__ import annotations
 
-from fractions import Fraction
+from dataclasses import dataclass
 
-from mangasensei.ocr.diagnostics.reading_order_v2 import diagnostic_to_dict
+import numpy as np
+import pytest
+
+import mangasensei.ocr.diagnostics.reading_order_v2 as v2
+import mangasensei.ocr.reading_order as production
 from mangasensei.ocr.diagnostics.reading_order_v2_contracts import (
-    AssignmentReason,
-    AssignmentStatus,
-    GroupDiagnostic,
-    LocalOrderingMode,
-    OrientationClass,
-    PageDiagnostic,
-    PanelEvidenceMode,
-    PrecedenceEdgeDiagnostic,
-    RegionDiagnostic,
-    SegmentationDiagnostic,
+    ArmId,
+    ExperimentRegion,
+    diagnostic_to_dict,
 )
+from mangasensei.ocr.reading_order import PanelBox, PanelSegmentation
 
 
-def test_diagnostic_serializes_exact_precedence_edge_and_integer_centers() -> None:
-    edge = PrecedenceEdgeDiagnostic(
-        "g001",
-        "same-level-right-before-left",
-        Fraction(0, 1),
-        Fraction(1, 1),
+@dataclass(slots=True)
+class Region:
+    xyxy: tuple[int, int, int, int]
+    direction: str = "v"
+
+    @property
+    def min_rect(self) -> np.ndarray:
+        x1, y1, x2, y2 = self.xyxy
+        return np.array([[[x1, y1], [x2, y1], [x2, y2], [x1, y2]]], dtype=np.int64)
+
+
+def test_diagnostic_records_actual_memberships_and_precedence_edges(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    boxes = (PanelBox(520, 50, 950, 480), PanelBox(50, 50, 480, 480))
+    segmentation = PanelSegmentation(boxes, True, "reliable")
+    monkeypatch.setattr(production, "segment_panel_groups", lambda pixels: segmentation)
+    monkeypatch.setattr(v2, "segment_panel_groups", lambda pixels: segmentation)
+    raw = [Region((130, 100, 230, 260)), Region((740, 280, 840, 440))]
+    refs = tuple(ExperimentRegion(f"r{i}", i, region) for i, region in enumerate(raw))
+    result = v2.run_reading_order_v2_arm(
+        np.zeros((1000, 1000, 3), dtype=np.uint8), refs, page_height=1000,
+        repository_sha="a" * 40, page_id="unit", arm_id=ArmId.A0_B0_CONTROL,
     )
-    group = GroupDiagnostic(
-        "g000",
-        0,
-        (0, 0, 100, 100),
-        None,
-        100,
-        100,
-        ("r0",),
-        ("r0",),
-        0,
-        0,
-        (0, 0, -100, 0),
-        (edge,),
-    )
-    region = RegionDiagnostic(
-        "r0",
-        0,
-        (0, 0, 10, 20),
-        ((0, 0), (10, 0), (10, 20), (0, 20)),
-        10,
-        20,
-        "h",
-        OrientationClass.HORIZONTAL,
-        ("g000",),
-        AssignmentStatus.CONFIDENT,
-        AssignmentReason.UNIQUE,
-        1,
-        "g000",
-        0,
-        "g000-t000",
-        "g000-r000",
-        LocalOrderingMode.B0_TIER,
-        (-5, 0, 0),
-        0,
-    )
-    page = PageDiagnostic(
-        "reading-order-v2-diagnostic-v1",
-        "reading-order-v2-experiment-spec-v1",
-        "0" * 40,
-        "A0_B0_CONTROL",
-        "fixture",
-        1,
-        ("r0",),
-        ("r0",),
-        SegmentationDiagnostic(True, True, "reliable", 1),
-        "current-strict-all-or-fallback",
-        "reliable",
-        PanelEvidenceMode.FULL,
-        True,
-        None,
-        ("r0",),
-        (group,),
-        (region,),
-    )
-    data = diagnostic_to_dict(page)
-    assert data["groups"][0]["polygon"] is None
-    assert data["groups"][0]["center2x"] == 100
-    assert data["groups"][0]["precedenceEdges"] == [
-        {
-            "targetGroupId": "g001",
-            "rule": "same-level-right-before-left",
-            "xOverlapNumerator": 0,
-            "xOverlapDenominator": 1,
-            "yOverlapNumerator": 1,
-            "yOverlapDenominator": 1,
-        }
-    ]
-    assert data["regions"][0]["center2y"] == 20
-    assert "objectId" not in repr(data)
+    payload = diagnostic_to_dict(result.diagnostic)
+    assert payload["schemaVersion"] == "reading-order-v2-diagnostic-v1"
+    assert [group["groupId"] for group in payload["groups"]] == ["g000", "g001"]
+    assert payload["regions"][0]["candidateGroupIds"] == ["g001"]
+    edges = [edge for group in payload["groups"] for edge in group["precedenceEdges"]]
+    assert edges == [{
+        "targetGroupId": "g001",
+        "rule": "same-level-right-before-left",
+        "xOverlap": {"numerator": 0, "denominator": 430},
+        "yOverlap": {"numerator": 430, "denominator": 430},
+    }]
+    assert all("polygon" in group and group["polygon"] is None for group in payload["groups"])
+    assert all(isinstance(region["center2x"], int) for region in payload["regions"])
