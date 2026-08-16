@@ -7,6 +7,7 @@ import hashlib
 import json
 from decimal import Decimal
 from pathlib import Path
+from tempfile import gettempdir
 
 from mangasensei.config import Settings
 from mangasensei.domain.models import BoundingBox, PageDimensions
@@ -28,6 +29,9 @@ from mangasensei.workers.dictionary_projection import DictionaryProjectionWorker
 
 REGION_ID = "5ca22b32-6834-59db-a183-428a557a22e8"
 RETRY_FIXTURE_SHA256 = "b2fac47244f4d8d2dd2ea903558a642954d47a0cb1bf675ce752e6029b43fa23"
+DOCUMENT_CANCEL_FIXTURE_SHA256 = "8839920d2cf3dd7a57f364e863e1817ef573770b862a068d282ac1ef95c080ec"
+DOCUMENT_CANCEL_HOLD_PATH = Path(gettempdir()) / "mangasensei-document-cancel.hold"
+DOCUMENT_CANCEL_READY_PATH = Path(gettempdir()) / "mangasensei-document-cancel.ready"
 FULLSTACK_PROVENANCE = OcrProvenance(
     detector="fullstack-fixture",
     recognizer="fullstack-fixture",
@@ -43,6 +47,20 @@ class DeterministicFullStackOcr:
         self._attempts_by_image: dict[str, int] = {}
 
     async def analyze(self, image: OcrImage) -> OcrResult:
+        if image.sha256 == DOCUMENT_CANCEL_FIXTURE_SHA256 and await asyncio.to_thread(
+            DOCUMENT_CANCEL_HOLD_PATH.exists
+        ):
+            await asyncio.to_thread(
+                DOCUMENT_CANCEL_READY_PATH.write_text,
+                image.sha256,
+                encoding="ascii",
+            )
+            try:
+                while await asyncio.to_thread(DOCUMENT_CANCEL_HOLD_PATH.exists):
+                    await asyncio.sleep(0.01)
+            finally:
+                await asyncio.to_thread(DOCUMENT_CANCEL_READY_PATH.unlink, missing_ok=True)
+
         # Keep the job non-terminal long enough for the browser's first status poll
         # to observe a real processing state rather than racing straight to completed.
         await asyncio.sleep(1.0)
