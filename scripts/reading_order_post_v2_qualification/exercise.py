@@ -201,6 +201,8 @@ def _c3_rejects(diagnostic: dict[str, object]) -> bool:
         and pre.get("boxCount") == 1
         and isinstance(reason, str)
         and reason.startswith("rejected-")
+        and diagnostic.get("assignments") == []
+        and diagnostic.get("relationEdges") == []
         and diagnostic.get("finalOrder") == diagnostic.get("fallbackOrder")
         and diagnostic.get("usedPanelEvidence") is False
     )
