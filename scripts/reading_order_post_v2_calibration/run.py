@@ -5,9 +5,15 @@ import json
 import subprocess
 from pathlib import Path
 from shutil import which
+from typing import Any
 
 import numpy as np
 from PIL import Image
+from scripts.reading_order_v2.canonical import to_jsonable, write_canonical_json
+from scripts.reading_order_v2.contracts import PAGE_IDS, arm_asset_paths, load_ground_truth
+from scripts.reading_order_v2.fixtures import load_textblock_regions
+from scripts.reading_order_v2.scoring import CorpusScore, PageScore, score_corpus, score_page
+from scripts.reading_order_v2.validate_corpus import CORPUS_ROOT, validate_corpus
 
 from mangasensei.ocr.diagnostics.reading_order_post_v2_calibration import (
     CalibrationConfig,
@@ -15,13 +21,7 @@ from mangasensei.ocr.diagnostics.reading_order_post_v2_calibration import (
     run_post_v2_calibration_candidate,
 )
 from mangasensei.ocr.diagnostics.reading_order_v2 import run_reading_order_v2_arm
-from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ArmId
-
-from scripts.reading_order_v2.canonical import to_jsonable, write_canonical_json
-from scripts.reading_order_v2.contracts import PAGE_IDS, arm_asset_paths, load_ground_truth
-from scripts.reading_order_v2.fixtures import load_textblock_regions
-from scripts.reading_order_v2.scoring import CorpusScore, score_corpus, score_page
-from scripts.reading_order_v2.validate_corpus import CORPUS_ROOT, validate_corpus
+from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ArmId, ExperimentRegion
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_ROOT = REPO_ROOT / "var" / "research" / "reading-order-post-v2-calibration"
@@ -30,7 +30,10 @@ ARM_CONFIGS: dict[str, CalibrationConfig] = {
     "CONTROL": CalibrationConfig(),
     "C1_ONLY": CalibrationConfig(c1_boundary_guard=True),
     "C2_ONLY": CalibrationConfig(c2_uncertain_relations=True),
-    "C1_C2": CalibrationConfig(c1_boundary_guard=True, c2_uncertain_relations=True),
+    "C1_C2": CalibrationConfig(
+        c1_boundary_guard=True,
+        c2_uncertain_relations=True,
+    ),
     "C3_ONLY": CalibrationConfig(c3_merged_frame_recovery=True),
     "C1_C2_C3": CalibrationConfig(
         c1_boundary_guard=True,
@@ -61,7 +64,9 @@ def _git_head() -> str:
     return result.stdout.strip()
 
 
-def _load_page(page_id: str):
+def _load_page(
+    page_id: str,
+) -> tuple[Any, tuple[ExperimentRegion, ...], np.ndarray]:
     image_path, input_path = arm_asset_paths(CORPUS_ROOT, page_id)
     page, regions = load_textblock_regions(input_path)
     with Image.open(image_path) as opened:
@@ -72,7 +77,7 @@ def _load_page(page_id: str):
     return page, regions, pixels
 
 
-def _order_ids(diagnostic: CalibrationDiagnostic) -> tuple[str, ...]:
+def _candidate_order(diagnostic: CalibrationDiagnostic) -> tuple[str, ...]:
     return diagnostic.final_order
 
 
@@ -81,8 +86,8 @@ def _assert_frozen_v2_parity(
     page_id: str,
     repository_sha: str,
     page_height: int,
-    pixels: object,
-    regions: object,
+    pixels: Any,
+    regions: tuple[ExperimentRegion, ...],
     arm_name: str,
     candidate_order: tuple[str, ...],
 ) -> None:
@@ -103,16 +108,15 @@ def _assert_frozen_v2_parity(
     frozen_order = tuple(item.region_id for item in frozen.ordered_regions)
     if candidate_order != frozen_order:
         raise AssertionError(
-            f"{page_id}/{arm_name}: post-v2 baseline diverged from frozen {frozen_arm.value}: "
-            f"candidate={candidate_order}, frozen={frozen_order}"
+            f"{page_id}/{arm_name}: candidate baseline diverged from "
+            f"frozen {frozen_arm.value}: candidate={candidate_order}, "
+            f"frozen={frozen_order}"
         )
 
 
-def _score_record(score: CorpusScore) -> object:
-    return to_jsonable(score)
-
-
-def _assignment_map(diagnostic: CalibrationDiagnostic) -> dict[str, tuple[object, ...]]:
+def _assignment_map(
+    diagnostic: CalibrationDiagnostic,
+) -> dict[str, tuple[object, ...]]:
     return {
         item.region_id: (
             item.status,
@@ -129,14 +133,16 @@ def _segmentation_record(diagnostic: CalibrationDiagnostic) -> tuple[object, ...
         diagnostic.segmentation_reliable,
         diagnostic.segmentation_reason,
         diagnostic.recovery_reason,
-        tuple((box.x1, box.y1, box.x2, box.y2) for box in diagnostic.segmentation_boxes),
+        tuple(
+            (box.x1, box.y1, box.x2, box.y2)
+            for box in diagnostic.segmentation_boxes
+        ),
     )
 
 
 def _layout_tags(page_id: str) -> tuple[str, ...]:
-    payload = json.loads(
-        (CORPUS_ROOT / "annotations" / f"{page_id}.json").read_text(encoding="utf-8")
-    )
+    annotation = CORPUS_ROOT / "annotations" / f"{page_id}.json"
+    payload = json.loads(annotation.read_text(encoding="utf-8"))
     tags = payload.get("layoutTags", [])
     if not isinstance(tags, list) or not all(isinstance(item, str) for item in tags):
         raise ValueError(f"{page_id}: invalid layoutTags")
@@ -152,6 +158,7 @@ def _comparison(
     control_wrong = set(control_score.aggregate.wrong_pairs)
     control_pages = {page.page_id: page for page in control_score.pages}
     result: dict[str, object] = {}
+
     for arm_name in ARM_CONFIGS:
         score = arm_scores[arm_name]
         wrong = set(score.aggregate.wrong_pairs)
@@ -159,6 +166,7 @@ def _comparison(
         assignment_changes: list[dict[str, object]] = []
         segmentation_changes: list[dict[str, object]] = []
         clean_control_regressions: list[str] = []
+
         for page in score.pages:
             control_page = control_pages[page.page_id]
             control_diag = diagnostics["CONTROL"][page.page_id]
@@ -171,9 +179,11 @@ def _comparison(
                         "candidate": page.observed_scored_order,
                     }
                 )
+
             control_assignments = _assignment_map(control_diag)
             candidate_assignments = _assignment_map(candidate_diag)
-            for region_id in sorted(set(control_assignments) | set(candidate_assignments)):
+            region_ids = sorted(set(control_assignments) | set(candidate_assignments))
+            for region_id in region_ids:
                 before = control_assignments.get(region_id)
                 after = candidate_assignments.get(region_id)
                 if before != after:
@@ -185,6 +195,7 @@ def _comparison(
                             "candidate": after,
                         }
                     )
+
             before_segmentation = _segmentation_record(control_diag)
             after_segmentation = _segmentation_record(candidate_diag)
             if before_segmentation != after_segmentation:
@@ -195,12 +206,11 @@ def _comparison(
                         "candidate": after_segmentation,
                     }
                 )
-            if (
-                "clean-control" in _layout_tags(page.page_id)
-                and control_page.exact_sequence
-                and not page.exact_sequence
-            ):
+
+            is_clean = "clean-control" in _layout_tags(page.page_id)
+            if is_clean and control_page.exact_sequence and not page.exact_sequence:
                 clean_control_regressions.append(page.page_id)
+
         result[arm_name] = {
             "fixedWrongPairs": tuple(sorted(control_wrong - wrong)),
             "introducedWrongPairs": tuple(sorted(wrong - control_wrong)),
@@ -210,6 +220,27 @@ def _comparison(
             "cleanControlRegressions": tuple(clean_control_regressions),
         }
     return result
+
+
+def _print_summary(
+    arm_scores: dict[str, CorpusScore],
+    comparison: dict[str, object],
+) -> None:
+    print("CALIBRATION ONLY — observed H01-H16; NOT QUALIFICATION")
+    for arm_name in ARM_CONFIGS:
+        corpus_score = arm_scores[arm_name]
+        score = corpus_score.aggregate
+        arm_comparison = comparison[arm_name]
+        if not isinstance(arm_comparison, dict):
+            raise TypeError("comparison record must be a dict")
+        print(
+            f"{arm_name}: comparable={score.comparable_pairs} "
+            f"wrong={score.inversions} "
+            f"exact_pages={corpus_score.exact_sequence_pages}/16 "
+            f"fixed={arm_comparison['fixedWrongPairs']} "
+            f"introduced={arm_comparison['introducedWrongPairs']} "
+            f"clean_regressions={arm_comparison['cleanControlRegressions']}"
+        )
 
 
 def main() -> None:
@@ -224,19 +255,22 @@ def main() -> None:
     diagnostics: dict[str, dict[str, CalibrationDiagnostic]] = {
         arm_name: {} for arm_name in ARM_CONFIGS
     }
-    arm_page_scores: dict[str, list[object]] = {arm_name: [] for arm_name in ARM_CONFIGS}
+    page_scores: dict[str, list[PageScore]] = {
+        arm_name: [] for arm_name in ARM_CONFIGS
+    }
 
     for page_id in PAGE_IDS:
         page, regions, pixels = _load_page(page_id)
-        ground_truth = load_ground_truth(CORPUS_ROOT / "annotations" / f"{page_id}.json")
+        annotation_path = CORPUS_ROOT / "annotations" / f"{page_id}.json"
+        ground_truth = load_ground_truth(annotation_path)
         for arm_name, config in ARM_CONFIGS.items():
-            result = run_post_v2_calibration_candidate(
+            candidate = run_post_v2_calibration_candidate(
                 pixels,
                 regions,
                 page_height=page.height,
                 config=config,
             )
-            final_order = _order_ids(result.diagnostic)
+            final_order = _candidate_order(candidate.diagnostic)
             _assert_frozen_v2_parity(
                 page_id=page_id,
                 repository_sha=repository_sha,
@@ -246,13 +280,14 @@ def main() -> None:
                 arm_name=arm_name,
                 candidate_order=final_order,
             )
-            diagnostics[arm_name][page_id] = result.diagnostic
-            arm_page_scores[arm_name].append(score_page(ground_truth, final_order))
+            diagnostics[arm_name][page_id] = candidate.diagnostic
+            page_scores[arm_name].append(score_page(ground_truth, final_order))
 
-    arm_scores: dict[str, CorpusScore] = {
-        arm_name: score_corpus(tuple(page_scores))
-        for arm_name, page_scores in arm_page_scores.items()
+    arm_scores = {
+        arm_name: score_corpus(tuple(scores))
+        for arm_name, scores in page_scores.items()
     }
+    comparison = _comparison(arm_scores=arm_scores, diagnostics=diagnostics)
     payload = {
         "schemaVersion": "reading-order-post-v2-calibration-v1",
         "classification": "CALIBRATION_ONLY_OBSERVED_H01_H16_NOT_QUALIFICATION",
@@ -260,7 +295,7 @@ def main() -> None:
         "arms": {
             arm_name: {
                 "config": config,
-                "score": _score_record(arm_scores[arm_name]),
+                "score": to_jsonable(arm_scores[arm_name]),
                 "pages": {
                     page_id: diagnostics[arm_name][page_id]
                     for page_id in PAGE_IDS
@@ -268,13 +303,11 @@ def main() -> None:
             }
             for arm_name, config in ARM_CONFIGS.items()
         },
-        "comparisonVsControl": _comparison(
-            arm_scores=arm_scores,
-            diagnostics=diagnostics,
-        ),
+        "comparisonVsControl": comparison,
     }
     output = OUTPUT_ROOT / f"repeat-{args.repeat}.json"
     write_canonical_json(output, payload)
+    _print_summary(arm_scores, comparison)
     print(output.relative_to(REPO_ROOT))
 
 

@@ -7,17 +7,17 @@ from typing import Any
 import numpy as np
 import pytest
 from PIL import Image
+from scripts.reading_order_v2.contracts import PAGE_IDS, arm_asset_paths, load_ground_truth
+from scripts.reading_order_v2.fixtures import load_textblock_regions
+from scripts.reading_order_v2.validate_corpus import CORPUS_ROOT
 
 from mangasensei.ocr.diagnostics.reading_order_post_v2_calibration import (
     CalibrationConfig,
+    CalibrationResult,
     run_post_v2_calibration_candidate,
 )
 from mangasensei.ocr.diagnostics.reading_order_v2 import run_reading_order_v2_arm
 from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ArmId, ExperimentRegion
-
-from scripts.reading_order_v2.contracts import PAGE_IDS, arm_asset_paths, load_ground_truth
-from scripts.reading_order_v2.fixtures import load_textblock_regions
-from scripts.reading_order_v2.validate_corpus import CORPUS_ROOT
 
 REPOSITORY_SHA = "5" * 40
 FULL_PANEL_FIX = CalibrationConfig(
@@ -35,7 +35,7 @@ def _load_case(page_id: str) -> tuple[Any, tuple[ExperimentRegion, ...], np.ndar
     return page, regions, pixels
 
 
-def _run(page_id: str, config: CalibrationConfig):
+def _run(page_id: str, config: CalibrationConfig) -> CalibrationResult:
     page, regions, pixels = _load_case(page_id)
     return run_post_v2_calibration_candidate(
         pixels,
@@ -45,8 +45,13 @@ def _run(page_id: str, config: CalibrationConfig):
     )
 
 
+def _order(result: CalibrationResult) -> tuple[str, ...]:
+    return tuple(item.region_id for item in result.ordered_regions)
+
+
 def _ground_truth_order(page_id: str) -> tuple[str, ...]:
-    return load_ground_truth(CORPUS_ROOT / "annotations" / f"{page_id}.json").reading_order
+    annotation = CORPUS_ROOT / "annotations" / f"{page_id}.json"
+    return load_ground_truth(annotation).reading_order
 
 
 @pytest.mark.parametrize("page_id", PAGE_IDS)
@@ -66,9 +71,7 @@ def test_control_reproduces_frozen_a1_b0(page_id: str) -> None:
         page_id=page_id,
         arm_id=ArmId.A1_B0_PANEL_ONLY,
     )
-    assert tuple(item.region_id for item in candidate.ordered_regions) == tuple(
-        item.region_id for item in frozen.ordered_regions
-    )
+    assert _order(candidate) == tuple(item.region_id for item in frozen.ordered_regions)
 
 
 @pytest.mark.parametrize("page_id", PAGE_IDS)
@@ -88,15 +91,15 @@ def test_b1_only_reproduces_frozen_combined(page_id: str) -> None:
         page_id=page_id,
         arm_id=ArmId.A1_B1_COMBINED,
     )
-    assert tuple(item.region_id for item in candidate.ordered_regions) == tuple(
-        item.region_id for item in frozen.ordered_regions
-    )
+    assert _order(candidate) == tuple(item.region_id for item in frozen.ordered_regions)
 
 
 def test_c1_h11_boundary_center_becomes_uncertain() -> None:
     result = _run("H11", CalibrationConfig(c1_boundary_guard=True))
     assignment = next(
-        item for item in result.diagnostic.assignments if item.region_id == "ro2h-H11-r002"
+        item
+        for item in result.diagnostic.assignments
+        if item.region_id == "ro2h-H11-r002"
     )
     assert assignment.status == "unassigned"
     assert assignment.assigned_group_index is None
@@ -107,29 +110,34 @@ def test_c1_h07_legitimate_near_border_assignment_is_preserved() -> None:
     control = _run("H07", CalibrationConfig())
     guarded = _run("H07", CalibrationConfig(c1_boundary_guard=True))
     assert all(item.status == "confident" for item in guarded.diagnostic.assignments)
-    assert tuple(item.region_id for item in guarded.ordered_regions) == tuple(
-        item.region_id for item in control.ordered_regions
-    )
+    assert _order(guarded) == _order(control)
 
 
-@pytest.mark.parametrize("page_id", ("H08", "H15"))
+@pytest.mark.parametrize("page_id", ["H08", "H15"])
 def test_c2_interleaves_observed_uncertain_singleton(page_id: str) -> None:
     result = _run(page_id, CalibrationConfig(c2_uncertain_relations=True))
-    assert tuple(item.region_id for item in result.ordered_regions) == _ground_truth_order(page_id)
+    assert _order(result) == _ground_truth_order(page_id)
     assert result.diagnostic.relation_edges
     assert result.diagnostic.fallback_reason is None
 
 
-@pytest.mark.parametrize("page_id", ("H10", "H16"))
-def test_c3_recovers_merged_frames_and_full_panel_fix_orders_page(page_id: str) -> None:
+@pytest.mark.parametrize("page_id", ["H10", "H16"])
+def test_c3_recovers_merged_frames(page_id: str) -> None:
     recovered = _run(page_id, CalibrationConfig(c3_merged_frame_recovery=True))
-    assert recovered.diagnostic.segmentation_reliable
+    assert recovered.diagnostic.segmentation_reliable, recovered.diagnostic
     assert recovered.diagnostic.segmentation_reason == "recovered-merged-frame"
     assert recovered.diagnostic.recovery_reason == "accepted-strong-four-side-frames"
     assert len(recovered.diagnostic.segmentation_boxes) >= 2
 
-    combined = _run(page_id, FULL_PANEL_FIX)
-    assert tuple(item.region_id for item in combined.ordered_regions) == _ground_truth_order(page_id)
+
+@pytest.mark.parametrize("page_id", ["H10", "H16"])
+def test_c1_c2_c3_interleaves_ambiguous_overlap_bridge(page_id: str) -> None:
+    result = _run(page_id, FULL_PANEL_FIX)
+    assert _order(result) == _ground_truth_order(page_id)
+    assert any(
+        edge.rule == "validated-overlap-bridge-right-before-left"
+        for edge in result.diagnostic.relation_edges
+    )
 
 
 def test_c3_does_not_invent_second_frame_from_single_clean_frame() -> None:
@@ -155,7 +163,7 @@ def test_c3_does_not_invent_second_frame_from_single_clean_frame() -> None:
     )
     assert not result.diagnostic.segmentation_reliable
     assert result.diagnostic.recovery_reason.startswith("rejected-")
-    assert tuple(item.region_id for item in result.ordered_regions) == result.diagnostic.fallback_order
+    assert _order(result) == result.diagnostic.fallback_order
 
 
 def test_full_candidate_is_deterministic_and_preserves_region_objects() -> None:
@@ -174,9 +182,7 @@ def test_full_candidate_is_deterministic_and_preserves_region_objects() -> None:
         config=FULL_PANEL_FIX,
     )
     assert first.diagnostic == second.diagnostic
-    assert tuple(item.region_id for item in first.ordered_regions) == tuple(
-        item.region_id for item in second.ordered_regions
-    )
+    assert _order(first) == _order(second)
     assert {id(item.region) for item in first.ordered_regions} == set(before)
     assert tuple(id(item.region) for item in regions) == before
 
@@ -184,16 +190,14 @@ def test_full_candidate_is_deterministic_and_preserves_region_objects() -> None:
 def test_full_panel_fix_has_no_clean_control_regression_against_control() -> None:
     clean_pages: list[str] = []
     for page_id in PAGE_IDS:
-        payload = json.loads(
-            (Path(CORPUS_ROOT) / "annotations" / f"{page_id}.json").read_text(encoding="utf-8")
-        )
+        annotation = Path(CORPUS_ROOT) / "annotations" / f"{page_id}.json"
+        payload = json.loads(annotation.read_text(encoding="utf-8"))
         if "clean-control" in payload.get("layoutTags", []):
             clean_pages.append(page_id)
 
     for page_id in clean_pages:
         control = _run(page_id, CalibrationConfig())
         candidate = _run(page_id, FULL_PANEL_FIX)
-        if tuple(item.region_id for item in control.ordered_regions) == _ground_truth_order(page_id):
-            assert tuple(item.region_id for item in candidate.ordered_regions) == _ground_truth_order(
-                page_id
-            )
+        expected = _ground_truth_order(page_id)
+        if _order(control) == expected:
+            assert _order(candidate) == expected

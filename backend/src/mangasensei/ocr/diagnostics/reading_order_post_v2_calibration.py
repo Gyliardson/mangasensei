@@ -1,8 +1,4 @@
-"""Post-v2 Reading Order calibration candidate.
-
-This module is diagnostic-only. It intentionally does not change production reading order
-or the frozen Reading Order v2 experiment implementation.
-"""
+"""Calibration-only Reading Order candidate after the frozen v2 experiment."""
 
 from __future__ import annotations
 
@@ -14,6 +10,8 @@ from typing import Any
 from mangasensei.ocr.diagnostics.reading_order_v2 import _b0_local_order, _b1_local_order
 from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ExperimentRegion
 from mangasensei.ocr.reading_order import (
+    _MAX_AMBIGUOUS_OVERLAP,
+    _PanelPrecedenceEdge,
     PanelBox,
     PanelSegmentation,
     _deterministic_topological_order,
@@ -24,15 +22,15 @@ from mangasensei.ocr.reading_order import (
     segment_panel_groups,
 )
 
-# The production detector uses 3x3 Sobel and 3x3 morphology kernels. One pixel is the
-# radius of that local support footprint, so a detected contour boundary is not treated as
-# a confidence-bearing center-containment boundary until the center is one pixel inward.
+# The detector uses 3x3 Sobel/morphology support. One pixel is therefore the local
+# boundary uncertainty radius for confidence-bearing center containment.
 _BOUNDARY_GUARD_PX = 1
 _FRAME_MIN_SIDE_COVERAGE = 0.80
 _FRAME_CLUSTER_FRACTION = 0.012
 _FRAME_MIN_SEGMENT_FRACTION = 0.12
 _FRAME_DEDUP_IOU = 0.80
 _GUTTER_MAX_REGION_OVERLAP = 0.25
+_SAME_LEVEL_MIN_Y_OVERLAP = 0.25
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +82,6 @@ class CalibrationResult:
 class _AxisCluster:
     coordinate: float
     intervals: tuple[tuple[float, float], ...]
-    support: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,12 +117,8 @@ def _cluster_axis_lines(
     for entry in sorted(entries, key=lambda item: (item[0], item[1], item[2])):
         if groups:
             total_weight = sum(item[3] for item in groups[-1])
-            mean_coordinate = (
-                sum(item[0] * item[3] for item in groups[-1]) / total_weight
-                if total_weight > 0
-                else groups[-1][0][0]
-            )
-            if abs(entry[0] - mean_coordinate) <= tolerance:
+            mean = sum(item[0] * item[3] for item in groups[-1]) / total_weight
+            if abs(entry[0] - mean) <= tolerance:
                 groups[-1].append(entry)
                 continue
         groups.append([entry])
@@ -134,8 +127,10 @@ def _cluster_axis_lines(
     for group in groups:
         total_weight = sum(item[3] for item in group)
         coordinate = sum(item[0] * item[3] for item in group) / total_weight
-        intervals = tuple(sorted((min(item[1], item[2]), max(item[1], item[2])) for item in group))
-        result.append(_AxisCluster(coordinate, intervals, len(group)))
+        intervals = tuple(
+            sorted((min(item[1], item[2]), max(item[1], item[2])) for item in group)
+        )
+        result.append(_AxisCluster(coordinate, intervals))
     return tuple(result)
 
 
@@ -160,8 +155,7 @@ def _interval_coverage(
         else:
             covered += current_end - current_start
             current_start, current_end = first, second
-    covered += current_end - current_start
-    return covered / span
+    return (covered + current_end - current_start) / span
 
 
 def _box_iou(first: PanelBox, second: PanelBox) -> float:
@@ -170,6 +164,16 @@ def _box_iou(first: PanelBox, second: PanelBox) -> float:
     intersection = width * height
     union = first.area + second.area - intersection
     return intersection / union if union > 0 else 0.0
+
+
+def _overlap_ratio(first: PanelBox, second: PanelBox, *, axis: str) -> float:
+    if axis == "x":
+        overlap = max(0, min(first.x2, second.x2) - max(first.x1, second.x1))
+        denominator = min(first.width, second.width)
+    else:
+        overlap = max(0, min(first.y2, second.y2) - max(first.y1, second.y1))
+        denominator = min(first.height, second.height)
+    return overlap / denominator if denominator > 0 else 0.0
 
 
 def _recover_merged_frames(
@@ -185,13 +189,12 @@ def _recover_merged_frames(
     merged = segmentation.boxes[0]
     page_height, page_width = pixels.shape[:2]
     gray = cv2.cvtColor(pixels, cv2.COLOR_RGB2GRAY)
-    lines = _line_segments(gray)
     horizontal: list[tuple[float, float, float, float]] = []
     vertical: list[tuple[float, float, float, float]] = []
     min_horizontal = _FRAME_MIN_SEGMENT_FRACTION * merged.width
     min_vertical = _FRAME_MIN_SEGMENT_FRACTION * merged.height
 
-    for x1, y1, x2, y2 in lines:
+    for x1, y1, x2, y2 in _line_segments(gray):
         center_x = (x1 + x2) / 2
         center_y = (y1 + y2) / 2
         if not (
@@ -202,16 +205,26 @@ def _recover_merged_frames(
         delta_x = x2 - x1
         delta_y = y2 - y1
         length = math.hypot(delta_x, delta_y)
-        if abs(delta_x) > 1 and abs(delta_y) <= 0.15 * abs(delta_x) and length >= min_horizontal:
+        if (
+            abs(delta_x) > 1
+            and abs(delta_y) <= 0.15 * abs(delta_x)
+            and length >= min_horizontal
+        ):
             horizontal.append((center_y, min(x1, x2), max(x1, x2), length))
-        if abs(delta_y) > 1 and abs(delta_x) <= 0.15 * abs(delta_y) and length >= min_vertical:
+        if (
+            abs(delta_y) > 1
+            and abs(delta_x) <= 0.15 * abs(delta_y)
+            and length >= min_vertical
+        ):
             vertical.append((center_x, min(y1, y2), max(y1, y2), length))
 
     horizontal_clusters = _cluster_axis_lines(
-        horizontal, tolerance=max(8.0, _FRAME_CLUSTER_FRACTION * merged.height)
+        horizontal,
+        tolerance=max(8.0, _FRAME_CLUSTER_FRACTION * merged.height),
     )
     vertical_clusters = _cluster_axis_lines(
-        vertical, tolerance=max(8.0, _FRAME_CLUSTER_FRACTION * merged.width)
+        vertical,
+        tolerance=max(8.0, _FRAME_CLUSTER_FRACTION * merged.width),
     )
     if len(horizontal_clusters) < 2 or len(vertical_clusters) < 2:
         return segmentation, "rejected-insufficient-long-frame-sides"
@@ -238,71 +251,82 @@ def _recover_merged_frames(
                         _interval_coverage(left.intervals, y1, y2),
                         _interval_coverage(right.intervals, y1, y2),
                     )
-                    if min(coverages) < _FRAME_MIN_SIDE_COVERAGE:
-                        continue
-                    box = PanelBox(round(x1), round(y1), round(x2), round(y2))
-                    candidates.append(_FrameCandidate(box, min(coverages)))
+                    if min(coverages) >= _FRAME_MIN_SIDE_COVERAGE:
+                        box = PanelBox(round(x1), round(y1), round(x2), round(y2))
+                        candidates.append(_FrameCandidate(box, min(coverages)))
 
     if len(candidates) < 2:
         return segmentation, "rejected-no-complete-strong-frames"
 
     selected: list[_FrameCandidate] = []
-    for candidate in sorted(
+    ordered_candidates = sorted(
         candidates,
-        key=lambda item: (-item.score, item.box.y1, item.box.x1, item.box.y2, item.box.x2),
-    ):
-        if any(_box_iou(candidate.box, existing.box) >= _FRAME_DEDUP_IOU for existing in selected):
+        key=lambda item: (
+            -item.score,
+            item.box.y1,
+            item.box.x1,
+            item.box.y2,
+            item.box.x2,
+        ),
+    )
+    for candidate in ordered_candidates:
+        if any(
+            _box_iou(candidate.box, existing.box) >= _FRAME_DEDUP_IOU
+            for existing in selected
+        ):
             continue
         selected.append(candidate)
 
-    boxes = tuple(sorted((item.box for item in selected), key=lambda box: (box.y1, box.x1, box.y2, box.x2)))
+    boxes = tuple(
+        sorted(
+            (item.box for item in selected),
+            key=lambda box: (box.y1, box.x1, box.y2, box.x2),
+        )
+    )
     recovered = _validate_boxes(boxes, page_width, page_height)
     if not recovered.reliable:
         return segmentation, f"rejected-{recovered.reason}"
-    return PanelSegmentation(recovered.boxes, True, "recovered-merged-frame"), "accepted-strong-four-side-frames"
+    accepted = PanelSegmentation(recovered.boxes, True, "recovered-merged-frame")
+    return accepted, "accepted-strong-four-side-frames"
 
 
 def _assignment_observations(
-    boxes: Sequence[PanelBox], refs: Sequence[ExperimentRegion], *, guarded: bool
+    boxes: Sequence[PanelBox],
+    refs: Sequence[ExperimentRegion],
+    *,
+    guarded: bool,
 ) -> tuple[CalibrationAssignment, ...]:
     result: list[CalibrationAssignment] = []
     for ref in refs:
         matches = _candidate_indices(boxes, ref.region, guarded=guarded)
         if len(matches) == 1:
+            reason = (
+                "unique-guarded-center-containment"
+                if guarded
+                else "unique-center-containment"
+            )
             result.append(
-                CalibrationAssignment(
-                    ref.region_id,
-                    matches,
-                    "confident",
-                    "unique-guarded-center-containment" if guarded else "unique-center-containment",
-                    matches[0],
-                )
+                CalibrationAssignment(ref.region_id, matches, "confident", reason, matches[0])
             )
         elif matches:
+            reason = (
+                "multiple-guarded-center-containment"
+                if guarded
+                else "multiple-center-containment"
+            )
             result.append(
-                CalibrationAssignment(
-                    ref.region_id,
-                    matches,
-                    "ambiguous",
-                    "multiple-guarded-center-containment" if guarded else "multiple-center-containment",
-                    None,
-                )
+                CalibrationAssignment(ref.region_id, matches, "ambiguous", reason, None)
             )
         else:
-            result.append(
-                CalibrationAssignment(
-                    ref.region_id,
-                    (),
-                    "unassigned",
-                    "no-guarded-center-containment" if guarded else "no-center-containment",
-                    None,
-                )
+            reason = (
+                "no-guarded-center-containment" if guarded else "no-center-containment"
             )
+            result.append(CalibrationAssignment(ref.region_id, (), "unassigned", reason, None))
     return tuple(result)
 
 
-def _panel_order(
-    boxes: Sequence[PanelBox], groups: Sequence[Sequence[int]], fallback_ranks: Sequence[int | None]
+def _hard_panel_order(
+    boxes: Sequence[PanelBox], fallback_ranks: Sequence[int | None]
 ) -> tuple[int, ...] | None:
     edges = _panel_precedence_edges(boxes)
 
@@ -312,7 +336,6 @@ def _panel_order(
         box = boxes[index]
         return (rank, box.y1, -box.x2, index)
 
-    del groups
     return _deterministic_topological_order(
         len(boxes),
         tuple((edge.source_index, edge.target_index) for edge in edges),
@@ -320,10 +343,9 @@ def _panel_order(
     )
 
 
-def _gutter_bracket(
-    *,
+def _unique_gutter_bracket(
     region_box: PanelBox,
-    hard_edges: Sequence[Any],
+    hard_edges: Sequence[_PanelPrecedenceEdge],
     boxes: Sequence[PanelBox],
     groups: Sequence[Sequence[int]],
 ) -> tuple[int, int] | None:
@@ -341,68 +363,153 @@ def _gutter_bracket(
         gap_right = right.x1
         if gap_left > gap_right or not gap_left <= center_x <= gap_right:
             continue
-        overlap_right = max(0, min(region_box.x2, right.x2) - max(region_box.x1, right.x1))
-        overlap_left = max(0, min(region_box.x2, left.x2) - max(region_box.x1, left.x1))
-        if overlap_right / region_width > _GUTTER_MAX_REGION_OVERLAP:
+        right_overlap = max(
+            0,
+            min(region_box.x2, right.x2) - max(region_box.x1, right.x1),
+        )
+        left_overlap = max(
+            0,
+            min(region_box.x2, left.x2) - max(region_box.x1, left.x1),
+        )
+        if right_overlap / region_width > _GUTTER_MAX_REGION_OVERLAP:
             continue
-        if overlap_left / region_width > _GUTTER_MAX_REGION_OVERLAP:
+        if left_overlap / region_width > _GUTTER_MAX_REGION_OVERLAP:
             continue
         candidates.append((edge.source_index, edge.target_index))
     return candidates[0] if len(candidates) == 1 else None
 
 
-def _uncertain_relations(
+def _ambiguous_overlap_bridge(
+    assignment: CalibrationAssignment,
+    boxes: Sequence[PanelBox],
+    groups: Sequence[Sequence[int]],
+    active_panel_order: Sequence[int],
+) -> tuple[int, int] | None:
+    if assignment.status != "ambiguous" or len(assignment.candidate_group_indices) != 2:
+        return None
+    first_index, second_index = assignment.candidate_group_indices
+    if not groups[first_index] or not groups[second_index]:
+        return None
+    first = boxes[first_index]
+    second = boxes[second_index]
+    x_overlap = _overlap_ratio(first, second, axis="x")
+    y_overlap = _overlap_ratio(first, second, axis="y")
+    if not 0 < x_overlap <= _MAX_AMBIGUOUS_OVERLAP:
+        return None
+    if y_overlap < _SAME_LEVEL_MIN_Y_OVERLAP:
+        return None
+    if first.center[0] == second.center[0]:
+        return None
+    right_index, left_index = (
+        (first_index, second_index)
+        if first.center[0] > second.center[0]
+        else (second_index, first_index)
+    )
+    positions = {panel: position for position, panel in enumerate(active_panel_order)}
+    if right_index not in positions or left_index not in positions:
+        return None
+    if positions[left_index] != positions[right_index] + 1:
+        return None
+    return right_index, left_index
+
+
+def _uncertain_relation_edges(
     *,
-    uncertain_region_index: int,
+    region_index: int,
+    assignment: CalibrationAssignment,
     raw_regions: Sequence[Any],
     boxes: Sequence[PanelBox],
     groups: Sequence[Sequence[int]],
-    hard_edges: Sequence[Any],
+    hard_edges: Sequence[_PanelPrecedenceEdge],
     active_panel_order: Sequence[int],
+    uncertain_node: int,
 ) -> tuple[tuple[tuple[int, int, str], ...], str]:
-    region_box = _region_box(raw_regions[uncertain_region_index])
-    panel_count = len(boxes)
-    uncertain_node = panel_count
-    bracket = _gutter_bracket(
-        region_box=region_box,
-        hard_edges=hard_edges,
-        boxes=boxes,
-        groups=groups,
-    )
-    proposed: list[tuple[int, int, str]] = []
-    if bracket is not None:
-        right, left = bracket
-        proposed.extend(
-            (
-                (right, uncertain_node, "unique-gutter-between-hard-panels"),
-                (uncertain_node, left, "unique-gutter-between-hard-panels"),
-            )
-        )
-    else:
-        for panel_index, panel_box in enumerate(boxes):
-            if not groups[panel_index]:
-                continue
-            pair_edges = _panel_precedence_edges((panel_box, region_box))
-            if len(pair_edges) != 1:
-                continue
-            edge = pair_edges[0]
-            if edge.source_index == 0:
-                proposed.append((panel_index, uncertain_node, f"uncertain-{edge.rule}"))
-            else:
-                proposed.append((uncertain_node, panel_index, f"uncertain-{edge.rule}"))
+    region_box = _region_box(raw_regions[region_index])
+    gutter = _unique_gutter_bracket(region_box, hard_edges, boxes, groups)
+    if gutter is not None:
+        right, left = gutter
+        rule = "unique-gutter-between-hard-panels"
+        return ((right, uncertain_node, rule), (uncertain_node, left, rule)), "accepted"
 
-    positions = {panel_index: position for position, panel_index in enumerate(active_panel_order)}
-    predecessors = [positions[source] for source, target, _ in proposed if target == uncertain_node and source in positions]
-    successors = [positions[target] for source, target, _ in proposed if source == uncertain_node and target in positions]
+    bridge = _ambiguous_overlap_bridge(assignment, boxes, groups, active_panel_order)
+    if bridge is not None:
+        right, left = bridge
+        rule = "validated-overlap-bridge-right-before-left"
+        return ((right, uncertain_node, rule), (uncertain_node, left, rule)), "accepted"
+
+    proposed: list[tuple[int, int, str]] = []
+    for panel_index, panel_box in enumerate(boxes):
+        if not groups[panel_index]:
+            continue
+        pair_edges = _panel_precedence_edges((panel_box, region_box))
+        if len(pair_edges) != 1:
+            continue
+        edge = pair_edges[0]
+        if edge.source_index == 0:
+            proposed.append(
+                (panel_index, uncertain_node, f"uncertain-{edge.rule}")
+            )
+        else:
+            proposed.append(
+                (uncertain_node, panel_index, f"uncertain-{edge.rule}")
+            )
+
+    positions = {panel: position for position, panel in enumerate(active_panel_order)}
+    predecessors = [
+        positions[source]
+        for source, target, _ in proposed
+        if target == uncertain_node and source in positions
+    ]
+    successors = [
+        positions[target]
+        for source, target, _ in proposed
+        if source == uncertain_node and target in positions
+    ]
     if not predecessors or not successors:
-        return (), "rejected-one-sided-or-insufficient-relations"
+        return (), "rejected-insufficient-two-sided-relations"
     latest_predecessor = max(predecessors)
     earliest_successor = min(successors)
     if latest_predecessor >= earliest_successor:
         return (), "conflict"
     if latest_predecessor + 1 != earliest_successor:
         return (), "rejected-non-unique-slot"
-    return tuple(proposed), "accepted-unique-slot"
+    return tuple(proposed), "accepted"
+
+
+def _fallback_result(
+    refs_by_object: dict[int, ExperimentRegion],
+    fallback_raw: Sequence[Any],
+    *,
+    segmentation: PanelSegmentation | None,
+    recovery_reason: str,
+    assignments: tuple[CalibrationAssignment, ...] = (),
+    relation_edges: tuple[CalibrationRelationEdge, ...] = (),
+    fallback_reason: str,
+) -> CalibrationResult:
+    fallback_refs = tuple(refs_by_object[id(region)] for region in fallback_raw)
+    fallback_order = tuple(ref.region_id for ref in fallback_refs)
+    diagnostic = CalibrationDiagnostic(
+        segmentation_boxes=segmentation.boxes if segmentation is not None else (),
+        segmentation_reliable=segmentation.reliable if segmentation is not None else False,
+        segmentation_reason=segmentation.reason if segmentation is not None else "not-run",
+        recovery_reason=recovery_reason,
+        assignments=assignments,
+        relation_edges=relation_edges,
+        node_order=(),
+        fallback_reason=fallback_reason,
+        used_panel_evidence=False,
+        fallback_order=fallback_order,
+        final_order=fallback_order,
+    )
+    return CalibrationResult(fallback_refs, diagnostic)
+
+
+def _node_label(node: int, *, panel_count: int, region_index: int | None = None) -> str:
+    if node < panel_count:
+        return f"g{node:03d}"
+    if region_index is None:
+        raise ValueError("uncertain node label requires region index")
+    return f"u{region_index:03d}"
 
 
 def run_post_v2_calibration_candidate(
@@ -412,7 +519,7 @@ def run_post_v2_calibration_candidate(
     page_height: int,
     config: CalibrationConfig,
 ) -> CalibrationResult:
-    """Run one calibration-only post-v2 candidate without consulting ground truth."""
+    """Run the calibration candidate without consulting page IDs, text, or ground truth."""
     refs = tuple(regions)
     raw_regions = tuple(ref.region for ref in refs)
     refs_by_object = {id(ref.region): ref for ref in refs}
@@ -420,36 +527,32 @@ def run_post_v2_calibration_candidate(
         raise ValueError("one runtime region object cannot back multiple experiment regions")
 
     fallback_raw = tuple(manga_tier_order(raw_regions, page_height=page_height))
-    fallback_order = tuple(refs_by_object[id(region)].region_id for region in fallback_raw)
     if len(raw_regions) < 2:
-        diagnostic = CalibrationDiagnostic(
-            (), False, "not-run", "not-attempted", (), (), (), "fewer-than-two-regions", False,
-            fallback_order, fallback_order,
+        return _fallback_result(
+            refs_by_object,
+            fallback_raw,
+            segmentation=None,
+            recovery_reason="not-attempted",
+            fallback_reason="fewer-than-two-regions",
         )
-        return CalibrationResult(tuple(refs_by_object[id(region)] for region in fallback_raw), diagnostic)
 
     segmentation = segment_panel_groups(pixels)
     recovery_reason = "disabled"
     if config.c3_merged_frame_recovery:
         segmentation, recovery_reason = _recover_merged_frames(pixels, segmentation)
     if not segmentation.reliable:
-        diagnostic = CalibrationDiagnostic(
-            segmentation.boxes,
-            False,
-            segmentation.reason,
-            recovery_reason,
-            (),
-            (),
-            (),
-            segmentation.reason,
-            False,
-            fallback_order,
-            fallback_order,
+        return _fallback_result(
+            refs_by_object,
+            fallback_raw,
+            segmentation=segmentation,
+            recovery_reason=recovery_reason,
+            fallback_reason=segmentation.reason,
         )
-        return CalibrationResult(tuple(refs_by_object[id(region)] for region in fallback_raw), diagnostic)
 
     assignments = _assignment_observations(
-        segmentation.boxes, refs, guarded=config.c1_boundary_guard
+        segmentation.boxes,
+        refs,
+        guarded=config.c1_boundary_guard,
     )
     groups_mutable: list[list[int]] = [[] for _ in segmentation.boxes]
     uncertain: list[int] = []
@@ -460,43 +563,34 @@ def run_post_v2_calibration_candidate(
             groups_mutable[assignment.assigned_group_index].append(region_index)
     groups = tuple(tuple(group) for group in groups_mutable)
     if sum(bool(group) for group in groups) < 2:
-        diagnostic = CalibrationDiagnostic(
-            segmentation.boxes,
-            True,
-            segmentation.reason,
-            recovery_reason,
-            assignments,
-            (),
-            (),
-            "insufficient-confident-panel-groups",
-            False,
-            fallback_order,
-            fallback_order,
+        return _fallback_result(
+            refs_by_object,
+            fallback_raw,
+            segmentation=segmentation,
+            recovery_reason=recovery_reason,
+            assignments=assignments,
+            fallback_reason="insufficient-confident-panel-groups",
         )
-        return CalibrationResult(tuple(refs_by_object[id(region)] for region in fallback_raw), diagnostic)
 
     fallback_position = {id(region): index for index, region in enumerate(fallback_raw)}
     panel_ranks = tuple(
-        min((fallback_position[id(raw_regions[index])] for index in group), default=None)
+        min(
+            (fallback_position[id(raw_regions[index])] for index in group),
+            default=None,
+        )
         for group in groups
     )
     hard_edges = _panel_precedence_edges(segmentation.boxes)
-    hard_panel_order = _panel_order(segmentation.boxes, groups, panel_ranks)
-    if hard_panel_order is None:
-        diagnostic = CalibrationDiagnostic(
-            segmentation.boxes,
-            True,
-            segmentation.reason,
-            recovery_reason,
-            assignments,
-            (),
-            (),
-            "precedence-cycle",
-            False,
-            fallback_order,
-            fallback_order,
+    panel_order = _hard_panel_order(segmentation.boxes, panel_ranks)
+    if panel_order is None:
+        return _fallback_result(
+            refs_by_object,
+            fallback_raw,
+            segmentation=segmentation,
+            recovery_reason=recovery_reason,
+            assignments=assignments,
+            fallback_reason="precedence-cycle",
         )
-        return CalibrationResult(tuple(refs_by_object[id(region)] for region in fallback_raw), diagnostic)
 
     panel_count = len(segmentation.boxes)
     uncertain_by_node = {
@@ -506,42 +600,47 @@ def run_post_v2_calibration_candidate(
         (edge.source_index, edge.target_index) for edge in hard_edges
     ]
     relation_diagnostics: list[CalibrationRelationEdge] = []
-    active_panel_order = tuple(index for index in hard_panel_order if groups[index])
+    active_panel_order = tuple(index for index in panel_order if groups[index])
 
     if config.c2_uncertain_relations:
         for offset, region_index in enumerate(uncertain):
             node_index = panel_count + offset
-            proposed, relation_status = _uncertain_relations(
-                uncertain_region_index=region_index,
+            proposed, status = _uncertain_relation_edges(
+                region_index=region_index,
+                assignment=assignments[region_index],
                 raw_regions=raw_regions,
                 boxes=segmentation.boxes,
                 groups=groups,
                 hard_edges=hard_edges,
                 active_panel_order=active_panel_order,
+                uncertain_node=node_index,
             )
-            if relation_status == "conflict":
-                diagnostic = CalibrationDiagnostic(
-                    segmentation.boxes,
-                    True,
-                    segmentation.reason,
-                    recovery_reason,
-                    assignments,
-                    tuple(relation_diagnostics),
-                    (),
-                    "uncertain-relation-conflict",
-                    False,
-                    fallback_order,
-                    fallback_order,
+            if status == "conflict":
+                return _fallback_result(
+                    refs_by_object,
+                    fallback_raw,
+                    segmentation=segmentation,
+                    recovery_reason=recovery_reason,
+                    assignments=assignments,
+                    relation_edges=tuple(relation_diagnostics),
+                    fallback_reason="uncertain-relation-conflict",
                 )
-                return CalibrationResult(tuple(refs_by_object[id(region)] for region in fallback_raw), diagnostic)
             for source, target, rule in proposed:
-                mapped_source = node_index if source == panel_count else source
-                mapped_target = node_index if target == panel_count else target
-                graph_edges.append((mapped_source, mapped_target))
+                graph_edges.append((source, target))
+                source_region = uncertain_by_node.get(source)
+                target_region = uncertain_by_node.get(target)
                 relation_diagnostics.append(
                     CalibrationRelationEdge(
-                        f"u{region_index:03d}" if mapped_source == node_index else f"g{mapped_source:03d}",
-                        f"u{region_index:03d}" if mapped_target == node_index else f"g{mapped_target:03d}",
+                        _node_label(
+                            source,
+                            panel_count=panel_count,
+                            region_index=source_region,
+                        ),
+                        _node_label(
+                            target,
+                            panel_count=panel_count,
+                            region_index=target_region,
+                        ),
                         rule,
                     )
                 )
@@ -564,23 +663,20 @@ def run_post_v2_calibration_candidate(
         )
 
     node_order = _deterministic_topological_order(
-        panel_count + len(uncertain), tuple(graph_edges), tie_key=tie_key
+        panel_count + len(uncertain),
+        tuple(graph_edges),
+        tie_key=tie_key,
     )
     if node_order is None:
-        diagnostic = CalibrationDiagnostic(
-            segmentation.boxes,
-            True,
-            segmentation.reason,
-            recovery_reason,
-            assignments,
-            tuple(relation_diagnostics),
-            (),
-            "precedence-cycle",
-            False,
-            fallback_order,
-            fallback_order,
+        return _fallback_result(
+            refs_by_object,
+            fallback_raw,
+            segmentation=segmentation,
+            recovery_reason=recovery_reason,
+            assignments=assignments,
+            relation_edges=tuple(relation_diagnostics),
+            fallback_reason="precedence-cycle",
         )
-        return CalibrationResult(tuple(refs_by_object[id(region)] for region in fallback_raw), diagnostic)
 
     ordered_raw: list[Any] = []
     node_labels: list[str] = []
@@ -608,23 +704,25 @@ def run_post_v2_calibration_candidate(
             ordered_raw.append(raw_regions[region_index])
             node_labels.append(f"u{region_index:03d}")
 
-    if len(ordered_raw) != len(raw_regions) or {id(region) for region in ordered_raw} != {
-        id(region) for region in raw_regions
-    }:
+    if len(ordered_raw) != len(raw_regions):
+        raise AssertionError("calibration candidate changed the OCR region count")
+    if {id(region) for region in ordered_raw} != {id(region) for region in raw_regions}:
         raise AssertionError("calibration candidate changed the OCR region set")
+
     ordered_refs = tuple(refs_by_object[id(region)] for region in ordered_raw)
+    fallback_order = tuple(refs_by_object[id(region)].region_id for region in fallback_raw)
     final_order = tuple(ref.region_id for ref in ordered_refs)
     diagnostic = CalibrationDiagnostic(
-        segmentation.boxes,
-        True,
-        segmentation.reason,
-        recovery_reason,
-        assignments,
-        tuple(relation_diagnostics),
-        tuple(node_labels),
-        None,
-        True,
-        fallback_order,
-        final_order,
+        segmentation_boxes=segmentation.boxes,
+        segmentation_reliable=True,
+        segmentation_reason=segmentation.reason,
+        recovery_reason=recovery_reason,
+        assignments=assignments,
+        relation_edges=tuple(relation_diagnostics),
+        node_order=tuple(node_labels),
+        fallback_reason=None,
+        used_panel_evidence=True,
+        fallback_order=fallback_order,
+        final_order=final_order,
     )
     return CalibrationResult(ordered_refs, diagnostic)

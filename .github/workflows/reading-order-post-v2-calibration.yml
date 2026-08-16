@@ -22,9 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Check out calibration candidate
+      - name: Check out exact calibration candidate head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -48,7 +49,7 @@ jobs:
         run: uv sync --frozen --extra ocr
 
       - name: Run frozen-v2 parity and calibration regression tests
-        run: uv run pytest -q tests/reading_order_v2 tests/reading_order_post_v2_calibration
+        run: uv run python -m pytest -q tests/reading_order_v2 tests/reading_order_post_v2_calibration
 
       - name: Run CALIBRATION repeats in fresh processes
         shell: bash
