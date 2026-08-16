@@ -55,8 +55,17 @@ jobs:
           EXPECTED_TREE_SHA: ${{ inputs.expected_tree_sha }}
           EXPECTED_MANIFEST_SHA256: ${{ inputs.expected_manifest_sha256 }}
           EXPECTED_DESIGN_SHA256: ${{ inputs.expected_design_sha256 }}
+          PROVENANCE_DIR: ${{ runner.temp }}/reading-order-v2-provenance
         run: |
           set -euo pipefail
+          mkdir -p "$PROVENANCE_DIR"
+          printf '%s\n' "$QUALIFICATION_ID" > "$PROVENANCE_DIR/requested-qualification-id.txt"
+          printf '%s\n' "$EXECUTION_SHA" > "$PROVENANCE_DIR/requested-execution-sha.txt"
+          printf '%s\n' "$EXPECTED_TREE_SHA" > "$PROVENANCE_DIR/requested-tree-sha.txt"
+          printf '%s\n' "$EXPECTED_MANIFEST_SHA256" > "$PROVENANCE_DIR/requested-manifest-sha256.txt"
+          printf '%s\n' "$EXPECTED_DESIGN_SHA256" > "$PROVENANCE_DIR/requested-design-sha256.txt"
+          printf '%s\n' 'uv run python -m scripts.reading_order_v2.run_heldout' > "$PROVENANCE_DIR/exact-command.txt"
+
           test "$AUTHORIZED" = "true"
           [[ "$QUALIFICATION_ID" =~ ^[A-Za-z0-9._-]+$ ]]
           [[ "$EXECUTION_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -116,8 +125,6 @@ jobs:
           PROVENANCE_DIR: ${{ runner.temp }}/reading-order-v2-provenance
         run: |
           set -euo pipefail
-          mkdir -p "$PROVENANCE_DIR"
-          printf '%s\n' 'uv run python -m scripts.reading_order_v2.run_heldout' > "$PROVENANCE_DIR/exact-command.txt"
           uv run python - <<'PY'
           from __future__ import annotations
 
