@@ -30,6 +30,18 @@ def _git(*args: str) -> str:
     return result.stdout.strip()
 
 
+def _uv_version() -> str:
+    uv = which("uv")
+    if uv is None:
+        raise RuntimeError("uv is required for qualification provenance")
+    return subprocess.run(  # noqa: S603
+        [uv, "--version"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 def _version(distribution: str) -> str:
     return importlib.metadata.version(distribution)
 
@@ -78,12 +90,7 @@ def capture(
             "executableBasename": Path(sys.executable).name,
             "virtualEnvironmentActive": sys.prefix != sys.base_prefix,
         },
-        "uvVersion": subprocess.run(
-            ["uv", "--version"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip(),
+        "uvVersion": _uv_version(),
         "packages": {
             "numpy": _version("numpy"),
             "opencv-python-headless": _version("opencv-python-headless"),
