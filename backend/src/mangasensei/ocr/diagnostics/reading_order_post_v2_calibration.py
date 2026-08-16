@@ -307,7 +307,9 @@ def _visible_side_coverages(
         if visible_length < required_length:
             return None
         coverages.append(_coverage_over_segments(intervals, visible))
-    return tuple(coverages)  # type: ignore[return-value]
+    if len(coverages) != 4:
+        raise AssertionError("frame side coverage count changed")
+    return coverages[0], coverages[1], coverages[2], coverages[3]
 
 
 def _has_adjacent_strong_corner(coverages: Sequence[float]) -> bool:
@@ -503,19 +505,8 @@ def _recover_merged_frames(
             if min(hypothesis.coverages) >= _FRAME_MIN_SIDE_COVERAGE
         )
     )
-    if len(strong) >= 2:
-        boxes = tuple(
-            sorted(
-                (candidate.box for candidate in strong),
-                key=lambda box: (box.y1, box.x1, box.y2, box.x2),
-            )
-        )
-        recovered = _validate_boxes(boxes, page_width, page_height)
-        if not recovered.reliable:
-            return segmentation, f"rejected-{recovered.reason}"
-        accepted = PanelSegmentation(recovered.boxes, True, "recovered-merged-frame")
-        return accepted, "accepted-multiple-strong-four-side-frames"
-
+    if len(strong) > 1:
+        return segmentation, "rejected-multiple-strong-frame-candidates"
     if len(strong) != 1:
         return segmentation, "rejected-no-unique-strong-frame-anchor"
 
