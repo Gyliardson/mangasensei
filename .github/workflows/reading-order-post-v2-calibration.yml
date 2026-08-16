@@ -1,0 +1,77 @@
+name: Reading Order Post-v2 CALIBRATION
+
+on:
+  pull_request:
+    paths:
+      - "backend/src/mangasensei/ocr/diagnostics/reading_order_post_v2_calibration.py"
+      - "scripts/reading_order_post_v2_calibration/**"
+      - "tests/reading_order_post_v2_calibration/**"
+      - ".github/workflows/reading-order-post-v2-calibration.yml"
+      - "assets/reading-order-v2/heldout-v1/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reading-order-post-v2-calibration-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  calibration:
+    name: CALIBRATION — observed H01-H16 regression only (NOT qualification)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact calibration candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prove frozen v1 calibration fixtures were not mutated
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code 54362f19c936457adca22b22d64a7e3c748f36ed -- assets/reading-order-v2/heldout-v1
+          printf '%s  %s\n' \
+            eb435993048ec55a49490a9ce5c2505fbd94443cbbcc689c3bc04417c2d69fdc \
+            assets/reading-order-v2/heldout-v1/manifest.json | sha256sum --check --strict
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install frozen OCR dependency set
+        run: uv sync --frozen --extra ocr
+
+      - name: Run frozen-v2 parity and calibration regression tests
+        run: uv run python -m pytest -q tests/reading_order_v2 tests/reading_order_post_v2_calibration
+
+      - name: Run CALIBRATION repeats in fresh processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf var/research/reading-order-post-v2-calibration
+          PYTHONHASHSEED=101 uv run python -m scripts.reading_order_post_v2_calibration.run --repeat 1
+          PYTHONHASHSEED=202 uv run python -m scripts.reading_order_post_v2_calibration.run --repeat 2
+          PYTHONHASHSEED=303 uv run python -m scripts.reading_order_post_v2_calibration.run --repeat 3
+          cmp var/research/reading-order-post-v2-calibration/repeat-1.json \
+              var/research/reading-order-post-v2-calibration/repeat-2.json
+          cmp var/research/reading-order-post-v2-calibration/repeat-1.json \
+              var/research/reading-order-post-v2-calibration/repeat-3.json
+          sha256sum var/research/reading-order-post-v2-calibration/repeat-*.json \
+            > var/research/reading-order-post-v2-calibration/repeat-hashes.sha256
+
+      - name: Upload CALIBRATION evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reading-order-post-v2-CALIBRATION-${{ github.event.pull_request.head.sha }}
+          path: var/research/reading-order-post-v2-calibration
+          if-no-files-found: warn
+          retention-days: 90
+          compression-level: 9
