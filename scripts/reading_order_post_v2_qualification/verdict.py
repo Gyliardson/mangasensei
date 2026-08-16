@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .contracts import ArmId, REQUIRED_SLICES
+from .contracts import REQUIRED_SLICES, ArmId
 from .exercise import ExerciseReport, exercise_minimum_met
 from .scoring import (
     CorpusScore,
@@ -15,7 +15,7 @@ from .scoring import (
 
 
 class ComponentStatus(StrEnum):
-    PASS = "PASS"
+    PASS = "PASS"  # noqa: S105 -- Formal status vocabulary, not a credential.
     FAIL = "FAIL"
     INCONCLUSIVE = "INCONCLUSIVE"
     NOT_EVALUATED = "NOT_EVALUATED"

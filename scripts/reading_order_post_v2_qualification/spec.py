@@ -18,7 +18,7 @@ from . import (
     SPEC_SCHEMA_VERSION,
 )
 from .canonical import sha256_path
-from .contracts import ArmId, DESIGN_REQUIREMENTS, EXERCISE_MINIMA, REQUIRED_SLICES, SLICE_MINIMA
+from .contracts import DESIGN_REQUIREMENTS, EXERCISE_MINIMA, REQUIRED_SLICES, SLICE_MINIMA, ArmId
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -101,6 +101,62 @@ def validate_spec(path: Path, *, expected_sha256: str | None = None) -> dict[str
         raise SpecError("candidate frozen commit/source blob binding mismatch")
     if _git("rev-parse", f"HEAD:{source_path}") != source_blob:
         raise SpecError("current execution tree changed frozen candidate source")
+
+    current_baseline = spec.get("baselineProductionBinding")
+    historical_baseline = spec.get("historicalV2ProductionBaselineBinding")
+    if not isinstance(current_baseline, dict) or not isinstance(historical_baseline, dict):
+        raise SpecError("production baseline bindings missing")
+    expected_binding_keys = {
+        "commitSha",
+        "treeSha",
+        "sourcePath",
+        "sourceBlobSha",
+        "role",
+    }
+    if set(current_baseline) != expected_binding_keys:
+        raise SpecError("current production baseline binding shape changed")
+    historical_keys = expected_binding_keys | {
+        "contentEquivalentToCurrentPostV2Baseline",
+        "relationship",
+    }
+    if set(historical_baseline) != historical_keys:
+        raise SpecError("historical v2 production baseline binding shape changed")
+    if current_baseline != {
+        "commitSha": "f45facb2284d740df2f294800f705414e0ba465e",
+        "treeSha": "68418482b8ccf5d7a3cb1c9ef3834505bd20cd4c",
+        "sourcePath": "backend/src/mangasensei/ocr/reading_order.py",
+        "sourceBlobSha": "12358a59deee7bd0ec0845963da1b98f031592f1",
+        "role": "current-post-v2-production-reading-order-dependency-not-modified-or-activated-by-this-experiment",
+    }:
+        raise SpecError("current post-v2 production baseline identity changed")
+    if historical_baseline != {
+        "commitSha": "292f0a8c8142d919ac4184159d102789c43b4116",
+        "treeSha": "6605f6de429b318139fb91a4535ebbd2193508ce",
+        "sourcePath": "backend/src/mangasensei/ocr/reading_order.py",
+        "sourceBlobSha": "122f575c1c3567787aec29da0b1996fe0bf3e110",
+        "role": "historical-reading-order-v2-production-baseline-identity",
+        "contentEquivalentToCurrentPostV2Baseline": False,
+        "relationship": (
+            "Historical Reading Order v2 production baseline identity only; the post-v2 "
+            "candidate is evaluated against the current production dependency recorded in "
+            "baselineProductionBinding. The source blobs are intentionally distinct."
+        ),
+    }:
+        raise SpecError("historical v2 production baseline identity changed")
+    for label, binding in (
+        ("current", current_baseline),
+        ("historical", historical_baseline),
+    ):
+        binding_commit = str(binding["commitSha"])
+        binding_tree = str(binding["treeSha"])
+        binding_path = str(binding["sourcePath"])
+        binding_blob = str(binding["sourceBlobSha"])
+        if _git("rev-parse", f"{binding_commit}^{{tree}}") != binding_tree:
+            raise SpecError(f"{label} production baseline commit/tree binding mismatch")
+        if _git("rev-parse", f"{binding_commit}:{binding_path}") != binding_blob:
+            raise SpecError(f"{label} production baseline source blob binding mismatch")
+    if current_baseline["sourceBlobSha"] == historical_baseline["sourceBlobSha"]:
+        raise SpecError("historical/current production baseline distinction disappeared")
 
     source_bindings = spec.get("sourceBindings")
     if not isinstance(source_bindings, list) or not source_bindings:

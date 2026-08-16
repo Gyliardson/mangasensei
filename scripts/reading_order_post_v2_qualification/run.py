@@ -7,7 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 from shutil import which
-from typing import Any
 
 from .canonical import canonical_json_bytes, sha256_bytes, sha256_path, write_canonical_json
 from .contracts import (

@@ -76,7 +76,8 @@ def capture(
             "os": os.environ.get("RUNNER_OS", "unknown"),
             "arch": os.environ.get("RUNNER_ARCH", "unknown"),
             "environment": os.environ.get("RUNNER_ENVIRONMENT", "unknown"),
-            "imageOs": os.environ.get("ImageOS", "unknown"),
+            # GitHub-hosted runner images expose this mixed-case key.
+            "imageOs": os.environ.get("ImageOS", "unknown"),  # noqa: SIM112
         },
         "platform": {
             "system": platform.system(),

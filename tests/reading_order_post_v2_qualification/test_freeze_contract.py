@@ -21,11 +21,11 @@ from scripts.reading_order_post_v2_qualification.canonical import (
     write_deterministic_zip,
 )
 from scripts.reading_order_post_v2_qualification.contracts import (
+    SLICE_MINIMA,
     ArmId,
     ContractError,
     PageGroundTruth,
     QualificationPair,
-    SLICE_MINIMA,
     canonical_qualification_identity,
     load_corpus_design,
     validate_qualification_identity,
@@ -34,6 +34,7 @@ from scripts.reading_order_post_v2_qualification.exercise import build_exercise_
 from scripts.reading_order_post_v2_qualification.replay_guard import (
     EXECUTION_STEP_NAME,
     RUN_TITLE_PREFIX,
+    assert_not_replayed,
     detect_duplicate,
     execution_step_observed,
 )
@@ -114,6 +115,29 @@ def test_spec_declares_frozen_identity_constants_and_no_authorization() -> None:
     assert spec["freezeBoundaries"]["noFutureHeldoutAuthoredOrRevealedByFreeze"] is True
     assert spec["freezeBoundaries"]["noQualificationExecutionAuthorizedBySpec"] is True
     assert spec["freezeBoundaries"]["noProductionActivation"] is True
+    assert spec["baselineProductionBinding"] == {
+        "commitSha": "f45facb2284d740df2f294800f705414e0ba465e",
+        "role": (
+            "current-post-v2-production-reading-order-dependency-not-modified-or-"
+            "activated-by-this-experiment"
+        ),
+        "sourceBlobSha": "12358a59deee7bd0ec0845963da1b98f031592f1",
+        "sourcePath": "backend/src/mangasensei/ocr/reading_order.py",
+        "treeSha": "68418482b8ccf5d7a3cb1c9ef3834505bd20cd4c",
+    }
+    assert spec["historicalV2ProductionBaselineBinding"] == {
+        "commitSha": "292f0a8c8142d919ac4184159d102789c43b4116",
+        "treeSha": "6605f6de429b318139fb91a4535ebbd2193508ce",
+        "sourcePath": "backend/src/mangasensei/ocr/reading_order.py",
+        "sourceBlobSha": "122f575c1c3567787aec29da0b1996fe0bf3e110",
+        "role": "historical-reading-order-v2-production-baseline-identity",
+        "contentEquivalentToCurrentPostV2Baseline": False,
+        "relationship": (
+            "Historical Reading Order v2 production baseline identity only; the post-v2 "
+            "candidate is evaluated against the current production dependency recorded in "
+            "baselineProductionBinding. The source blobs are intentionally distinct."
+        ),
+    }
 
 
 def test_spec_fixes_eight_attributable_arms_and_required_slices() -> None:
@@ -291,6 +315,33 @@ def test_replay_guard_rejects_only_observed_execution_step() -> None:
     assert duplicate == 11
     assert execution_step_observed(jobs[10]) is False
     assert execution_step_observed(jobs[11]) is True
+
+
+def test_replay_guard_url_trust_boundary_is_fail_closed() -> None:
+    common = {
+        "workflow_file": "reading-order-post-v2-qualification.yml",
+        "qualification_identity": "ropv2q-" + "a" * 64,
+        "current_run_id": 1,
+        "token": "synthetic-test-token",
+    }
+    for api_url in (
+        "http://api.github.com",
+        "https://evil.example",
+        "https://user@api.github.com",
+        "https://api.github.com:8443",
+    ):
+        with pytest.raises(RuntimeError):
+            assert_not_replayed(
+                repository="Gyliardson/mangasensei",
+                api_url=api_url,
+                **common,
+            )
+    with pytest.raises(RuntimeError, match="repository"):
+        assert_not_replayed(
+            repository="other/repository",
+            api_url="https://api.github.com",
+            **common,
+        )
 
 
 def test_corpus_design_rejects_historical_identity_before_any_assets(tmp_path: Path) -> None:

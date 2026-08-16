@@ -10,11 +10,27 @@ from typing import Any
 
 EXECUTION_STEP_NAME = "Execute frozen qualification exactly once"
 RUN_TITLE_PREFIX = "Reading Order Post-v2 Qualification · "
+CANONICAL_REPOSITORY = "Gyliardson/mangasensei"
+GITHUB_API_HOST = "api.github.com"
+
+
+def _validate_github_api_url(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https":
+        raise RuntimeError("replay guard requires HTTPS GitHub API URL")
+    if parsed.hostname != GITHUB_API_HOST:
+        raise RuntimeError("replay guard GitHub API host is outside the frozen trust boundary")
+    if parsed.username is not None or parsed.password is not None:
+        raise RuntimeError("replay guard GitHub API URL must not contain userinfo")
+    if parsed.port not in {None, 443}:
+        raise RuntimeError("replay guard GitHub API URL must use the default HTTPS port")
+    return url
 
 
 def _request_json(url: str, *, token: str) -> dict[str, Any]:
-    request = urllib.request.Request(
-        url,
+    validated_url = _validate_github_api_url(url)
+    request = urllib.request.Request(  # noqa: S310 -- URL is validated to the fixed HTTPS GitHub API boundary.
+        validated_url,
         headers={
             "Accept": "application/vnd.github+json",
             "Authorization": f"Bearer {token}",
@@ -22,7 +38,7 @@ def _request_json(url: str, *, token: str) -> dict[str, Any]:
             "User-Agent": "mangasensei-post-v2-replay-guard",
         },
     )
-    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
+    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 -- Request URL is validated above.
         payload = json.load(response)
     if not isinstance(payload, dict):
         raise RuntimeError("GitHub API returned a non-object payload")
@@ -82,6 +98,9 @@ def assert_not_replayed(
     token: str,
     api_url: str,
 ) -> None:
+    if repository != CANONICAL_REPOSITORY:
+        raise RuntimeError("replay guard repository is outside the frozen trust boundary")
+    api_url = _validate_github_api_url(api_url)
     owner_repo = urllib.parse.quote(repository, safe="/")
     workflow = urllib.parse.quote(workflow_file, safe="")
     runs: list[dict[str, Any]] = []

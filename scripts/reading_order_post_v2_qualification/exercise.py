@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .contracts import ArmId, EXERCISE_MINIMA, PageGroundTruth, QualificationPair
+from .contracts import EXERCISE_MINIMA, ArmId, PageGroundTruth, QualificationPair
 
 
 @dataclass(frozen=True, slots=True)
