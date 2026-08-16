@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import struct
 from collections import defaultdict
@@ -62,11 +63,25 @@ def _authored_counts() -> tuple[int, int, dict[str, set[str]], dict[str, int]]:
 
 
 def test_post_v2_heldout_v1_contract_manifest_and_historical_guard() -> None:
+    manifest = _load_json(CORPUS_ROOT / "manifest.json")
+    inventory = manifest["inventory"]
+    assert isinstance(inventory, list)
+    mismatches: list[tuple[str, str, str]] = []
+    for item in inventory:
+        assert isinstance(item, dict)
+        relative = item["file"]
+        expected = item["sha256"]
+        assert isinstance(relative, str)
+        assert isinstance(expected, str)
+        actual = hashlib.sha256((CORPUS_ROOT / relative).read_bytes()).hexdigest()
+        if actual != expected:
+            mismatches.append((relative, expected, actual))
+    assert not mismatches, mismatches
+
     validate_corpus(CORPUS_ROOT)
     assert_no_historical_v2_content_reuse(CORPUS_ROOT)
 
     design = _load_json(CORPUS_ROOT / "corpus-design.json")
-    manifest = _load_json(CORPUS_ROOT / "manifest.json")
     assert design["corpusId"] == "mangasensei-reading-order-post-v2-heldout-v1"
     assert design["version"] == "1.0.0"
     assert design["authorshipBoundary"] == "new-project-authored-no-historical-v2-case-reuse"
