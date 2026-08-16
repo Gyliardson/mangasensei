@@ -1,19 +1,17 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { access, unlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { createServer, type Socket } from "node:net";
 
 const redPage = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAAnUlEQVR4nO3PgQ0AEADAMPz/M1+Q1HrBNvf4y3odcFvDuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6w707AHv8mafmgAAAABJRU5ErkJggg==",
   "base64",
 );
 const bluePage = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAAoklEQVR4nO3PAQ3AIADAMEAS/gUgCxcn2VsF29z7jD9ZrwO+ZrjOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5wneG6C8/BAhzZIzRnAAAAAElFTkSuQmCC",
+  "iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAAoklEQVR4nO3PAQ3AIADAMEAS/gUgCxcn2VsF29z7jD9ZrwO+ZrjOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5xnuM5wneG6C8/BAhzZIzRnAAAAAElFTkSuQmCC",
   "base64",
 );
-const documentCancelHoldPath = join(tmpdir(), "mangasensei-document-cancel.hold");
-const documentCancelReadyPath = join(tmpdir(), "mangasensei-document-cancel.ready");
+const documentCancelBarrierHost = "127.0.0.1";
+const documentCancelBarrierPort = 48154;
 
 interface DocumentEnvelope {
   readonly data: {
@@ -44,28 +42,87 @@ interface CancellationEnvelope {
   };
 }
 
+interface CancellationBarrier {
+  readonly ready: Promise<void>;
+  release(): void;
+  close(): Promise<void>;
+}
+
 async function useEnglishUi(page: Page): Promise<void> {
   await page.goto("/");
   await page.getByRole("combobox", { name: "Idioma da interface" }).selectOption("en");
 }
 
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
+async function createCancellationBarrier(): Promise<CancellationBarrier> {
+  let client: Socket | undefined;
+  let resolveReady: (() => void) | undefined;
+  let rejectReady: ((reason?: unknown) => void) | undefined;
+  const ready = new Promise<void>((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  const server = createServer((socket) => {
+    if (client) {
+      socket.destroy();
+      return;
+    }
+    client = socket;
+    let handshake = "";
+    const onError = (error: Error): void => rejectReady?.(error);
+    const onData = (chunk: Buffer): void => {
+      handshake += chunk.toString("utf8");
+      if (!handshake.includes("\n")) {
+        return;
+      }
+      socket.off("data", onData);
+      socket.off("error", onError);
+      if (handshake !== "ready\n") {
+        rejectReady?.(new Error(`unexpected cancellation barrier handshake: ${handshake}`));
+        return;
+      }
+      resolveReady?.();
+    };
+    socket.on("error", onError);
+    socket.on("data", onData);
+  });
 
-async function unlinkIfExists(path: string): Promise<void> {
-  await unlink(path).catch(() => undefined);
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error): void => reject(error);
+    server.once("error", onError);
+    server.listen(documentCancelBarrierPort, documentCancelBarrierHost, () => {
+      server.off("error", onError);
+      resolve();
+    });
+  });
+
+  return {
+    ready,
+    release(): void {
+      if (!client) {
+        throw new Error("cancellation barrier released before the worker connected");
+      }
+      client.end();
+    },
+    async close(): Promise<void> {
+      client?.destroy();
+      if (!server.listening) {
+        return;
+      }
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    },
+  };
 }
 
 test("Document recovery controls remain usable and axe-clean on a mobile viewport", async ({ page }) => {
-  await unlinkIfExists(documentCancelReadyPath);
-  await unlinkIfExists(documentCancelHoldPath);
-  await writeFile(documentCancelHoldPath, "hold", "utf8");
+  const cancellationBarrier = await createCancellationBarrier();
 
   try {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -85,9 +142,7 @@ test("Document recovery controls remain usable and axe-clean on a mobile viewpor
     const beforeCancel = await new AxeBuilder({ page }).analyze();
     expect(beforeCancel.violations).toEqual([]);
 
-    await expect
-      .poll(() => pathExists(documentCancelReadyPath), { timeout: 15_000 })
-      .toBe(true);
+    await cancellationBarrier.ready;
 
     await expect
       .poll(async () => {
@@ -124,7 +179,7 @@ test("Document recovery controls remain usable and axe-clean on a mobile viewpor
       },
     });
 
-    await unlinkIfExists(documentCancelHoldPath);
+    cancellationBarrier.release();
     await expect(page.getByText("Document processing cancelled")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole("button", { name: "Page 2: cancelled" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Page 1: readable" })).toBeVisible();
@@ -132,7 +187,6 @@ test("Document recovery controls remain usable and axe-clean on a mobile viewpor
     const afterCancel = await new AxeBuilder({ page }).analyze();
     expect(afterCancel.violations).toEqual([]);
   } finally {
-    await unlinkIfExists(documentCancelHoldPath);
-    await unlinkIfExists(documentCancelReadyPath);
+    await cancellationBarrier.close();
   }
 });
