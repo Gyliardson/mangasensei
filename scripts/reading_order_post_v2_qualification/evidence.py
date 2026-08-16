@@ -133,6 +133,7 @@ def validate_staging_tree(staging: Path) -> None:
         "provenance/run-metadata.json",
         "comparison.json",
         "exercise.json",
+        "repeat-hashes.json",
         "verdict.json",
         "harness/source-manifest.json",
         "output-inventory.sha256",
@@ -209,7 +210,7 @@ def build_evidence(
             page_ids=design.page_ids,
         )
 
-    for name in ("comparison.json", "exercise.json", "verdict.json"):
+    for name in ("comparison.json", "exercise.json", "repeat-hashes.json", "verdict.json"):
         _copy(output_root / "summary" / name, staging / name)
     _write_output_inventory(output_root, staging / "output-inventory.sha256")
     (staging / "README.md").write_text(README, encoding="utf-8", newline="\n")
