@@ -15,6 +15,8 @@ def test_qualification_workflow_is_manual_read_only_and_fail_closed() -> None:
     assert "authorize_new_qualification" in text
     assert EXECUTED_STAGE1_SHA in text
     assert "replay is forbidden" in text
+    assert "git fetch --no-tags origin main" in text
+    assert "Authorized execution SHA is not the current canonical main SHA" in text
     assert "uv sync --frozen --extra ocr" in text
     assert "uv run python -m scripts.reading_order_v2.run_heldout" in text
     assert "scripts.reading_order_v2.build_evidence" in text
