@@ -76,7 +76,12 @@ def test_post_v2_heldout_v1_contract_manifest_and_historical_guard() -> None:
         actual = hashlib.sha256((CORPUS_ROOT / relative).read_bytes()).hexdigest()
         if actual != expected:
             mismatches.append((relative, expected, actual))
-    assert not mismatches, mismatches
+    if mismatches:
+        details = "\n".join(
+            f"{relative} expected={expected} actual={actual}"
+            for relative, expected, actual in mismatches
+        )
+        raise AssertionError(details)
 
     validate_corpus(CORPUS_ROOT)
     assert_no_historical_v2_content_reuse(CORPUS_ROOT)
