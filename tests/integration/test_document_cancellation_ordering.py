@@ -11,7 +11,10 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from mangasensei.api.app import create_app
-from mangasensei.infrastructure.database.analysis_models import GeminiBudgetBucketRecord, GeminiCallRecord
+from mangasensei.infrastructure.database.analysis_models import (
+    GeminiBudgetBucketRecord,
+    GeminiCallRecord,
+)
 from mangasensei.infrastructure.database.job_models import JobRecord
 from mangasensei.infrastructure.database.queue_repository import QueueRepository
 from mangasensei.infrastructure.database.storage_models import PageRecord
@@ -19,7 +22,13 @@ from mangasensei.linguistics.service import LinguisticService
 from mangasensei.storage.local import LocalFilesystemStorage
 from mangasensei.workers.runner import CancellationAcknowledgedError, Worker
 from tests.integration.test_document_api import make_settings
-from tests.integration.test_worker_flow import DictionaryFixture, GeminiFixture, OcrFixture, TokenizerFixture, fixture_image
+from tests.integration.test_worker_flow import (
+    DictionaryFixture,
+    GeminiFixture,
+    OcrFixture,
+    TokenizerFixture,
+    fixture_image,
+)
 
 
 def _async_url(url: str) -> str:
@@ -27,7 +36,9 @@ def _async_url(url: str) -> str:
 
 
 async def _wait_for_lock_wait(
-    sessions: async_sessionmaker[AsyncSession], *, query_fragments: tuple[str, ...]
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    query_fragments: tuple[str, ...],
 ) -> str:
     deadline = asyncio.get_running_loop().time() + 5.0
     while True:
@@ -60,7 +71,8 @@ async def _wait_for_lock_wait(
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_document_cancel_and_gemini_reservation_share_page_then_job_order(
-    clean_postgres_url: str, tmp_path: Path
+    clean_postgres_url: str,
+    tmp_path: Path,
 ) -> None:
     app = create_app(make_settings(clean_postgres_url, tmp_path))
     engine = create_async_engine(_async_url(clean_postgres_url))
@@ -118,7 +130,8 @@ async def test_document_cancel_and_gemini_reservation_share_page_then_job_order(
         )
         reserve_task = asyncio.create_task(worker._reserve_gemini_call(claim, page, "{}"))
         await _wait_for_lock_wait(
-            sessions, query_fragments=("mangasensei.gemini_budget_buckets",)
+            sessions,
+            query_fragments=("mangasensei.gemini_budget_buckets",),
         )
         cancel_task = asyncio.create_task(
             client.post(
@@ -128,11 +141,13 @@ async def test_document_cancel_and_gemini_reservation_share_page_then_job_order(
         )
         try:
             blocked_cancel_query = await _wait_for_lock_wait(
-                sessions, query_fragments=("mangasensei.pages", "mangasensei.jobs")
+                sessions,
+                query_fragments=("mangasensei.pages", "mangasensei.jobs"),
             )
             await blocker.commit()
             call_id, cancel_response = await asyncio.wait_for(
-                asyncio.gather(reserve_task, cancel_task), timeout=5.0
+                asyncio.gather(reserve_task, cancel_task),
+                timeout=5.0,
             )
         finally:
             if blocker.in_transaction():
