@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from shutil import which
 
 from .canonical import canonical_jsonl_bytes, write_canonical_json
 from .contracts import PAGE_IDS
@@ -28,8 +29,14 @@ SOURCE_PATHS = (
     "backend/src/mangasensei/ocr/reading_order.py",
     "backend/src/mangasensei/ocr/diagnostics/reading_order_v2.py",
     "backend/src/mangasensei/ocr/diagnostics/reading_order_v2_contracts.py",
-    "backend/src/mangasensei/ocr/vendor/manga_image_translator/manga_translator/utils/generic2.py",
-    "backend/src/mangasensei/ocr/vendor/manga_image_translator/manga_translator/utils/textblock.py",
+    (
+        "backend/src/mangasensei/ocr/vendor/manga_image_translator/"
+        "manga_translator/utils/generic2.py"
+    ),
+    (
+        "backend/src/mangasensei/ocr/vendor/manga_image_translator/"
+        "manga_translator/utils/textblock.py"
+    ),
     "scripts/reading_order_v2/build_evidence.py",
     "scripts/reading_order_v2/canonical.py",
     "scripts/reading_order_v2/comparison.py",
@@ -59,8 +66,11 @@ this evidence ZIP.
 
 
 def _git(*args: str) -> str:
-    result = subprocess.run(
-        ["git", *args],
+    git = which("git")
+    if git is None:
+        raise RuntimeError("git executable is required for evidence packaging")
+    result = subprocess.run(  # noqa: S603
+        [git, *args],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
@@ -91,7 +101,11 @@ def _image_hashes(manifest: dict[str, object]) -> dict[str, str]:
             raise ValueError("malformed held-out manifest inventory entry")
         name = item.get("file")
         digest = item.get("sha256")
-        if not isinstance(name, str) or not name.startswith("images/H") or not name.endswith(".png"):
+        if (
+            not isinstance(name, str)
+            or not name.startswith("images/H")
+            or not name.endswith(".png")
+        ):
             continue
         if not isinstance(digest, str):
             raise ValueError("image manifest entry missing SHA-256")
@@ -142,7 +156,10 @@ def _materialize_arm(staging: Path, arm: str) -> None:
     (arm_root / "diagnostics.jsonl").write_bytes(canonical_jsonl_bytes(diagnostics))
     write_canonical_json(arm_root / "ordering.json", ordering)
     _copy_exact(SUMMARY_ROOT / arm / "scores.json", arm_root / "scores.json")
-    _copy_exact(SUMMARY_ROOT / arm / "repeat-hashes.json", arm_root / "repeat-hashes.json")
+    _copy_exact(
+        SUMMARY_ROOT / arm / "repeat-hashes.json",
+        arm_root / "repeat-hashes.json",
+    )
 
 
 def build_evidence(
@@ -163,7 +180,10 @@ def build_evidence(
 
     staging.mkdir(parents=True)
     _copy_exact(SPEC_PATH, staging / "experiment-spec.json")
-    _copy_exact(CORPUS_ROOT / "corpus-design.json", staging / "heldout" / "corpus-design.json")
+    _copy_exact(
+        CORPUS_ROOT / "corpus-design.json",
+        staging / "heldout" / "corpus-design.json",
+    )
     _copy_exact(CORPUS_ROOT / "manifest.json", staging / "heldout" / "manifest.json")
 
     write_canonical_json(
@@ -177,9 +197,15 @@ def build_evidence(
         },
     )
     write_canonical_json(staging / "environment.json", environment)
-    write_canonical_json(staging / "inputs" / "region-fixtures.json", _region_fixtures())
+    write_canonical_json(
+        staging / "inputs" / "region-fixtures.json",
+        _region_fixtures(),
+    )
     manifest = _load_object(CORPUS_ROOT / "manifest.json")
-    write_canonical_json(staging / "inputs" / "image-hashes.json", _image_hashes(manifest))
+    write_canonical_json(
+        staging / "inputs" / "image-hashes.json",
+        _image_hashes(manifest),
+    )
 
     source_manifest = _source_manifest(staging)
     write_canonical_json(staging / "harness" / "source-manifest.json", source_manifest)
@@ -198,7 +224,9 @@ def build_evidence(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build deterministic Reading Order v2 evidence")
+    parser = argparse.ArgumentParser(
+        description="Build deterministic Reading Order v2 evidence"
+    )
     parser.add_argument("--baseline-sha", required=True)
     parser.add_argument("--environment-json", type=Path, required=True)
     parser.add_argument("--staging-dir", type=Path, required=True)
