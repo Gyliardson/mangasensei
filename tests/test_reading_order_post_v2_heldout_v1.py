@@ -93,6 +93,9 @@ def test_post_v2_heldout_v1_contract_manifest_and_historical_guard() -> None:
     assert manifest["corpusId"] == design["corpusId"]
     assert manifest["version"] == design["version"]
 
+    manifest_sha = hashlib.sha256((CORPUS_ROOT / "manifest.json").read_bytes()).hexdigest()
+    assert manifest_sha == "0" * 64, manifest_sha
+
 
 def test_post_v2_heldout_v1_png_and_gt_input_integrity() -> None:
     design = _load_json(CORPUS_ROOT / "corpus-design.json")
