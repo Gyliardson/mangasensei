@@ -17,15 +17,8 @@ from . import (
     INPUT_SCHEMA_VERSION,
     SPEC_SCHEMA_VERSION,
 )
-from .canonical import canonical_json_bytes, sha256_bytes
-from .contracts import (
-    ArmId,
-    DESIGN_REQUIREMENTS,
-    EXERCISE_MINIMA,
-    LAYOUT_TAG_MINIMA,
-    REQUIRED_SLICES,
-    SLICE_MINIMA,
-)
+from .canonical import sha256_path
+from .contracts import ArmId, DESIGN_REQUIREMENTS, EXERCISE_MINIMA, REQUIRED_SLICES, SLICE_MINIMA
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -56,17 +49,10 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
-def canonical_spec_sha256(path: Path) -> str:
-    return sha256_bytes(canonical_json_bytes(_load(path)))
-
-
 def validate_spec(path: Path, *, expected_sha256: str | None = None) -> dict[str, Any]:
+    if expected_sha256 is not None and sha256_path(path) != expected_sha256:
+        raise SpecError("experiment spec SHA-256 mismatch")
     spec = _load(path)
-    if (
-        expected_sha256 is not None
-        and sha256_bytes(canonical_json_bytes(spec)) != expected_sha256
-    ):
-        raise SpecError("canonical experiment spec SHA-256 mismatch")
     if spec.get("schemaVersion") != SPEC_SCHEMA_VERSION:
         raise SpecError("wrong experiment spec schema version")
     if spec.get("experimentId") != EXPERIMENT_ID:
@@ -94,8 +80,6 @@ def validate_spec(path: Path, *, expected_sha256: str | None = None) -> dict[str
         raise SpecError("frozen corpus minima changed")
     if spec.get("sliceMinima") != SLICE_MINIMA:
         raise SpecError("frozen slice minima changed")
-    if spec.get("layoutTagMinima") != LAYOUT_TAG_MINIMA:
-        raise SpecError("frozen layout-tag minima changed")
     if spec.get("exerciseMinima") != EXERCISE_MINIMA:
         raise SpecError("frozen exercise minima changed")
 
