@@ -613,29 +613,58 @@ def test_c3_invalid_recovered_topology_falls_back_exactly(
     assert first.diagnostic == second.diagnostic
 
 
-@pytest.mark.parametrize(
-    "companion_lines",
-    [
-        (
-            (200.0, 250.0, 480.0, 250.0),
-            (200.0, 650.0, 480.0, 650.0),
-            (200.0, 250.0, 200.0, 650.0),
-            (480.0, 250.0, 480.0, 400.0),
-        ),
-        (
-            (200.0, 180.0, 600.0, 180.0),
-            (200.0, 600.0, 600.0, 600.0),
-            (200.0, 180.0, 200.0, 600.0),
-            (600.0, 240.0, 600.0, 400.0),
-        ),
-    ],
-    ids=("insufficient-visible-span", "insufficient-visible-coverage"),
-)
-def test_c3_insufficient_visible_evidence_falls_back_exactly(
+def test_c3_insufficient_visible_span_falls_back_exactly(
     monkeypatch: pytest.MonkeyPatch,
-    companion_lines: tuple[tuple[float, float, float, float], ...],
 ) -> None:
-    lines = _complete_frame_lines(PanelBox(400, 300, 700, 700)) + companion_lines
+    merged = PanelBox(100, 100, 900, 900)
+    anchor = PanelBox(400, 300, 700, 700)
+    span_box = PanelBox(200, 250, 480, 650)
+    span_hypothesis = candidate_module._FrameHypothesis(
+        box=span_box,
+        coverages=(1.0, 1.0, 1.0, 0.375),
+        top=candidate_module._AxisCluster(250.0, ((200.0, 480.0),)),
+        bottom=candidate_module._AxisCluster(650.0, ((200.0, 480.0),)),
+        left=candidate_module._AxisCluster(200.0, ((250.0, 650.0),)),
+        right=candidate_module._AxisCluster(480.0, ((250.0, 400.0),)),
+    )
+    visible = candidate_module._visible_side_coverages(
+        span_hypothesis,
+        span_box,
+        anchor,
+        merged,
+    )
+    assert visible is None
+
+    monkeypatch.setattr(
+        candidate_module,
+        "_visible_side_coverages",
+        lambda *_args, **_kwargs: visible,
+    )
+    lines = _complete_frame_lines(anchor) + (
+        (200.0, 180.0, 600.0, 180.0),
+        (200.0, 600.0, 600.0, 600.0),
+        (200.0, 180.0, 200.0, 600.0),
+        (600.0, 240.0, 600.0, 400.0),
+    )
+    refs, first = _run_synthetic_c3(monkeypatch, lines=lines, merged=merged)
+    _, second = _run_synthetic_c3(monkeypatch, lines=lines, merged=merged)
+    _assert_exact_synthetic_fallback(refs, first)
+    assert (
+        first.diagnostic.recovery_reason
+        == "rejected-ambiguous-or-missing-occlusion-supported-frame"
+    )
+    assert first.diagnostic == second.diagnostic
+
+
+def test_c3_insufficient_visible_coverage_falls_back_exactly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lines = _complete_frame_lines(PanelBox(400, 300, 700, 700)) + (
+        (200.0, 180.0, 600.0, 180.0),
+        (200.0, 600.0, 600.0, 600.0),
+        (200.0, 180.0, 200.0, 600.0),
+        (600.0, 240.0, 600.0, 400.0),
+    )
     refs, first = _run_synthetic_c3(monkeypatch, lines=lines)
     _, second = _run_synthetic_c3(monkeypatch, lines=lines)
     _assert_exact_synthetic_fallback(refs, first)
