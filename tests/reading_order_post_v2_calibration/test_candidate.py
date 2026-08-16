@@ -27,6 +27,7 @@ FULL_PANEL_FIX = CalibrationConfig(
     c2_uncertain_relations=True,
     c3_merged_frame_recovery=True,
 )
+DEFAULT_MERGED_FRAME = PanelBox(100, 100, 900, 900)
 
 
 class _SyntheticRegion:
@@ -138,7 +139,7 @@ def _run_synthetic_c3(
     monkeypatch: pytest.MonkeyPatch,
     *,
     lines: tuple[tuple[float, float, float, float], ...],
-    merged: PanelBox = PanelBox(100, 100, 900, 900),
+    merged: PanelBox = DEFAULT_MERGED_FRAME,
 ) -> tuple[tuple[ExperimentRegion, ...], CalibrationResult]:
     pixels = np.full((1000, 1000, 3), 255, dtype=np.uint8)
     refs = _synthetic_refs(
@@ -460,7 +461,11 @@ def test_c2_hard_panel_precedence_cannot_be_overridden_by_uncertain_relation(
         config=CalibrationConfig(c2_uncertain_relations=True),
     )
     assert result.diagnostic.fallback_reason == "precedence-cycle"
-    assert tuple((edge.source_node, edge.target_node) for edge in result.diagnostic.relation_edges) == (
+    relation_pairs = tuple(
+        (edge.source_node, edge.target_node)
+        for edge in result.diagnostic.relation_edges
+    )
+    assert relation_pairs == (
         ("g001", "u002"),
         ("u002", "g000"),
     )
