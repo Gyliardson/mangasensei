@@ -1,0 +1,252 @@
+name: Reading Order v2 Qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      qualification_id:
+        description: "New qualification identity (letters, digits, dot, underscore, dash only)"
+        required: true
+        type: string
+      execution_sha:
+        description: "Exact 40-character commit SHA to execute"
+        required: true
+        type: string
+      expected_tree_sha:
+        description: "Expected tree SHA for execution_sha"
+        required: true
+        type: string
+      expected_manifest_sha256:
+        description: "Expected frozen held-out manifest SHA-256"
+        required: true
+        type: string
+      expected_design_sha256:
+        description: "Expected frozen corpus-design SHA-256"
+        required: true
+        type: string
+      authorize_new_qualification:
+        description: "I authorize a NEW qualification run; this is not a replay of an observed result"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reading-order-v2-qualification-${{ inputs.qualification_id }}
+  cancel-in-progress: false
+
+env:
+  ALREADY_EXECUTED_STAGE1_SHA: 78838d21e9657c7b854178b1d2d7c73d56bcbc57
+  BASELINE_REPOSITORY_SHA: 292f0a8c8142d919ac4184159d102789c43b4116
+
+jobs:
+  qualify:
+    name: Frozen held-out qualification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Require explicit new-run authorization
+        shell: bash
+        env:
+          AUTHORIZED: ${{ inputs.authorize_new_qualification }}
+          QUALIFICATION_ID: ${{ inputs.qualification_id }}
+          EXECUTION_SHA: ${{ inputs.execution_sha }}
+          EXPECTED_TREE_SHA: ${{ inputs.expected_tree_sha }}
+          EXPECTED_MANIFEST_SHA256: ${{ inputs.expected_manifest_sha256 }}
+          EXPECTED_DESIGN_SHA256: ${{ inputs.expected_design_sha256 }}
+        run: |
+          set -euo pipefail
+          test "$AUTHORIZED" = "true"
+          [[ "$QUALIFICATION_ID" =~ ^[A-Za-z0-9._-]+$ ]]
+          [[ "$EXECUTION_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_TREE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$EXPECTED_DESIGN_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          if [ "$EXECUTION_SHA" = "$ALREADY_EXECUTED_STAGE1_SHA" ]; then
+            echo "::error::Stage 1 v1.0.0 at $EXECUTION_SHA has already been observed; replay is forbidden."
+            exit 1
+          fi
+
+      - name: Check out exact authorized SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.execution_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify repository and frozen corpus identities
+        shell: bash
+        env:
+          EXECUTION_SHA: ${{ inputs.execution_sha }}
+          EXPECTED_TREE_SHA: ${{ inputs.expected_tree_sha }}
+          EXPECTED_MANIFEST_SHA256: ${{ inputs.expected_manifest_sha256 }}
+          EXPECTED_DESIGN_SHA256: ${{ inputs.expected_design_sha256 }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          actual_tree="$(git rev-parse HEAD^{tree})"
+          test "$actual_sha" = "$EXECUTION_SHA"
+          test "$actual_tree" = "$EXPECTED_TREE_SHA"
+          test -z "$(git status --porcelain)"
+
+          manifest="assets/reading-order-v2/heldout-v1/manifest.json"
+          design="assets/reading-order-v2/heldout-v1/corpus-design.json"
+          actual_manifest="$(sha256sum "$manifest" | cut -d' ' -f1)"
+          actual_design="$(sha256sum "$design" | cut -d' ' -f1)"
+          test "$actual_manifest" = "$EXPECTED_MANIFEST_SHA256"
+          test "$actual_design" = "$EXPECTED_DESIGN_SHA256"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install frozen OCR dependency set
+        run: uv sync --frozen --extra ocr
+
+      - name: Capture pre-execution provenance
+        shell: bash
+        env:
+          QUALIFICATION_ID: ${{ inputs.qualification_id }}
+          EXECUTION_SHA: ${{ inputs.execution_sha }}
+          EXPECTED_TREE_SHA: ${{ inputs.expected_tree_sha }}
+          PROVENANCE_DIR: ${{ runner.temp }}/reading-order-v2-provenance
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROVENANCE_DIR"
+          printf '%s\n' 'uv run python -m scripts.reading_order_v2.run_heldout' > "$PROVENANCE_DIR/exact-command.txt"
+          uv run python - <<'PY'
+          from __future__ import annotations
+
+          import importlib.metadata
+          import json
+          import locale
+          import os
+          import platform
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          def version(distribution: str) -> str:
+              return importlib.metadata.version(distribution)
+
+          payload = {
+              "schemaVersion": "reading-order-v2-actions-provenance-v1",
+              "qualificationId": os.environ["QUALIFICATION_ID"],
+              "executionSha": os.environ["EXECUTION_SHA"],
+              "executionTreeSha": os.environ["EXPECTED_TREE_SHA"],
+              "command": "uv run python -m scripts.reading_order_v2.run_heldout",
+              "runner": {
+                  "os": os.environ.get("RUNNER_OS", "unknown"),
+                  "arch": os.environ.get("RUNNER_ARCH", "unknown"),
+                  "environment": os.environ.get("RUNNER_ENVIRONMENT", "unknown"),
+                  "imageOs": os.environ.get("ImageOS", "unknown"),
+              },
+              "platform": {
+                  "system": platform.system(),
+                  "release": platform.release(),
+                  "version": platform.version(),
+                  "machine": platform.machine(),
+              },
+              "python": {
+                  "version": platform.python_version(),
+                  "implementation": platform.python_implementation(),
+                  "executableBasename": Path(sys.executable).name,
+                  "virtualEnvironmentActive": sys.prefix != sys.base_prefix,
+              },
+              "uvVersion": subprocess.run(
+                  ["uv", "--version"], check=True, capture_output=True, text=True
+              ).stdout.strip(),
+              "packages": {
+                  "numpy": version("numpy"),
+                  "opencv-python-headless": version("opencv-python-headless"),
+                  "Pillow": version("Pillow"),
+                  "shapely": version("shapely"),
+                  "py3langid": version("py3langid"),
+              },
+              "locale": locale.getlocale(),
+              "cpuLogicalCount": os.cpu_count(),
+          }
+          destination = Path(os.environ["PROVENANCE_DIR"]) / "environment.json"
+          destination.write_text(
+              json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Validate frozen design and corpus
+        run: |
+          uv run python -m scripts.reading_order_v2.validate_design
+          uv run python -m scripts.reading_order_v2.validate_corpus
+
+      - name: Ensure qualification output root starts empty
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf var/research/reading-order-v2
+          test ! -e var/research/reading-order-v2
+          test -z "$(git status --porcelain)"
+
+      - name: Execute frozen qualification exactly once
+        shell: bash
+        env:
+          EXECUTION_LOG: ${{ runner.temp }}/reading-order-v2-provenance/qualification.log
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          uv run python -m scripts.reading_order_v2.run_heldout 2>&1 | tee "$EXECUTION_LOG"
+
+      - name: Build deterministic evidence bundle
+        env:
+          PROVENANCE_JSON: ${{ runner.temp }}/reading-order-v2-provenance/environment.json
+          EVIDENCE_ROOT: ${{ runner.temp }}/reading-order-v2-evidence
+          EVIDENCE_ZIP: ${{ runner.temp }}/reading-order-v2-evidence.zip
+        run: |
+          uv run python -m scripts.reading_order_v2.build_evidence \
+            --baseline-sha "$BASELINE_REPOSITORY_SHA" \
+            --environment-json "$PROVENANCE_JSON" \
+            --staging-dir "$EVIDENCE_ROOT" \
+            --zip-path "$EVIDENCE_ZIP"
+          sha256sum "$EVIDENCE_ZIP" > "${EVIDENCE_ZIP}.sha256"
+
+      - name: Capture generated-output inventory
+        if: always()
+        shell: bash
+        env:
+          INVENTORY_PATH: ${{ runner.temp }}/reading-order-v2-provenance/output-inventory.sha256
+        run: |
+          set -euo pipefail
+          if [ -d var/research/reading-order-v2 ]; then
+            find var/research/reading-order-v2 -type f -print0 \
+              | sort -z \
+              | xargs -0 -r sha256sum > "$INVENTORY_PATH"
+          else
+            : > "$INVENTORY_PATH"
+          fi
+
+      - name: Upload raw, summary and provenance
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reading-order-v2-${{ inputs.qualification_id }}-${{ inputs.execution_sha }}-execution
+          path: |
+            var/research/reading-order-v2
+            ${{ runner.temp }}/reading-order-v2-provenance
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
+
+      - name: Upload deterministic evidence bundle
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reading-order-v2-${{ inputs.qualification_id }}-${{ inputs.execution_sha }}-evidence
+          path: |
+            ${{ runner.temp }}/reading-order-v2-evidence.zip
+            ${{ runner.temp }}/reading-order-v2-evidence.zip.sha256
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
