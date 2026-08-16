@@ -81,7 +81,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.execution_sha }}
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Verify repository and frozen corpus identities
@@ -97,6 +97,13 @@ jobs:
           actual_tree="$(git rev-parse HEAD^{tree})"
           test "$actual_sha" = "$EXECUTION_SHA"
           test "$actual_tree" = "$EXPECTED_TREE_SHA"
+
+          git fetch --no-tags origin main
+          canonical_main="$(git rev-parse FETCH_HEAD)"
+          if [ "$canonical_main" != "$EXECUTION_SHA" ]; then
+            echo "::error::Authorized execution SHA is not the current canonical main SHA."
+            exit 1
+          fi
           test -z "$(git status --porcelain)"
 
           manifest="assets/reading-order-v2/heldout-v1/manifest.json"
