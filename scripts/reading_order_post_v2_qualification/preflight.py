@@ -7,6 +7,7 @@ from shutil import which
 
 from .canonical import sha256_path
 from .contracts import validate_corpus, validate_qualification_identity
+from .historical_guard import assert_no_historical_v2_content_reuse
 from .spec import REPO_ROOT, validate_spec
 
 
@@ -51,6 +52,7 @@ def validate_preflight(
         raise ValueError("frozen corpus manifest hash mismatch")
     if sha256_path(design) != expected_design_sha256:
         raise ValueError("frozen corpus design hash mismatch")
+    assert_no_historical_v2_content_reuse(corpus_root)
     _, loaded_manifest, _ = validate_corpus(corpus_root)
     if loaded_manifest.design_sha256 != expected_design_sha256:
         raise ValueError("manifest does not bind frozen design hash")
