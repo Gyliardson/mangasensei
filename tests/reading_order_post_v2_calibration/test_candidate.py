@@ -124,7 +124,11 @@ def test_c2_interleaves_observed_uncertain_singleton(page_id: str) -> None:
 @pytest.mark.parametrize("page_id", ["H10", "H16"])
 def test_c3_recovers_merged_frames(page_id: str) -> None:
     recovered = _run(page_id, CalibrationConfig(c3_merged_frame_recovery=True))
-    assert recovered.diagnostic.segmentation_reliable, recovered.diagnostic
+    assert recovered.diagnostic.segmentation_reliable, (
+        page_id,
+        recovered.diagnostic.recovery_reason,
+        recovered.diagnostic.segmentation_boxes,
+    )
     assert recovered.diagnostic.segmentation_reason == "recovered-merged-frame"
     assert recovered.diagnostic.recovery_reason == "accepted-strong-four-side-frames"
     assert len(recovered.diagnostic.segmentation_boxes) >= 2
@@ -133,7 +137,13 @@ def test_c3_recovers_merged_frames(page_id: str) -> None:
 @pytest.mark.parametrize("page_id", ["H10", "H16"])
 def test_c1_c2_c3_interleaves_ambiguous_overlap_bridge(page_id: str) -> None:
     result = _run(page_id, FULL_PANEL_FIX)
-    assert _order(result) == _ground_truth_order(page_id)
+    assert _order(result) == _ground_truth_order(page_id), (
+        page_id,
+        result.diagnostic.recovery_reason,
+        result.diagnostic.segmentation_boxes,
+        result.diagnostic.assignments,
+        result.diagnostic.relation_edges,
+    )
     assert any(
         edge.rule == "validated-overlap-bridge-right-before-left"
         for edge in result.diagnostic.relation_edges
