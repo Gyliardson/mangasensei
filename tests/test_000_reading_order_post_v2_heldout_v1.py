@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import struct
+import subprocess
 from collections import defaultdict
 from pathlib import Path
 
@@ -16,17 +17,42 @@ from scripts.reading_order_post_v2_qualification.historical_guard import (
     assert_no_historical_v2_content_reuse,
 )
 
-CORPUS_ROOT = (
-    Path(__file__).resolve().parents[1]
-    / "assets"
-    / "reading-order-post-v2"
-    / "heldout-v1"
-)
-CORPUS_SNAPSHOT = {
-    path.relative_to(CORPUS_ROOT).as_posix(): path.read_bytes()
-    for path in sorted(CORPUS_ROOT.rglob("*"))
-    if path.is_file()
-}
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CORPUS_RELATIVE_ROOT = Path("assets/reading-order-post-v2/heldout-v1")
+
+
+def _git_output(*args: str, text: bool = False) -> bytes | str:
+    result = subprocess.run(  # noqa: S603
+        ["git", *args],  # noqa: S607
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=text,
+    )
+    return result.stdout
+
+
+def _load_head_snapshot() -> dict[str, bytes]:
+    listing = _git_output(
+        "ls-tree",
+        "-r",
+        "--name-only",
+        "HEAD",
+        "--",
+        CORPUS_RELATIVE_ROOT.as_posix(),
+        text=True,
+    )
+    assert isinstance(listing, str)
+    snapshot: dict[str, bytes] = {}
+    for repo_path in listing.splitlines():
+        relative = Path(repo_path).relative_to(CORPUS_RELATIVE_ROOT).as_posix()
+        payload = _git_output("show", f"HEAD:{repo_path}")
+        assert isinstance(payload, bytes)
+        snapshot[relative] = payload
+    return snapshot
+
+
+CORPUS_SNAPSHOT = _load_head_snapshot()
 
 
 def _snapshot_json(relative: str) -> dict[str, object]:
