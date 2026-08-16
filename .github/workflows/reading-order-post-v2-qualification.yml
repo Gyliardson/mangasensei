@@ -1,0 +1,282 @@
+name: Reading Order Post-v2 Qualification
+run-name: Reading Order Post-v2 Qualification · ${{ inputs.qualification_identity }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      execution_sha:
+        description: "Exact current canonical main commit SHA to execute"
+        required: true
+        type: string
+      expected_tree_sha:
+        description: "Expected tree SHA for execution_sha"
+        required: true
+        type: string
+      experiment_identity:
+        description: "Frozen experiment identity"
+        required: true
+        type: string
+      expected_spec_sha256:
+        description: "Expected frozen experiment specification SHA-256"
+        required: true
+        type: string
+      corpus_root:
+        description: "Repository-relative root of the future sealed post-v2 held-out corpus"
+        required: true
+        type: string
+      expected_manifest_sha256:
+        description: "Expected future sealed corpus manifest SHA-256"
+        required: true
+        type: string
+      expected_design_sha256:
+        description: "Expected future sealed corpus design SHA-256"
+        required: true
+        type: string
+      qualification_identity:
+        description: "Canonical ropv2q-* identity derived from all frozen identity inputs"
+        required: true
+        type: string
+      authorize_new_qualification:
+        description: "I authorize this one NEW qualification execution; no replay/tuning is authorized"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: reading-order-post-v2-${{ inputs.qualification_identity }}
+  cancel-in-progress: false
+
+env:
+  EXPERIMENT_SPEC: scripts/reading_order_post_v2_qualification/spec/experiment-spec-v1.json
+  OUTPUT_ROOT: var/research/reading-order-post-v2
+
+jobs:
+  qualify:
+    name: Frozen post-v2 held-out qualification
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Record and validate authorization request
+        shell: bash
+        env:
+          AUTHORIZED: ${{ inputs.authorize_new_qualification }}
+          EXECUTION_SHA: ${{ inputs.execution_sha }}
+          EXPECTED_TREE_SHA: ${{ inputs.expected_tree_sha }}
+          EXPERIMENT_ID: ${{ inputs.experiment_identity }}
+          SPEC_SHA256: ${{ inputs.expected_spec_sha256 }}
+          CORPUS_ROOT: ${{ inputs.corpus_root }}
+          MANIFEST_SHA256: ${{ inputs.expected_manifest_sha256 }}
+          DESIGN_SHA256: ${{ inputs.expected_design_sha256 }}
+          QUALIFICATION_IDENTITY: ${{ inputs.qualification_identity }}
+          PROVENANCE_DIR: ${{ runner.temp }}/reading-order-post-v2-provenance
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROVENANCE_DIR"
+          {
+            printf 'authorized=%s\n' "$AUTHORIZED"
+            printf 'execution_sha=%s\n' "$EXECUTION_SHA"
+            printf 'expected_tree_sha=%s\n' "$EXPECTED_TREE_SHA"
+            printf 'experiment_id=%s\n' "$EXPERIMENT_ID"
+            printf 'spec_sha256=%s\n' "$SPEC_SHA256"
+            printf 'corpus_root=%s\n' "$CORPUS_ROOT"
+            printf 'manifest_sha256=%s\n' "$MANIFEST_SHA256"
+            printf 'design_sha256=%s\n' "$DESIGN_SHA256"
+            printf 'qualification_identity=%s\n' "$QUALIFICATION_IDENTITY"
+          } > "$PROVENANCE_DIR/dispatch-request.txt"
+
+          test "$AUTHORIZED" = "true"
+          test "$EXPERIMENT_ID" = "reading-order-post-v2-c1-c2-c3-b1-v1"
+          [[ "$EXECUTION_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_TREE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$SPEC_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$DESIGN_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$QUALIFICATION_IDENTITY" =~ ^ropv2q-[0-9a-f]{64}$ ]]
+          [[ "$CORPUS_ROOT" =~ ^assets/reading-order-post-v2/[A-Za-z0-9._/-]+$ ]]
+          [[ "$CORPUS_ROOT" != *".."* ]]
+          test "$CORPUS_ROOT" != "assets/reading-order-v2/heldout-v1"
+
+      - name: Check out exact authorized SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.execution_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify current canonical main and frozen identity
+        shell: bash
+        env:
+          EXECUTION_SHA: ${{ inputs.execution_sha }}
+          EXPECTED_TREE_SHA: ${{ inputs.expected_tree_sha }}
+          EXPERIMENT_ID: ${{ inputs.experiment_identity }}
+          SPEC_SHA256: ${{ inputs.expected_spec_sha256 }}
+          CORPUS_ROOT: ${{ inputs.corpus_root }}
+          MANIFEST_SHA256: ${{ inputs.expected_manifest_sha256 }}
+          DESIGN_SHA256: ${{ inputs.expected_design_sha256 }}
+          QUALIFICATION_IDENTITY: ${{ inputs.qualification_identity }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXECUTION_SHA"
+          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE_SHA"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse refs/remotes/origin/main)" = "$EXECUTION_SHA"
+          test -z "$(git status --porcelain)"
+
+          python -m scripts.reading_order_post_v2_qualification.preflight \
+            --corpus-root "$CORPUS_ROOT" \
+            --experiment-spec "$EXPERIMENT_SPEC" \
+            --experiment-id "$EXPERIMENT_ID" \
+            --expected-spec-sha256 "$SPEC_SHA256" \
+            --expected-manifest-sha256 "$MANIFEST_SHA256" \
+            --expected-design-sha256 "$DESIGN_SHA256" \
+            --qualification-identity "$QUALIFICATION_IDENTITY" \
+            --execution-sha "$EXECUTION_SHA" \
+            --expected-tree-sha "$EXPECTED_TREE_SHA"
+
+      - name: Reject duplicate or replayed observed identity
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          QUALIFICATION_IDENTITY: ${{ inputs.qualification_identity }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python -m scripts.reading_order_post_v2_qualification.replay_guard \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow-file reading-order-post-v2-qualification.yml \
+            --qualification-identity "$QUALIFICATION_IDENTITY" \
+            --current-run-id "$CURRENT_RUN_ID"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.12.3
+          python-version: "3.11"
+          prune-cache: true
+
+      - name: Install frozen OCR dependency set
+        run: uv sync --frozen --extra ocr
+
+      - name: Capture pre-execution provenance
+        shell: bash
+        env:
+          EXPERIMENT_ID: ${{ inputs.experiment_identity }}
+          SPEC_SHA256: ${{ inputs.expected_spec_sha256 }}
+          CORPUS_ROOT: ${{ inputs.corpus_root }}
+          MANIFEST_SHA256: ${{ inputs.expected_manifest_sha256 }}
+          DESIGN_SHA256: ${{ inputs.expected_design_sha256 }}
+          QUALIFICATION_IDENTITY: ${{ inputs.qualification_identity }}
+          EXECUTION_SHA: ${{ inputs.execution_sha }}
+          EXPECTED_TREE_SHA: ${{ inputs.expected_tree_sha }}
+          PROVENANCE_DIR: ${{ runner.temp }}/reading-order-post-v2-provenance
+        run: |
+          set -euo pipefail
+          command="uv run python -m scripts.reading_order_post_v2_qualification.run --corpus-root ${CORPUS_ROOT} --experiment-spec ${EXPERIMENT_SPEC} --expected-spec-sha256 ${SPEC_SHA256} --expected-manifest-sha256 ${MANIFEST_SHA256} --expected-design-sha256 ${DESIGN_SHA256} --qualification-identity ${QUALIFICATION_IDENTITY} --execution-sha ${EXECUTION_SHA} --expected-tree-sha ${EXPECTED_TREE_SHA} --output-root ${OUTPUT_ROOT}"
+          printf '%s\n' "$command" > "$PROVENANCE_DIR/exact-command.txt"
+          uv run python -m scripts.reading_order_post_v2_qualification.provenance \
+            --destination "$PROVENANCE_DIR/environment.json" \
+            --corpus-root "$CORPUS_ROOT" \
+            --experiment-id "$EXPERIMENT_ID" \
+            --qualification-identity "$QUALIFICATION_IDENTITY" \
+            --spec-sha256 "$SPEC_SHA256" \
+            --manifest-sha256 "$MANIFEST_SHA256" \
+            --design-sha256 "$DESIGN_SHA256" \
+            --command "$command"
+
+      - name: Ensure qualification output root starts empty
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$OUTPUT_ROOT"
+          test ! -e "$OUTPUT_ROOT"
+          test -z "$(git status --porcelain)"
+
+      - name: Execute frozen qualification exactly once
+        shell: bash
+        env:
+          EXECUTION_SHA: ${{ inputs.execution_sha }}
+          EXPECTED_TREE_SHA: ${{ inputs.expected_tree_sha }}
+          SPEC_SHA256: ${{ inputs.expected_spec_sha256 }}
+          CORPUS_ROOT: ${{ inputs.corpus_root }}
+          MANIFEST_SHA256: ${{ inputs.expected_manifest_sha256 }}
+          DESIGN_SHA256: ${{ inputs.expected_design_sha256 }}
+          QUALIFICATION_IDENTITY: ${{ inputs.qualification_identity }}
+          EXECUTION_LOG: ${{ runner.temp }}/reading-order-post-v2-provenance/qualification.log
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          uv run python -m scripts.reading_order_post_v2_qualification.run \
+            --corpus-root "$CORPUS_ROOT" \
+            --experiment-spec "$EXPERIMENT_SPEC" \
+            --expected-spec-sha256 "$SPEC_SHA256" \
+            --expected-manifest-sha256 "$MANIFEST_SHA256" \
+            --expected-design-sha256 "$DESIGN_SHA256" \
+            --qualification-identity "$QUALIFICATION_IDENTITY" \
+            --execution-sha "$EXECUTION_SHA" \
+            --expected-tree-sha "$EXPECTED_TREE_SHA" \
+            --output-root "$OUTPUT_ROOT" 2>&1 | tee "$EXECUTION_LOG"
+
+      - name: Build deterministic evidence bundle
+        env:
+          SPEC_SHA256: ${{ inputs.expected_spec_sha256 }}
+          CORPUS_ROOT: ${{ inputs.corpus_root }}
+          PROVENANCE_JSON: ${{ runner.temp }}/reading-order-post-v2-provenance/environment.json
+          EVIDENCE_ROOT: ${{ runner.temp }}/reading-order-post-v2-evidence
+          EVIDENCE_ZIP: ${{ runner.temp }}/reading-order-post-v2-evidence.zip
+        run: |
+          set -euo pipefail
+          uv run python -m scripts.reading_order_post_v2_qualification.build_evidence \
+            --experiment-spec "$EXPERIMENT_SPEC" \
+            --expected-spec-sha256 "$SPEC_SHA256" \
+            --corpus-root "$CORPUS_ROOT" \
+            --environment-json "$PROVENANCE_JSON" \
+            --output-root "$OUTPUT_ROOT" \
+            --staging-dir "$EVIDENCE_ROOT" \
+            --zip-path "$EVIDENCE_ZIP"
+          sha256sum "$EVIDENCE_ZIP" > "${EVIDENCE_ZIP}.sha256"
+          sha256sum -c "${EVIDENCE_ZIP}.sha256"
+
+      - name: Capture generated-output inventory
+        if: always()
+        shell: bash
+        env:
+          PROVENANCE_DIR: ${{ runner.temp }}/reading-order-post-v2-provenance
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROVENANCE_DIR"
+          inventory="$PROVENANCE_DIR/output-inventory.sha256"
+          if [ -d "$OUTPUT_ROOT" ]; then
+            find "$OUTPUT_ROOT" -type f -print0 \
+              | sort -z \
+              | xargs -0 -r sha256sum > "$inventory"
+          else
+            : > "$inventory"
+          fi
+
+      - name: Upload raw outputs and provenance
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reading-order-post-v2-${{ inputs.qualification_identity }}-${{ inputs.execution_sha }}-execution
+          path: |
+            var/research/reading-order-post-v2
+            ${{ runner.temp }}/reading-order-post-v2-provenance
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
+
+      - name: Upload deterministic evidence bundle
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reading-order-post-v2-${{ inputs.qualification_identity }}-${{ inputs.execution_sha }}-evidence
+          path: |
+            ${{ runner.temp }}/reading-order-post-v2-evidence.zip
+            ${{ runner.temp }}/reading-order-post-v2-evidence.zip.sha256
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
