@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "reading-order-post-v2-annotation-v1",
+  "pageId": "Q014",
+  "readingOrder": [
+    "Q014-R01",
+    "Q014-R02",
+    "Q014-R03",
+    "Q014-R04",
+    "Q014-R05",
+    "Q014-R06",
+    "Q014-R07",
+    "Q014-R08"
+  ],
+  "unscoredRegionIds": [],
+  "qualificationPairs": [
+    {
+      "id": "Q014-P01",
+      "earlier": "Q014-R01",
+      "later": "Q014-R02",
+      "slices": [
+        "c2-ambiguous-overlap-bridge"
+      ]
+    },
+    {
+      "id": "Q014-P02",
+      "earlier": "Q014-R02",
+      "later": "Q014-R03",
+      "slices": [
+        "c2-pair-precedence-slot"
+      ]
+    },
+    {
+      "id": "Q014-P03",
+      "earlier": "Q014-R03",
+      "later": "Q014-R04",
+      "slices": [
+        "c2-ambiguous-overlap-bridge"
+      ]
+    },
+    {
+      "id": "Q014-P04",
+      "earlier": "Q014-R04",
+      "later": "Q014-R05",
+      "slices": [
+        "c2-pair-precedence-slot"
+      ]
+    },
+    {
+      "id": "Q014-P05",
+      "earlier": "Q014-R05",
+      "later": "Q014-R06",
+      "slices": [
+        "c2-ambiguous-overlap-bridge"
+      ]
+    },
+    {
+      "id": "Q014-P06",
+      "earlier": "Q014-R06",
+      "later": "Q014-R07",
+      "slices": [
+        "c2-pair-precedence-slot"
+      ]
+    },
+    {
+      "id": "Q014-P07",
+      "earlier": "Q014-R07",
+      "later": "Q014-R08",
+      "slices": [
+        "c2-ambiguous-overlap-bridge"
+      ]
+    }
+  ],
+  "layoutTags": [
+    "authored-ambiguous-overlap",
+    "authored-pair-precedence-slot",
+    "c2",
+    "synthetic-project-authored"
+  ]
+}
