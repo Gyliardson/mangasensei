@@ -17,6 +17,7 @@ from .contracts import (
     validate_qualification_identity,
 )
 from .exercise import build_exercise_report
+from .historical_guard import assert_no_historical_v2_content_reuse
 from .scoring import CorpusScore, candidate_only_wrong_pairs, score_corpus, score_page
 from .spec import validate_spec
 from .verdict import evaluate_verdict
@@ -148,6 +149,28 @@ def _require_repeat_determinism(arm: ArmId, records: list[dict[str, str]]) -> No
         raise ValueError(f"{arm.value}: fresh-process qualification repeats are nondeterministic")
 
 
+def _global_repeat_hashes(
+    repeat_hashes: dict[ArmId, list[dict[str, str]]],
+) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for repeat in (1, 2, 3):
+        arms = {
+            arm.value: repeat_hashes[arm][repeat - 1]["resultSha256"]
+            for arm in ArmId
+        }
+        records.append(
+            {
+                "repeat": repeat,
+                "pythonHashSeed": HASH_SEEDS[repeat - 1],
+                "armResultSha256": arms,
+                "qualificationResultSha256": sha256_bytes(canonical_json_bytes(arms)),
+            }
+        )
+    if len({str(record["qualificationResultSha256"]) for record in records}) != 1:
+        raise ValueError("whole qualification fresh-process repeat hashes differ")
+    return records
+
+
 def _comparison(scores: dict[ArmId, CorpusScore]) -> dict[str, object]:
     control = scores[ArmId.CONTROL]
     arms: dict[str, object] = {}
@@ -195,6 +218,7 @@ def execute(
         raise ValueError("held-out manifest SHA-256 mismatch")
     if sha256_path(design_path) != expected_design_sha256:
         raise ValueError("held-out design SHA-256 mismatch")
+    assert_no_historical_v2_content_reuse(corpus_root)
     design, manifest, annotations = validate_corpus(corpus_root)
     if manifest.design_sha256 != expected_design_sha256:
         raise ValueError("manifest does not bind expected corpus design SHA-256")
@@ -211,13 +235,11 @@ def execute(
 
     scores: dict[ArmId, CorpusScore] = {}
     selected_diagnostics: dict[ArmId, dict[str, dict[str, object]]] = {}
-    selected_ordering: dict[ArmId, dict[str, dict[str, object]]] = {}
     repeat_hashes: dict[ArmId, list[dict[str, str]]] = {}
 
     for arm in ArmId:
         records: list[dict[str, str]] = []
         first_diagnostics: dict[str, dict[str, object]] | None = None
-        first_ordering: dict[str, dict[str, object]] | None = None
         first_score: CorpusScore | None = None
         for repeat in (1, 2, 3):
             for page_id in design.page_ids:
@@ -243,15 +265,12 @@ def execute(
             records.append(_repeat_record(diagnostics=diagnostics, ordering=ordering, score=score))
             if repeat == 1:
                 first_diagnostics = diagnostics
-                first_ordering = ordering
                 first_score = score
 
         _require_repeat_determinism(arm, records)
         assert first_diagnostics is not None
-        assert first_ordering is not None
         assert first_score is not None
         selected_diagnostics[arm] = first_diagnostics
-        selected_ordering[arm] = first_ordering
         scores[arm] = first_score
         repeat_hashes[arm] = records
         write_canonical_json(output_root / "summary" / arm.value / "scores.json", first_score)
@@ -260,6 +279,7 @@ def execute(
             records,
         )
 
+    global_repeats = _global_repeat_hashes(repeat_hashes)
     exercise = build_exercise_report(annotations=annotations, diagnostics=selected_diagnostics)
     verdict = evaluate_verdict(harness_valid=True, scores=scores, exercise=exercise)
 
@@ -267,6 +287,7 @@ def execute(
         output_root / "summary" / "arm-scores.json",
         {arm.value: scores[arm] for arm in ArmId},
     )
+    write_canonical_json(output_root / "summary" / "repeat-hashes.json", global_repeats)
     write_canonical_json(output_root / "summary" / "comparison.json", _comparison(scores))
     write_canonical_json(output_root / "summary" / "exercise.json", exercise)
     write_canonical_json(output_root / "summary" / "verdict.json", verdict)
@@ -285,6 +306,7 @@ def execute(
             "runnerModule": RUNNER_MODULE,
             "repeatHashSeeds": list(HASH_SEEDS),
             "armOrder": [arm.value for arm in ArmId],
+            "qualificationResultSha256": global_repeats[0]["qualificationResultSha256"],
         },
     )
 
