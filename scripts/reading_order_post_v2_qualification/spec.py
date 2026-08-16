@@ -126,7 +126,10 @@ def validate_spec(path: Path, *, expected_sha256: str | None = None) -> dict[str
         "treeSha": "68418482b8ccf5d7a3cb1c9ef3834505bd20cd4c",
         "sourcePath": "backend/src/mangasensei/ocr/reading_order.py",
         "sourceBlobSha": "12358a59deee7bd0ec0845963da1b98f031592f1",
-        "role": "current-post-v2-production-reading-order-dependency-not-modified-or-activated-by-this-experiment",
+        "role": (
+            "current-post-v2-production-reading-order-dependency-not-modified-or-"
+            "activated-by-this-experiment"
+        ),
     }:
         raise SpecError("current post-v2 production baseline identity changed")
     if historical_baseline != {

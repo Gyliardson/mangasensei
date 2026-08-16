@@ -7,7 +7,6 @@ from fractions import Fraction
 from pathlib import Path
 
 import pytest
-
 from scripts.reading_order_post_v2_qualification import (
     DIAGNOSTIC_SCHEMA_VERSION,
     EVIDENCE_SCHEMA_VERSION,
