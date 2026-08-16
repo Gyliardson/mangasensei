@@ -136,7 +136,8 @@ def test_post_v2_heldout_v1_frozen_minima_and_authored_exercise_coverage() -> No
         assert len(slice_pages[slice_name]) >= minimum["minPages"]
         assert slice_pairs[slice_name] >= minimum["minPairs"]
 
-    # These counts prove authored scenario coverage only. They do not run or inspect candidate diagnostics.
+    # These counts prove authored scenario coverage only.
+    # They do not run or inspect candidate diagnostics.
     authored_exercise_slices = {
         "c1_guarded_pairs": "c1-boundary-positive",
         "c2_gutter_pairs": "c2-gutter-bridge",
