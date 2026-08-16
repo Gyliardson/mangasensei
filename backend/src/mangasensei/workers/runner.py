@@ -727,6 +727,20 @@ class Worker:
         request_digest = hashlib.sha256(prompt.encode()).digest()
         today = datetime.now(UTC).date()
         async with self._sessions.begin() as session:
+            page_id = (
+                await session.execute(
+                    select(PageRecord.id)
+                    .where(
+                        PageRecord.id == page.id,
+                        PageRecord.expires_at > func.now(),
+                    )
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if page_id is None:
+                raise StaleLeaseError
+            # Document cancellation locks Document -> Page -> Job. Acquire Page first so
+            # Gemini-call FK validation cannot invert that order while the Job is fenced.
             await _lock_owned_job(session, claim, "processing_gemini")
             await session.execute(
                 insert(GeminiBudgetBucketRecord)

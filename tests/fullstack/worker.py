@@ -28,6 +28,9 @@ from mangasensei.workers.dictionary_projection import DictionaryProjectionWorker
 
 REGION_ID = "5ca22b32-6834-59db-a183-428a557a22e8"
 RETRY_FIXTURE_SHA256 = "b2fac47244f4d8d2dd2ea903558a642954d47a0cb1bf675ce752e6029b43fa23"
+DOCUMENT_CANCEL_FIXTURE_SHA256 = "8c0173919e0e0d978c421185930eac87a1e4744ff31678ebaf26df3d43c53a1e"
+DOCUMENT_CANCEL_BARRIER_HOST = "127.0.0.1"
+DOCUMENT_CANCEL_BARRIER_PORT = 48154
 FULLSTACK_PROVENANCE = OcrProvenance(
     detector="fullstack-fixture",
     recognizer="fullstack-fixture",
@@ -43,6 +46,23 @@ class DeterministicFullStackOcr:
         self._attempts_by_image: dict[str, int] = {}
 
     async def analyze(self, image: OcrImage) -> OcrResult:
+        if image.sha256 == DOCUMENT_CANCEL_FIXTURE_SHA256:
+            try:
+                reader, writer = await asyncio.open_connection(
+                    DOCUMENT_CANCEL_BARRIER_HOST,
+                    DOCUMENT_CANCEL_BARRIER_PORT,
+                )
+            except ConnectionRefusedError:
+                pass
+            else:
+                try:
+                    writer.write(b"ready\n")
+                    await writer.drain()
+                    await reader.read()
+                finally:
+                    writer.close()
+                    await writer.wait_closed()
+
         # Keep the job non-terminal long enough for the browser's first status poll
         # to observe a real processing state rather than racing straight to completed.
         await asyncio.sleep(1.0)
