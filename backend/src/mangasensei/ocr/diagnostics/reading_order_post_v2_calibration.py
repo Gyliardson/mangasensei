@@ -5,18 +5,19 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from statistics import median
 from typing import Any
 
 from mangasensei.ocr.diagnostics.reading_order_v2 import _b0_local_order, _b1_local_order
 from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ExperimentRegion
 from mangasensei.ocr.reading_order import (
     _MAX_AMBIGUOUS_OVERLAP,
-    _PanelPrecedenceEdge,
     PanelBox,
     PanelSegmentation,
     _deterministic_topological_order,
     _line_segments,
     _panel_precedence_edges,
+    _PanelPrecedenceEdge,
     _validate_boxes,
     manga_tier_order,
     segment_panel_groups,
@@ -88,6 +89,16 @@ class _AxisCluster:
 class _FrameCandidate:
     box: PanelBox
     score: float
+
+
+@dataclass(frozen=True, slots=True)
+class _FrameHypothesis:
+    box: PanelBox
+    coverages: tuple[float, float, float, float]
+    top: _AxisCluster
+    bottom: _AxisCluster
+    left: _AxisCluster
+    right: _AxisCluster
 
 
 def _region_box(region: Any) -> PanelBox:
@@ -176,6 +187,229 @@ def _overlap_ratio(first: PanelBox, second: PanelBox, *, axis: str) -> float:
     return overlap / denominator if denominator > 0 else 0.0
 
 
+def _dedupe_frame_candidates(
+    candidates: Sequence[_FrameCandidate],
+) -> tuple[_FrameCandidate, ...]:
+    selected: list[_FrameCandidate] = []
+    ordered = sorted(
+        candidates,
+        key=lambda item: (
+            -item.score,
+            item.box.y1,
+            item.box.x1,
+            item.box.y2,
+            item.box.x2,
+        ),
+    )
+    for candidate in ordered:
+        if any(
+            _box_iou(candidate.box, existing.box) >= _FRAME_DEDUP_IOU
+            for existing in selected
+        ):
+            continue
+        selected.append(candidate)
+    return tuple(selected)
+
+
+def _visible_segments(
+    start: float,
+    end: float,
+    masks: Sequence[tuple[float, float]],
+) -> tuple[tuple[float, float], ...]:
+    if end <= start:
+        return ()
+    clipped = sorted(
+        (max(start, first), min(end, second))
+        for first, second in masks
+        if min(end, second) > max(start, first)
+    )
+    merged: list[tuple[float, float]] = []
+    for first, second in clipped:
+        if not merged or first > merged[-1][1]:
+            merged.append((first, second))
+        else:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], second))
+
+    visible: list[tuple[float, float]] = []
+    cursor = start
+    for first, second in merged:
+        if first > cursor:
+            visible.append((cursor, first))
+        cursor = max(cursor, second)
+    if cursor < end:
+        visible.append((cursor, end))
+    return tuple(visible)
+
+
+def _coverage_over_segments(
+    intervals: Sequence[tuple[float, float]],
+    segments: Sequence[tuple[float, float]],
+) -> float:
+    total = sum(end - start for start, end in segments)
+    if total <= 0:
+        return 0.0
+    covered = 0.0
+    for start, end in segments:
+        covered += _interval_coverage(intervals, start, end) * (end - start)
+    return covered / total
+
+
+def _side_occlusion_masks(
+    box: PanelBox,
+    anchor: PanelBox,
+    *,
+    side: str,
+) -> tuple[tuple[float, float], ...]:
+    if side == "top":
+        coordinate = box.y1
+        if anchor.y1 < coordinate < anchor.y2:
+            return ((max(box.x1, anchor.x1), min(box.x2, anchor.x2)),)
+    elif side == "bottom":
+        coordinate = box.y2
+        if anchor.y1 < coordinate < anchor.y2:
+            return ((max(box.x1, anchor.x1), min(box.x2, anchor.x2)),)
+    elif side == "left":
+        coordinate = box.x1
+        if anchor.x1 < coordinate < anchor.x2:
+            return ((max(box.y1, anchor.y1), min(box.y2, anchor.y2)),)
+    elif side == "right":
+        coordinate = box.x2
+        if anchor.x1 < coordinate < anchor.x2:
+            return ((max(box.y1, anchor.y1), min(box.y2, anchor.y2)),)
+    else:
+        raise ValueError(f"unknown frame side: {side}")
+    return ()
+
+
+def _visible_side_coverages(
+    hypothesis: _FrameHypothesis,
+    box: PanelBox,
+    anchor: PanelBox,
+    merged: PanelBox,
+) -> tuple[float, float, float, float] | None:
+    sides = (
+        ("top", hypothesis.top.intervals, float(box.x1), float(box.x2)),
+        ("bottom", hypothesis.bottom.intervals, float(box.x1), float(box.x2)),
+        ("left", hypothesis.left.intervals, float(box.y1), float(box.y2)),
+        ("right", hypothesis.right.intervals, float(box.y1), float(box.y2)),
+    )
+    coverages: list[float] = []
+    for side, intervals, start, end in sides:
+        visible = _visible_segments(
+            start,
+            end,
+            _side_occlusion_masks(box, anchor, side=side),
+        )
+        visible_length = sum(second - first for first, second in visible)
+        required_length = _FRAME_MIN_SEGMENT_FRACTION * (
+            merged.width if side in {"top", "bottom"} else merged.height
+        )
+        if visible_length < required_length:
+            return None
+        coverages.append(_coverage_over_segments(intervals, visible))
+    return tuple(coverages)  # type: ignore[return-value]
+
+
+def _has_adjacent_strong_corner(coverages: Sequence[float]) -> bool:
+    strong = tuple(value >= _FRAME_MIN_SIDE_COVERAGE for value in coverages)
+    return any(
+        strong[first] and strong[second]
+        for first, second in ((0, 2), (0, 3), (1, 2), (1, 3))
+    )
+
+
+def _endpoint_estimate(
+    clusters: Sequence[_AxisCluster], *, use_end: bool
+) -> float | None:
+    points = [
+        interval[1 if use_end else 0]
+        for cluster in clusters
+        for interval in cluster.intervals
+    ]
+    return float(median(points)) if points else None
+
+
+def _refine_occluded_box(
+    hypothesis: _FrameHypothesis,
+    merged: PanelBox,
+) -> PanelBox | None:
+    top_strong, bottom_strong, left_strong, right_strong = (
+        value >= _FRAME_MIN_SIDE_COVERAGE for value in hypothesis.coverages
+    )
+    x_tolerance = max(8.0, _FRAME_CLUSTER_FRACTION * merged.width)
+    y_tolerance = max(8.0, _FRAME_CLUSTER_FRACTION * merged.height)
+    x1 = float(hypothesis.box.x1)
+    x2 = float(hypothesis.box.x2)
+    y1 = float(hypothesis.box.y1)
+    y2 = float(hypothesis.box.y2)
+
+    if not left_strong:
+        estimate = _endpoint_estimate(
+            tuple(
+                cluster
+                for cluster, is_strong in (
+                    (hypothesis.top, top_strong),
+                    (hypothesis.bottom, bottom_strong),
+                )
+                if is_strong
+            ),
+            use_end=False,
+        )
+        if estimate is None or abs(estimate - x1) > x_tolerance:
+            return None
+        x1 = estimate
+    if not right_strong:
+        estimate = _endpoint_estimate(
+            tuple(
+                cluster
+                for cluster, is_strong in (
+                    (hypothesis.top, top_strong),
+                    (hypothesis.bottom, bottom_strong),
+                )
+                if is_strong
+            ),
+            use_end=True,
+        )
+        if estimate is None or abs(estimate - x2) > x_tolerance:
+            return None
+        x2 = estimate
+    if not top_strong:
+        estimate = _endpoint_estimate(
+            tuple(
+                cluster
+                for cluster, is_strong in (
+                    (hypothesis.left, left_strong),
+                    (hypothesis.right, right_strong),
+                )
+                if is_strong
+            ),
+            use_end=False,
+        )
+        if estimate is None or abs(estimate - y1) > y_tolerance:
+            return None
+        y1 = estimate
+    if not bottom_strong:
+        estimate = _endpoint_estimate(
+            tuple(
+                cluster
+                for cluster, is_strong in (
+                    (hypothesis.left, left_strong),
+                    (hypothesis.right, right_strong),
+                )
+                if is_strong
+            ),
+            use_end=True,
+        )
+        if estimate is None or abs(estimate - y2) > y_tolerance:
+            return None
+        y2 = estimate
+
+    refined = PanelBox(round(x1), round(y1), round(x2), round(y2))
+    if refined.width <= 0 or refined.height <= 0:
+        return None
+    return refined
+
+
 def _recover_merged_frames(
     pixels: Any, segmentation: PanelSegmentation
 ) -> tuple[PanelSegmentation, str]:
@@ -229,7 +463,7 @@ def _recover_merged_frames(
     if len(horizontal_clusters) < 2 or len(vertical_clusters) < 2:
         return segmentation, "rejected-insufficient-long-frame-sides"
 
-    candidates: list[_FrameCandidate] = []
+    hypotheses: list[_FrameHypothesis] = []
     page_area = page_width * page_height
     for left_index, left in enumerate(vertical_clusters):
         for right in vertical_clusters[left_index + 1 :]:
@@ -251,35 +485,73 @@ def _recover_merged_frames(
                         _interval_coverage(left.intervals, y1, y2),
                         _interval_coverage(right.intervals, y1, y2),
                     )
-                    if min(coverages) >= _FRAME_MIN_SIDE_COVERAGE:
-                        box = PanelBox(round(x1), round(y1), round(x2), round(y2))
-                        candidates.append(_FrameCandidate(box, min(coverages)))
+                    hypotheses.append(
+                        _FrameHypothesis(
+                            PanelBox(round(x1), round(y1), round(x2), round(y2)),
+                            coverages,
+                            top,
+                            bottom,
+                            left,
+                            right,
+                        )
+                    )
 
-    if len(candidates) < 2:
-        return segmentation, "rejected-no-complete-strong-frames"
-
-    selected: list[_FrameCandidate] = []
-    ordered_candidates = sorted(
-        candidates,
-        key=lambda item: (
-            -item.score,
-            item.box.y1,
-            item.box.x1,
-            item.box.y2,
-            item.box.x2,
-        ),
+    strong = _dedupe_frame_candidates(
+        tuple(
+            _FrameCandidate(hypothesis.box, min(hypothesis.coverages))
+            for hypothesis in hypotheses
+            if min(hypothesis.coverages) >= _FRAME_MIN_SIDE_COVERAGE
+        )
     )
-    for candidate in ordered_candidates:
-        if any(
-            _box_iou(candidate.box, existing.box) >= _FRAME_DEDUP_IOU
-            for existing in selected
-        ):
+    if len(strong) >= 2:
+        boxes = tuple(
+            sorted(
+                (candidate.box for candidate in strong),
+                key=lambda box: (box.y1, box.x1, box.y2, box.x2),
+            )
+        )
+        recovered = _validate_boxes(boxes, page_width, page_height)
+        if not recovered.reliable:
+            return segmentation, f"rejected-{recovered.reason}"
+        accepted = PanelSegmentation(recovered.boxes, True, "recovered-merged-frame")
+        return accepted, "accepted-multiple-strong-four-side-frames"
+
+    if len(strong) != 1:
+        return segmentation, "rejected-no-unique-strong-frame-anchor"
+
+    anchor = strong[0].box
+    occlusion_supported: list[_FrameCandidate] = []
+    for hypothesis in hypotheses:
+        if min(hypothesis.coverages) >= _FRAME_MIN_SIDE_COVERAGE:
             continue
-        selected.append(candidate)
+        if not _has_adjacent_strong_corner(hypothesis.coverages):
+            continue
+        refined = _refine_occluded_box(hypothesis, merged)
+        if refined is None:
+            continue
+        visible_coverages = _visible_side_coverages(
+            hypothesis,
+            refined,
+            anchor,
+            merged,
+        )
+        if visible_coverages is None:
+            continue
+        if min(visible_coverages) < _FRAME_MIN_SIDE_COVERAGE:
+            continue
+        occlusion_supported.append(_FrameCandidate(refined, min(visible_coverages)))
+
+    companions = tuple(
+        candidate
+        for candidate in _dedupe_frame_candidates(occlusion_supported)
+        if _box_iou(candidate.box, anchor) < _FRAME_DEDUP_IOU
+    )
+    if len(companions) != 1:
+        return segmentation, "rejected-ambiguous-or-missing-occlusion-supported-frame"
 
     boxes = tuple(
         sorted(
-            (item.box for item in selected),
+            (anchor, companions[0].box),
             key=lambda box: (box.y1, box.x1, box.y2, box.x2),
         )
     )
@@ -287,7 +559,7 @@ def _recover_merged_frames(
     if not recovered.reliable:
         return segmentation, f"rejected-{recovered.reason}"
     accepted = PanelSegmentation(recovered.boxes, True, "recovered-merged-frame")
-    return accepted, "accepted-strong-four-side-frames"
+    return accepted, "accepted-strong-anchor-plus-occlusion-supported-frame"
 
 
 def _assignment_observations(
@@ -446,13 +718,9 @@ def _uncertain_relation_edges(
             continue
         edge = pair_edges[0]
         if edge.source_index == 0:
-            proposed.append(
-                (panel_index, uncertain_node, f"uncertain-{edge.rule}")
-            )
+            proposed.append((panel_index, uncertain_node, f"uncertain-{edge.rule}"))
         else:
-            proposed.append(
-                (uncertain_node, panel_index, f"uncertain-{edge.rule}")
-            )
+            proposed.append((uncertain_node, panel_index, f"uncertain-{edge.rule}"))
 
     positions = {panel: position for position, panel in enumerate(active_panel_order)}
     predecessors = [

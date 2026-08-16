@@ -130,8 +130,11 @@ def test_c3_recovers_merged_frames(page_id: str) -> None:
         recovered.diagnostic.segmentation_boxes,
     )
     assert recovered.diagnostic.segmentation_reason == "recovered-merged-frame"
-    assert recovered.diagnostic.recovery_reason == "accepted-strong-four-side-frames"
-    assert len(recovered.diagnostic.segmentation_boxes) >= 2
+    assert (
+        recovered.diagnostic.recovery_reason
+        == "accepted-strong-anchor-plus-occlusion-supported-frame"
+    )
+    assert len(recovered.diagnostic.segmentation_boxes) == 2
 
 
 @pytest.mark.parametrize("page_id", ["H10", "H16"])
