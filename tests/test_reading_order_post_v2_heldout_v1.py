@@ -22,14 +22,26 @@ CORPUS_ROOT = (
     / "reading-order-post-v2"
     / "heldout-v1"
 )
+CORPUS_SNAPSHOT = {
+    path.relative_to(CORPUS_ROOT).as_posix(): path.read_bytes()
+    for path in sorted(CORPUS_ROOT.rglob("*"))
+    if path.is_file()
+}
 
 
-def _load_json(path: Path) -> dict[str, object]:
-    return json.loads(path.read_text(encoding="utf-8"))
+def _snapshot_json(relative: str) -> dict[str, object]:
+    return json.loads(CORPUS_SNAPSHOT[relative].decode("utf-8"))
+
+
+def _materialize_snapshot(root: Path) -> None:
+    for relative, payload in CORPUS_SNAPSHOT.items():
+        destination = root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
 
 
 def _authored_counts() -> tuple[int, int, dict[str, set[str]], dict[str, int]]:
-    design = _load_json(CORPUS_ROOT / "corpus-design.json")
+    design = _snapshot_json("corpus-design.json")
     scored_regions = 0
     qualification_pairs = 0
     slice_pages: dict[str, set[str]] = defaultdict(set)
@@ -37,8 +49,8 @@ def _authored_counts() -> tuple[int, int, dict[str, set[str]], dict[str, int]]:
 
     for page_id in design["pageIds"]:
         assert isinstance(page_id, str)
-        page_input = _load_json(CORPUS_ROOT / "inputs" / f"{page_id}.json")
-        annotation = _load_json(CORPUS_ROOT / "annotations" / f"{page_id}.json")
+        page_input = _snapshot_json(f"inputs/{page_id}.json")
+        annotation = _snapshot_json(f"annotations/{page_id}.json")
         regions = page_input["regions"]
         reading_order = annotation["readingOrder"]
         unscored = annotation["unscoredRegionIds"]
@@ -62,8 +74,10 @@ def _authored_counts() -> tuple[int, int, dict[str, set[str]], dict[str, int]]:
     return scored_regions, qualification_pairs, slice_pages, slice_pairs
 
 
-def test_post_v2_heldout_v1_contract_manifest_and_historical_guard() -> None:
-    manifest = _load_json(CORPUS_ROOT / "manifest.json")
+def test_post_v2_heldout_v1_contract_manifest_and_historical_guard(
+    tmp_path: Path,
+) -> None:
+    manifest = _snapshot_json("manifest.json")
     inventory = manifest["inventory"]
     assert isinstance(inventory, list)
     mismatches: list[tuple[str, str, str]] = []
@@ -73,7 +87,7 @@ def test_post_v2_heldout_v1_contract_manifest_and_historical_guard() -> None:
         expected = item["sha256"]
         assert isinstance(relative, str)
         assert isinstance(expected, str)
-        actual = hashlib.sha256((CORPUS_ROOT / relative).read_bytes()).hexdigest()
+        actual = hashlib.sha256(CORPUS_SNAPSHOT[relative]).hexdigest()
         if actual != expected:
             mismatches.append((relative, expected, actual))
     if mismatches:
@@ -83,25 +97,27 @@ def test_post_v2_heldout_v1_contract_manifest_and_historical_guard() -> None:
         )
         raise AssertionError(details)
 
-    validate_corpus(CORPUS_ROOT)
-    assert_no_historical_v2_content_reuse(CORPUS_ROOT)
+    snapshot_root = tmp_path / "heldout-v1"
+    _materialize_snapshot(snapshot_root)
+    validate_corpus(snapshot_root)
+    assert_no_historical_v2_content_reuse(snapshot_root)
 
-    design = _load_json(CORPUS_ROOT / "corpus-design.json")
+    design = _snapshot_json("corpus-design.json")
     assert design["corpusId"] == "mangasensei-reading-order-post-v2-heldout-v1"
     assert design["version"] == "1.0.0"
     assert design["authorshipBoundary"] == "new-project-authored-no-historical-v2-case-reuse"
     assert manifest["corpusId"] == design["corpusId"]
     assert manifest["version"] == design["version"]
 
-    manifest_sha = hashlib.sha256((CORPUS_ROOT / "manifest.json").read_bytes()).hexdigest()
+    manifest_sha = hashlib.sha256(CORPUS_SNAPSHOT["manifest.json"]).hexdigest()
     assert manifest_sha == "f33fe44bf30521958f09f904e8031e079789120a2f2d0c341480eca0b20d00f4"
 
 
 def test_post_v2_heldout_v1_png_and_gt_input_integrity() -> None:
-    design = _load_json(CORPUS_ROOT / "corpus-design.json")
+    design = _snapshot_json("corpus-design.json")
     for page_id in design["pageIds"]:
         assert isinstance(page_id, str)
-        png = (CORPUS_ROOT / "images" / f"{page_id}.png").read_bytes()
+        png = CORPUS_SNAPSHOT[f"images/{page_id}.png"]
         assert png[:8] == b"\x89PNG\r\n\x1a\n"
         assert png[12:16] == b"IHDR"
         width, height, depth, color_type, compression, filter_method, interlace = (
@@ -109,8 +125,8 @@ def test_post_v2_heldout_v1_png_and_gt_input_integrity() -> None:
         )
         assert (depth, color_type, compression, filter_method, interlace) == (8, 2, 0, 0, 0)
 
-        page_input = _load_json(CORPUS_ROOT / "inputs" / f"{page_id}.json")
-        annotation = _load_json(CORPUS_ROOT / "annotations" / f"{page_id}.json")
+        page_input = _snapshot_json(f"inputs/{page_id}.json")
+        annotation = _snapshot_json(f"annotations/{page_id}.json")
         assert (width, height) == (page_input["width"], page_input["height"])
 
         regions = page_input["regions"]
@@ -139,7 +155,7 @@ def test_post_v2_heldout_v1_png_and_gt_input_integrity() -> None:
 
 
 def test_post_v2_heldout_v1_frozen_minima_and_authored_exercise_coverage() -> None:
-    design = _load_json(CORPUS_ROOT / "corpus-design.json")
+    design = _snapshot_json("corpus-design.json")
     page_ids = design["pageIds"]
     assert isinstance(page_ids, list)
     scored_regions, pair_count, slice_pages, slice_pairs = _authored_counts()
