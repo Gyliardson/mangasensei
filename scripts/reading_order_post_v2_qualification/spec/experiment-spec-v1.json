@@ -1,0 +1,444 @@
+{
+  "allowedInputs": [
+    "project-authored RGB page pixels from the sealed future corpus",
+    "frozen TextBlock-equivalent region geometry from the sealed input contract",
+    "stable region source index",
+    "actual TextBlock direction/orientation where B1 uses it",
+    "page dimensions",
+    "deterministic geometry derived solely from the allowed inputs"
+  ],
+  "armDefinitions": {
+    "B1_ONLY": {"B1": true, "C1": false, "C2": false, "C3": false},
+    "C1_C2": {"B1": false, "C1": true, "C2": true, "C3": false},
+    "C1_C2_C3": {"B1": false, "C1": true, "C2": true, "C3": true},
+    "C1_C2_C3_B1": {"B1": true, "C1": true, "C2": true, "C3": true},
+    "C1_ONLY": {"B1": false, "C1": true, "C2": false, "C3": false},
+    "C2_ONLY": {"B1": false, "C1": false, "C2": true, "C3": false},
+    "C3_ONLY": {"B1": false, "C1": false, "C2": false, "C3": true},
+    "CONTROL": {"B1": false, "C1": false, "C2": false, "C3": false}
+  },
+  "armRationale": {
+    "keepAllEight": true,
+    "reason": "The set preserves single-mechanism attribution, C1/C2 interaction attribution, explicit C3-without-C2 harm detection, C3 incremental attribution over C1+C2, independent B1 exercise, and final interaction evidence. Runtime reduction is not permitted to destroy those comparisons."
+  },
+  "arms": ["CONTROL", "C1_ONLY", "C2_ONLY", "C1_C2", "C3_ONLY", "C1_C2_C3", "B1_ONLY", "C1_C2_C3_B1"],
+  "b1ProductionTierConstants": [
+    {"provenanceCategory": "B", "semantic": "unchanged production tier partition inherited by B1", "symbol": "_MIN_TIER_BAND_PAGE_FRACTION", "value": 0.02},
+    {"provenanceCategory": "B", "semantic": "unchanged production tier partition inherited by B1", "symbol": "_MAX_TIER_BAND_PAGE_FRACTION", "value": 0.12},
+    {"provenanceCategory": "B", "semantic": "unchanged production tier partition inherited by B1", "symbol": "_TIER_BAND_REGION_HEIGHT_FRACTION", "value": 0.5}
+  ],
+  "baselineProductionBinding": {
+    "commitSha": "f45facb2284d740df2f294800f705414e0ba465e",
+    "role": "current-post-v2-production-reading-order-dependency-not-modified-or-activated-by-this-experiment",
+    "sourceBlobSha": "12358a59deee7bd0ec0845963da1b98f031592f1",
+    "sourcePath": "backend/src/mangasensei/ocr/reading_order.py",
+    "treeSha": "68418482b8ccf5d7a3cb1c9ef3834505bd20cd4c"
+  },
+  "historicalV2ProductionBaselineBinding": {
+    "commitSha": "292f0a8c8142d919ac4184159d102789c43b4116",
+    "treeSha": "6605f6de429b318139fb91a4535ebbd2193508ce",
+    "sourcePath": "backend/src/mangasensei/ocr/reading_order.py",
+    "sourceBlobSha": "122f575c1c3567787aec29da0b1996fe0bf3e110",
+    "role": "historical-reading-order-v2-production-baseline-identity",
+    "contentEquivalentToCurrentPostV2Baseline": false,
+    "relationship": "Historical Reading Order v2 production baseline identity only; the post-v2 candidate is evaluated against the current production dependency recorded in baselineProductionBinding. The source blobs are intentionally distinct."
+  },
+  "candidateBinding": {
+    "commitSha": "f45facb2284d740df2f294800f705414e0ba465e",
+    "sourceBlobSha": "ed1be14f4ad47c317ad755b94f1b3e23e84064da",
+    "sourcePath": "backend/src/mangasensei/ocr/diagnostics/reading_order_post_v2_calibration.py",
+    "treeSha": "68418482b8ccf5d7a3cb1c9ef3834505bd20cd4c"
+  },
+  "canonicalRepository": {
+    "defaultBranch": "main",
+    "identityRule": "Mutable branch names are navigation only; qualification identity is bound to immutable commit/tree/blob and SHA-256 identities.",
+    "name": "mangasensei",
+    "owner": "Gyliardson"
+  },
+  "componentStatusVocabulary": ["PASS", "FAIL", "INCONCLUSIVE", "NOT_EVALUATED"],
+  "componentVerdictRules": {
+    "B1": {
+      "attributionComparisons": ["CONTROL->B1_ONLY", "C1_C2_C3->C1_C2_C3_B1"],
+      "fail": "safety regression or exercised target failure without required strict improvement",
+      "inconclusive": "any B1 exercise minimum is unmet or target evidence contains no baseline wrong pair",
+      "pass": "valid experiment; both B1 comparisons are safe; pair-bound horizontal/vertical/mixed exercise minima met; target evidence has baseline failure and strict target wrong-set improvement",
+      "targetSlices": ["b1-horizontal", "b1-vertical", "b1-mixed-orientation"]
+    },
+    "C1": {
+      "attributionComparisons": ["CONTROL->C1_ONLY", "C2_ONLY->C1_C2"],
+      "fail": "any attributable safety regression, or exercised target failure exists without required strict improvement",
+      "inconclusive": "exercise minimum not met or predeclared target contains no baseline wrong pair to improve",
+      "pass": "valid experiment; both attributable comparisons satisfy universal non-regression; C1 exercise minimum met; target slice contains at least one baseline wrong pair; target wrong-pair set strictly improves in at least one predeclared comparison",
+      "targetSlices": ["c1-boundary-positive"]
+    },
+    "C2": {
+      "attributionComparisons": ["CONTROL->C2_ONLY", "C1_ONLY->C1_C2"],
+      "fail": "safety regression or exercised target failure without required strict improvement",
+      "inconclusive": "any required C2 exercise minimum is unmet or target evidence contains no baseline wrong pair",
+      "pass": "valid experiment; attributable comparisons safe; all positive and fail-closed C2 exercise minima met; target evidence includes baseline failure and strict target wrong-set improvement",
+      "targetSlices": ["c2-gutter-bridge", "c2-ambiguous-overlap-bridge", "c2-pair-precedence-slot"]
+    },
+    "C3": {
+      "attributionComparisons": ["CONTROL->C3_ONLY", "C1_C2->C1_C2_C3"],
+      "fail": "safety regression including harmful C3-without-C2 behavior, or exercised target failure without required strict improvement",
+      "inconclusive": "any required C3 exercise minimum is unmet or target evidence contains no baseline wrong pair",
+      "pass": "valid experiment; C3_ONLY and incremental C3 comparisons are safe; positive and every frozen negative rejection exercise minimum met; target has baseline failure and strict target wrong-set improvement",
+      "targetSlices": ["c3-positive-recovery"]
+    },
+    "FINAL": {
+      "fail": "final arm violates a universal gate or all components PASS but either required final strict improvement is absent",
+      "notEvaluated": "a component is not PASS and no final universal regression establishes FINAL_FAIL independently",
+      "pass": "valid experiment; final arm satisfies all universal gates against CONTROL; C1/C2/C3/B1 are all PASS; global wrong-pair set strictly improves CONTROL; combined-c1-c2-c3-b1 slice wrong-pair set strictly improves CONTROL"
+    }
+  },
+  "corpusDesignRequirements": {
+    "minimumCombinedMechanismPages": 4,
+    "minimumCleanControlPages": 6,
+    "minimumIntentionalFallbackPages": 3,
+    "minimumPageCount": 24,
+    "minimumQualificationPairs": 120,
+    "minimumScoredRegions": 96
+  },
+  "corpusSchemas": {
+    "annotation": "reading-order-post-v2-annotation-v1",
+    "design": "reading-order-post-v2-corpus-design-v1",
+    "input": "reading-order-post-v2-input-v1",
+    "manifest": "reading-order-post-v2-corpus-manifest-v1"
+  },
+  "determinismContract": {
+    "freshProcesses": 3,
+    "pythonHashSeeds": [101, 202, 303],
+    "requirement": "For every frozen arm over every sealed page, canonical diagnostics, ordering, and score hashes combine to the same result SHA-256 across all three fresh-process repeats."
+  },
+  "diagnosticSchemaVersion": "reading-order-post-v2-diagnostic-v1",
+  "evidenceBundleSchemaVersion": "reading-order-post-v2-evidence-v1",
+  "evidenceContract": {
+    "contents": [
+      "frozen experiment specification",
+      "future sealed corpus design and manifest",
+      "environment provenance",
+      "run metadata",
+      "bound source snapshots and source manifest with Git blob/SHA-256 identities",
+      "per-arm canonical diagnostics",
+      "per-arm canonical ordering outputs",
+      "per-arm scores",
+      "per-arm three-repeat hashes",
+      "global comparison",
+      "mechanism exercise report",
+      "formal verdict",
+      "raw-output inventory",
+      "checksums.sha256",
+      "README classifying evidence and experiment identity"
+    ],
+    "deterministicZip": {
+      "checksumVerification": "internal checksums.sha256 verified before ZIP; workflow writes and verifies bundle SHA-256",
+      "compression": "DEFLATE level 9",
+      "pathOrder": "lexicographic",
+      "permissions": "0100644",
+      "timestamp": "1980-01-01T00:00:00 ZIP epoch for every member"
+    },
+    "rawRepeatRetention": "All raw three-repeat outputs are retained by the execution artifact; deterministic evidence bundle contains repeat-1 canonical material plus all repeat hashes.",
+    "schemaVersion": "reading-order-post-v2-evidence-v1"
+  },
+  "exerciseMinima": {
+    "b1_horizontal_pairs": 4,
+    "b1_mixed_pairs": 4,
+    "b1_vertical_pairs": 4,
+    "c1_guarded_pairs": 4,
+    "c2_conflict_cycle_fallback_pairs": 2,
+    "c2_fail_closed_no_relation_pairs": 2,
+    "c2_gutter_pairs": 3,
+    "c2_overlap_pairs": 3,
+    "c2_pair_precedence_pairs": 3,
+    "c3_insufficient_visible_support_rejection_pairs": 2,
+    "c3_invalid_topology_rejection_pairs": 2,
+    "c3_positive_pairs": 4,
+    "c3_zero_multiple_anchor_rejection_pairs": 2,
+    "c3_zero_multiple_companion_rejection_pairs": 2
+  },
+  "experimentId": "reading-order-post-v2-c1-c2-c3-b1-v1",
+  "forbiddenInputs": [
+    "OCR text",
+    "OCR confidence",
+    "dictionaries",
+    "JMdict",
+    "Gemini",
+    "ground truth",
+    "expected order",
+    "page ID as an algorithmic feature",
+    "corpus case identity as an algorithmic feature",
+    "page-specific coordinates outside declared frozen input geometry",
+    "calibration score",
+    "previous arm output",
+    "candidate-output-dependent tuning",
+    "hidden or manual annotations not declared by the corpus contract"
+  ],
+  "freezeBoundaries": {
+    "noBaberu": true,
+    "noBlackJack": true,
+    "noCandidateBehaviorChange": true,
+    "noFutureHeldoutAuthoredOrRevealedByFreeze": true,
+    "noHistoricalH01H16HeldoutReuse": true,
+    "noHistoricalH01H16Modification": true,
+    "noMergeTagRelease": true,
+    "noPpOcr": true,
+    "noProductionActivation": true,
+    "noPublicDemo": true,
+    "noQualificationExecutionAuthorizedBySpec": true,
+    "noThresholdTuning": true
+  },
+  "historicalV2Bindings": {
+    "classification": "observed-calibration-regression-infrastructure-only-not-heldout-evidence",
+    "historicalCorpusId": "mangasensei-reading-order-heldout-v2",
+    "historicalCorpusVersion": "1.0.0",
+    "historicalVerdict": "A_FAIL",
+    "observedPageIds": ["H01", "H02", "H03", "H04", "H05", "H06", "H07", "H08", "H09", "H10", "H11", "H12", "H13", "H14", "H15", "H16"],
+    "sources": [
+      {"gitBlobSha": "41b3b2c927e1c5840c205e79856500e320e4c018", "path": "scripts/reading_order_v2/spec/experiment-spec-v1.json", "role": "v2-experiment-spec"},
+      {"gitBlobSha": "ec05f00043453f2aec05bbf76d5478788697cec6", "path": "scripts/reading_order_v2/scoring.py", "role": "v2-scorer-reference"},
+      {"gitBlobSha": "64118b5a63890017f6c992fbc0610d2b3124cfd1", "path": "scripts/reading_order_v2/verdict.py", "role": "v2-verdict-reference"},
+      {"gitBlobSha": "04fd8bf75329aaf1369b8b201bff14d2e7bb4e48", "path": "scripts/reading_order_v2/build_evidence.py", "role": "v2-evidence-builder-reference"},
+      {"gitBlobSha": "015300fcc1d1f7d50a51032f347211016290ffbb", "path": "scripts/reading_order_v2/run_heldout.py", "role": "v2-qualification-runner-reference"},
+      {"gitBlobSha": "08eb80b85583e36cccbd920ac652c085beac9740", "path": "scripts/reading_order_v2/contracts.py", "role": "v2-contracts-reference"},
+      {"gitBlobSha": "fea64882926010cf4266087beb8b272670fe853b", "path": ".github/workflows/reading-order-v2-qualification.yml", "role": "v2-qualification-workflow-reference"}
+    ],
+    "stage1ReplayForbidden": true
+  },
+  "mechanismExerciseRules": {
+    "B1": "Exercise is pair-bound. Both pair regions must be confidently assigned to the same materialized panel group with panel evidence used; actual regionDirections determine horizontal/vertical/mixed classification. Page-level booleans are insufficient.",
+    "C1": "A c1-boundary-positive pair counts only when CONTROL has a relevant confidently assigned region and C1_ONLY changes that same region to explicit unassigned/ambiguous with changed guarded candidate membership.",
+    "C2": {
+      "gutter": "Count a qualification pair only when its uncertain-node label participates in a diagnostic relation edge with rule unique-gutter-between-hard-panels.",
+      "negative": "One-sided/nonunique slice counts only when an explicit uncertain node receives no relation edge.",
+      "overlap": "Count a qualification pair only when its uncertain-node label participates in validated-overlap-bridge-right-before-left.",
+      "pairPrecedence": "Count a qualification pair only when its uncertain-node label participates in an uncertain-* production pair-precedence edge.",
+      "safety": "Conflict/cycle slice counts only when C2 introduces uncertain-relation-conflict or a C2-specific precedence-cycle and finalOrder equals fallbackOrder with no panel evidence."
+    },
+    "C3": {
+      "negative": "Count rejection only when original segmentation is one fewer-than-two-groups box, recoveryReason begins rejected-, assignments and relationEdges are empty, finalOrder equals fallbackOrder, and usedPanelEvidence is false.",
+      "positive": "Count only when original segmentation is one unreliable fewer-than-two-groups box, recovery is accepted as recovered-merged-frame, exact acceptance reason is emitted, and panel evidence is materially used."
+    },
+    "pairBinding": "All exercise evidence is computed from diagnostic facts and must bind to predeclared qualification pairs; no human boolean may cause PASS."
+  },
+  "mechanisms": {
+    "B1": {
+      "implementationSymbol": "_b1_local_order",
+      "name": "frozen-v2-orientation-aware-local-order",
+      "semantics": [
+        "Use the exact frozen production tier partitioning reused by v2.",
+        "Direction h/hr normalizes to horizontal; v/vr normalizes to vertical; all other values normalize to ambiguous.",
+        "Within horizontal subruns order by x_center ascending, then y_top ascending, then source_index ascending.",
+        "Within vertical subruns order by x_center descending, then y_top ascending, then source_index ascending.",
+        "Each ambiguous item is its own singleton subrun and is source-index deterministic.",
+        "Schedule subruns by minimum y_top ascending, maximum doubled x-center descending, minimum source_index ascending, then orientation enum value.",
+        "Mixed tiers preserve the exact frozen subrun scheduling; no reinterpretation of B1 is permitted.",
+        "B1 may use actual TextBlock direction/orientation plus geometry and source index; OCR text and confidence are forbidden."
+      ],
+      "sourceBlobSha": "5c5b334a57a1be5c89a5db124b4be99a4750e137",
+      "sourcePath": "backend/src/mangasensei/ocr/diagnostics/reading_order_v2.py"
+    },
+    "C1": {
+      "invalidation": "Any Sobel aperture, morphology kernel/iterations, contour/boundary preprocessing, or coordinate-convention change that affects the current 3x3 local boundary support requires re-derivation and a new experiment identity.",
+      "name": "guarded-boundary-confidence",
+      "rule": [
+        "Use region geometric center and detected panel boxes only.",
+        "Confidence-bearing containment is inset by exactly 1 px from every detected panel edge.",
+        "Exactly one guarded candidate means confident membership.",
+        "Zero guarded candidates means explicit unassigned uncertainty.",
+        "Multiple guarded candidates means explicit ambiguous uncertainty.",
+        "No nearest-panel assignment or other coercion is permitted.",
+        "C1 changes confidence-bearing membership only; it does not alter region geometry, identity, text, confidence, or count."
+      ]
+    },
+    "C2": {
+      "determinism": "Hard edges precede relational edges; candidate/bracket enumeration and active panel order are deterministic; topological tie keys are exactly those in the bound candidate/production sources.",
+      "name": "geometry-only-relational-scheduling-for-uncertain-nodes",
+      "precedence": ["unique-gutter-between-hard-panels", "validated-overlap-bridge-right-before-left", "existing-production-pair-precedence-two-sided-unique-slot"],
+      "rule": [
+        "Uncertain regions remain explicit uncertain nodes and are never silently materialized as panel members.",
+        "Hard panel precedence edges are materialized first and dominate scheduling.",
+        "Unique gutter bridge is accepted only for one unique same-level hard-panel bracket, with nonempty endpoint groups, center within the geometric gutter, and intrusion into each panel no greater than the frozen width fraction.",
+        "Validated overlap bridge is accepted only for an ambiguous node with exactly two candidate panels, both nonempty, frozen one-dimensional x-overlap and y-overlap conditions, unequal panel x centers, both panels present and adjacent in active hard-panel order.",
+        "Pair-precedence fallback applies the unchanged production _panel_precedence_edges function to each confident panel box versus the uncertain region box, then requires predecessor and successor evidence, a non-conflicting interval, and exactly one adjacent slot in active hard-panel order.",
+        "One-sided evidence, no predecessor/successor, nonunique slot, conflicting relation, otherwise ambiguous relation, hard-panel conflict, or any graph cycle fails closed.",
+        "Relation conflict produces exact whole-page fallback with fallbackReason uncertain-relation-conflict.",
+        "Precedence cycle produces exact whole-page fallback with fallbackReason precedence-cycle.",
+        "The fallback is the unchanged explicit text-independent manga-tier fallback used by the merged candidate."
+      ]
+    },
+    "C3": {
+      "eligibility": "Only original segmentation that is unreliable with reason fewer-than-two-groups and exactly one original box is eligible.",
+      "name": "conservative-single-merged-frame-recovery",
+      "rule": [
+        "Require exactly one deduplicated strong complete frame anchor.",
+        "Require exactly one deduplicated occlusion-supported companion distinct from the anchor.",
+        "Only side spans geometrically covered by the strong anchor may be removed when computing visible support.",
+        "Every remaining visible side must meet the frozen minimum visible-span and coverage constraints.",
+        "An occlusion-supported candidate must retain an adjacent strong corner before refinement.",
+        "Endpoint refinement is bounded by the frozen scale-relative tolerance with the frozen absolute floor.",
+        "Recovered boxes are deterministically sorted and must pass the unchanged production _validate_boxes topology validation.",
+        "Zero or multiple strong anchors fail closed.",
+        "Zero or multiple companions fail closed.",
+        "Insufficient long sides, visible support, refinement support, or invalid/nested/material-overlap topology fails closed.",
+        "A rejected recovery returns the exact original fallback before assignments or relational edges materialize."
+      ]
+    }
+  },
+  "newHeldoutDesignCoverage": {
+    "B1": ["horizontal", "vertical", "mixed orientation", "boundary-coupled orientation cases"],
+    "C1": ["positive and legitimate-near-border negative controls near all four panel boundaries", "multiple scales", "multiple border thicknesses"],
+    "C2": ["gutter bridge", "overlap bridge", "unique precedence slot", "one-sided evidence", "non-unique slot", "conflict", "cycle", "multiple uncertain nodes", "hard-edge dominance"],
+    "C3": ["multiple new positive occlusion layouts", "occlusion on different sides and corners", "zero and multiple anchors", "zero and multiple companions", "nested frames", "overlap beyond topology limits", "decorative rectangles", "line-rich artwork", "weak or broken frames", "exact-fallback controls"],
+    "authoringBoundary": "Requirements only are frozen here. This repository change contains no future held-out pages, images, coordinates, ground truth, expected outputs, or fake future hashes.",
+    "global": ["clean controls", "intentional fallback", "combined mechanisms"]
+  },
+  "numericConstants": [
+    {"changeRule": "Re-derive on preprocessing/kernel/coordinate changes and freeze under a new experiment identity.", "mechanism": "C1", "provenance": "Current detector uses 3x3 Sobel/morphology support; local support radius is one pixel.", "provenanceCategory": "A", "semantic": "confidence-bearing inward guard on every panel edge", "symbol": "_BOUNDARY_GUARD_PX", "unit": "px", "value": 1},
+    {"changeRule": "Frozen candidate constant; change requires new pre-held-out experiment identity.", "mechanism": "C2", "provenance": "Related 0.25 production overlap thresholds, but new measured quantity and semantic role.", "provenanceCategory": "C", "semantic": "maximum intrusion into either panel for unique gutter bridge", "symbol": "_GUTTER_MAX_REGION_OVERLAP", "unit": "fraction-of-uncertain-region-width", "value": 0.25},
+    {"changeRule": "Revisit if production same-level panel overlap semantics/value changes.", "mechanism": "C2", "provenance": "Direct same-semantic production same-level y-overlap threshold.", "provenanceCategory": "B", "semantic": "minimum panel y-overlap for validated overlap bridge", "symbol": "_SAME_LEVEL_MIN_Y_OVERLAP", "unit": "ratio", "value": 0.25},
+    {"changeRule": "Frozen candidate constant; future change requires explicit re-derivation/recalibration before a new held-out.", "mechanism": "C2", "provenance": "Imported production number but production uses it for intersection-area/min-area topology overlap, so new semantics.", "provenanceCategory": "C", "semantic": "maximum x-axis overlap between two ambiguous candidate panels", "symbol": "_MAX_AMBIGUOUS_OVERLAP", "unit": "x-overlap-ratio", "value": 0.2},
+    {"changeRule": "Any production precedence change changes source identity and requires pre-freeze semantic re-review.", "mechanism": "C2", "provenance": "Unchanged production threshold/function, but one endpoint is an uncertain OCR region rather than another panel.", "provenanceCategory": "C", "semantic": "panel-versus-uncertain-region predecessor/successor evidence", "symbol": "_panel_precedence_edges.same_level.y_overlap_min", "unit": "ratio", "value": 0.25},
+    {"changeRule": "Any change requires a new candidate/experiment identity.", "mechanism": "C2", "provenance": "Unchanged production threshold/function in a new panel-region semantic context.", "provenanceCategory": "C", "semantic": "panel-versus-uncertain-region same-level predecessor/successor evidence", "symbol": "_panel_precedence_edges.same_level.x_overlap_max", "unit": "ratio", "value": 0.15},
+    {"changeRule": "Any change requires a new candidate/experiment identity.", "mechanism": "C2", "provenance": "Unchanged production threshold/function in a new panel-region semantic context.", "provenanceCategory": "C", "semantic": "panel-versus-uncertain-region aligned top-before-bottom evidence", "symbol": "_panel_precedence_edges.aligned.x_overlap_min", "unit": "ratio", "value": 0.25},
+    {"changeRule": "Any change requires a new candidate/experiment identity.", "mechanism": "C2", "provenance": "Unchanged production threshold/function in a new panel-region semantic context.", "provenanceCategory": "C", "semantic": "panel-versus-uncertain-region aligned top-before-bottom evidence", "symbol": "_panel_precedence_edges.aligned.y_overlap_max", "unit": "ratio", "value": 0.2},
+    {"changeRule": "Any later change requires a new candidate/experiment identity and new pre-held-out calibration.", "mechanism": "C3", "provenance": "Calibration-derived frozen candidate constant; no independent derivation is claimed.", "provenanceCategory": "D", "semantic": "minimum complete/visible frame-side line coverage", "symbol": "_FRAME_MIN_SIDE_COVERAGE", "unit": "coverage-ratio", "value": 0.8},
+    {"changeRule": "New experiment identity required; preprocessing/line-detector changes require re-evaluation.", "mechanism": "C3", "provenance": "Calibration-derived; production uses a different 0.02 fractional separator tolerance.", "provenanceCategory": "D", "semantic": "scale-relative clustering/refinement tolerance", "symbol": "_FRAME_CLUSTER_FRACTION", "unit": "fraction-of-merged-axis", "value": 0.012},
+    {"changeRule": "Frozen candidate value; any change requires a new pre-held-out candidate identity.", "mechanism": "C3", "provenance": "Production contains 0.12 for a different split-box child/separator margin semantics.", "provenanceCategory": "C", "semantic": "minimum detected side segment and remaining visible span", "symbol": "_FRAME_MIN_SEGMENT_FRACTION", "unit": "fraction-of-merged-axis", "value": 0.12},
+    {"changeRule": "Any later change requires a new candidate/experiment identity.", "mechanism": "C3", "provenance": "Calibration-derived frozen candidate constant; no independent derivation is claimed.", "provenanceCategory": "D", "semantic": "deduplicate frame candidates and exclude anchor-identical companion", "symbol": "_FRAME_DEDUP_IOU", "unit": "IoU", "value": 0.8},
+    {"changeRule": "Revisit on production line-admission or preprocessing change.", "mechanism": "C3", "provenance": "Direct same-semantic production _split_box line-center margin reuse.", "provenanceCategory": "B", "semantic": "admit frame-line centers just outside merged box", "symbol": "line_center_merged_box_margin", "unit": "px", "value": 3},
+    {"changeRule": "Revisit if production line-segment representation/filtering changes.", "comparison": ">", "mechanism": "C3", "provenance": "Direct production _split_box major-axis non-degeneracy check.", "provenanceCategory": "B", "semantic": "reject degenerate line segments before orientation classification", "symbol": "major_axis_minimum_delta", "unit": "px", "value": 1},
+    {"changeRule": "New experiment identity required for any change.", "mechanism": "C3", "provenance": "Calibration-derived; production _split_box uses 0.35 and production precedence 0.15 is unrelated.", "provenanceCategory": "D", "semantic": "near-horizontal/vertical line requirement", "symbol": "minor_major_axis_ratio", "unit": "ratio", "value": 0.15},
+    {"changeRule": "Revisit if production minimum panel width changes.", "mechanism": "C3", "provenance": "Direct same-semantic production _MIN_PANEL_WIDTH_FRACTION reuse.", "provenanceCategory": "B", "semantic": "minimum recovered frame width", "symbol": "minimum_frame_width", "unit": "fraction-of-page-width", "value": 0.1},
+    {"changeRule": "Revisit if production minimum panel height changes.", "mechanism": "C3", "provenance": "Direct same-semantic production _MIN_PANEL_HEIGHT_FRACTION reuse.", "provenanceCategory": "B", "semantic": "minimum recovered frame height", "symbol": "minimum_frame_height", "unit": "fraction-of-page-height", "value": 0.05},
+    {"changeRule": "Revisit if production minimum panel area changes.", "mechanism": "C3", "provenance": "Direct same-semantic production _MIN_PANEL_AREA_FRACTION reuse.", "provenanceCategory": "B", "semantic": "minimum recovered frame area", "symbol": "minimum_frame_area", "unit": "fraction-of-page-area", "value": 0.02},
+    {"changeRule": "Revisit if production line-clustering representation changes.", "mechanism": "C3", "provenance": "Production separator clustering uses the same 8 px floor; candidate fractional term remains separately D.", "provenanceCategory": "B", "semantic": "absolute lower bound for clustering/refinement tolerance", "symbol": "cluster_refinement_absolute_floor", "unit": "px", "value": 8}
+  ],
+  "provenanceContract": {
+    "privacy": "Do not record secrets or private absolute paths in the evidence bundle.",
+    "record": ["canonical repository", "execution SHA", "execution tree SHA", "experiment ID", "qualification identity", "spec SHA-256", "corpus ID and version", "manifest SHA-256", "design SHA-256", "exact qualification command", "Python version/implementation", "uv version", "relevant OCR dependency versions", "OS/runner architecture/image identity", "source snapshot manifest", "source Git blob SHAs and SHA-256s", "pyproject.toml and uv.lock SHA-256/Git blob identities", "three deterministic repeat hashes", "output inventory", "evidence bundle SHA-256"]
+  },
+  "qualificationRunner": {
+    "exactCommandTemplate": "uv run python -m scripts.reading_order_post_v2_qualification.run --corpus-root ${CORPUS_ROOT} --experiment-spec ${EXPERIMENT_SPEC} --expected-spec-sha256 ${SPEC_SHA256} --expected-manifest-sha256 ${MANIFEST_SHA256} --expected-design-sha256 ${DESIGN_SHA256} --qualification-identity ${QUALIFICATION_IDENTITY} --execution-sha ${EXECUTION_SHA} --expected-tree-sha ${EXPECTED_TREE_SHA} --output-root ${OUTPUT_ROOT}",
+    "gitBlobSha": "a66f34bc8e4e1fb4a982da8098158f64a00bdb0c",
+    "historicalRunnerFallbackForbidden": "scripts.reading_order_v2.run_heldout",
+    "module": "scripts.reading_order_post_v2_qualification.run",
+    "path": "scripts/reading_order_post_v2_qualification/run.py",
+    "repeatPolicy": "One workflow invocation of the post-v2 runner; internally the frozen protocol runs three fresh-process deterministic repeats per arm/page. This does not authorize a second qualification run."
+  },
+  "regionIntegrityContract": {
+    "requirements": ["exact region count preserved", "exact runtime region object identity set preserved", "stable region ID set preserved", "no region created", "no region deleted", "no OCR text/content modified", "no OCR confidence modified", "no region geometry modified", "only ordering and diagnostics may differ"],
+    "violationStatus": "INVALID_EXPERIMENT"
+  },
+  "replayGuard": {
+    "concurrency": "GitHub Actions concurrency group is keyed by qualification identity with cancel-in-progress false.",
+    "duplicateDefinition": "A prior workflow_dispatch run with the same canonical run-title identity whose exact 'Execute frozen qualification exactly once' step is in-progress or completed with any non-skipped conclusion.",
+    "implementation": "Read Actions workflow runs and jobs using actions:read; reject an observed duplicate before environment setup.",
+    "limitation": "Repository administrators can delete GitHub Actions run history. With the qualification workflow intentionally read-only and no durable write permission, this guard cannot create an immutable repository ledger. The frozen safety mechanism therefore combines canonical identity, matching run title, execution-step inspection, and concurrency; deletion of authoritative Actions history is an administrative trust-boundary limitation and must be recorded with qualification evidence.",
+    "preflightFailureConsumption": "A run that fails before the execution step does not consume the identity.",
+    "qualificationIdentityFormula": "ropv2q- + SHA256(canonical JSON of experimentId,specSha256,manifestSha256,designSha256,executionSha,executionTreeSha)"
+  },
+  "repository": "Gyliardson/mangasensei",
+  "requiredSlices": ["b1-horizontal", "b1-mixed-orientation", "b1-vertical", "c1-boundary-positive", "c1-near-boundary-negative", "c2-ambiguous-overlap-bridge", "c2-conflict-cycle-safety", "c2-gutter-bridge", "c2-one-sided-non-unique-fail-closed", "c2-pair-precedence-slot", "c3-insufficient-visible-support-negative", "c3-invalid-topology-negative", "c3-positive-recovery", "c3-zero-multiple-anchor-negative", "c3-zero-multiple-companion-negative", "clean-control", "combined-c1-c2-c3-b1", "intentional-fallback"],
+  "routingOnlyValues": ["page ID may be used only to locate sealed input/output records and must not be passed as candidate behavior input", "experiment arm ID may only select the predeclared C1/C2/C3/B1 configuration", "execution SHA may appear only in diagnostics/provenance"],
+  "schemaVersion": "reading-order-post-v2-experiment-spec-v1",
+  "scoringContract": {
+    "canonicalization": "page scores sorted by pageId; slice names sorted; wrong pairs sorted lexicographically; canonical JSON uses sorted object keys, compact separators, UTF-8, no NaN, trailing newline",
+    "correctPair": "observed final ordering places GT earlier region before GT later region",
+    "exactSequencePage": "observed scored region sequence exactly equals GT readingOrder after declared unscored regions are removed",
+    "forbiddenMetric": "IoU is not a reading-order correctness metric",
+    "globalComparablePairs": "For each page, all unordered region pairs in GT order are converted to directed earlier-before-later pairs.",
+    "globalWrongSet": "canonical sorted union/list of per-page wrong tuples",
+    "groundTruth": "GT reading sequence defines all comparable precedence pairs; declared qualificationPairs bind slice/mechanism evidence.",
+    "mechanismExercise": "reported separately from correctness; a correct final order cannot itself establish exercise",
+    "normalizedError": "wrong_pairs / comparable_pairs",
+    "normalizedInversionDistance": "wrong_pairs / comparable_pairs",
+    "pairwiseAccuracy": "correct_pairs / comparable_pairs; exact rational value retained with deterministic decimal serialization",
+    "perPageWrongSet": "sorted tuples (pageId, earlier, later)",
+    "perSliceMetrics": "same pair metrics computed only from qualificationPairs declaring that slice",
+    "stableIdentity": "stable region IDs from the sealed input/annotation contract",
+    "wrongPair": "observed final ordering reverses a comparable GT precedence pair"
+  },
+  "sliceMinima": {
+    "b1-horizontal": {"minPairs": 10, "minPages": 4},
+    "b1-mixed-orientation": {"minPairs": 10, "minPages": 4},
+    "b1-vertical": {"minPairs": 10, "minPages": 4},
+    "c1-boundary-positive": {"minPairs": 10, "minPages": 4},
+    "c1-near-boundary-negative": {"minPairs": 8, "minPages": 4},
+    "c2-ambiguous-overlap-bridge": {"minPairs": 8, "minPages": 3},
+    "c2-conflict-cycle-safety": {"minPairs": 6, "minPages": 2},
+    "c2-gutter-bridge": {"minPairs": 8, "minPages": 3},
+    "c2-one-sided-non-unique-fail-closed": {"minPairs": 8, "minPages": 3},
+    "c2-pair-precedence-slot": {"minPairs": 8, "minPages": 3},
+    "c3-insufficient-visible-support-negative": {"minPairs": 6, "minPages": 2},
+    "c3-invalid-topology-negative": {"minPairs": 6, "minPages": 2},
+    "c3-positive-recovery": {"minPairs": 10, "minPages": 4},
+    "c3-zero-multiple-anchor-negative": {"minPairs": 6, "minPages": 2},
+    "c3-zero-multiple-companion-negative": {"minPairs": 6, "minPages": 2},
+    "clean-control": {"minPairs": 16, "minPages": 6},
+    "combined-c1-c2-c3-b1": {"minPairs": 12, "minPages": 4},
+    "intentional-fallback": {"minPairs": 8, "minPages": 3}
+  },
+  "sourceBindings": [
+    {"gitBlobSha": "12358a59deee7bd0ec0845963da1b98f031592f1", "path": "backend/src/mangasensei/ocr/reading_order.py", "role": "production-baseline"},
+    {"gitBlobSha": "5c5b334a57a1be5c89a5db124b4be99a4750e137", "path": "backend/src/mangasensei/ocr/diagnostics/reading_order_v2.py", "role": "frozen-b1-implementation"},
+    {"gitBlobSha": "ed1be14f4ad47c317ad755b94f1b3e23e84064da", "path": "backend/src/mangasensei/ocr/diagnostics/reading_order_post_v2_calibration.py", "role": "merged-post-v2-candidate"},
+    {"gitBlobSha": "4febe39e7692c2a7370e0ba6c1c697bd51605949", "path": "docs/reading-order-post-v2-pre-freeze.md", "role": "pre-freeze-threshold-provenance"},
+    {"gitBlobSha": "3bd134e6b1dd28ec80a7b25591574043e2ba06c0", "path": "scripts/reading_order_post_v2_qualification/__init__.py", "role": "qualification-package-identity"},
+    {"gitBlobSha": "286409e086b63f0239b7617e0a90b2ac0fb9bf91", "path": "scripts/reading_order_post_v2_qualification/canonical.py", "role": "canonical-serialization"},
+    {"gitBlobSha": "81ddf32f2ac3938fc144bcb751da823d0c71c1bc", "path": "scripts/reading_order_post_v2_qualification/contracts.py", "role": "qualification-contracts"},
+    {"gitBlobSha": "781817e7b522dfb1ed17fbd7f89211bafcd3b322", "path": "scripts/reading_order_post_v2_qualification/fixtures.py", "role": "synthetic-runtime-fixture-builder"},
+    {"gitBlobSha": "b0b775995f946c0e6bb571bf5f83c52dc680c9df", "path": "scripts/reading_order_post_v2_qualification/scoring.py", "role": "scorer-implementation"},
+    {"gitBlobSha": "8cc44916c67fa3d0ad554bbf6aa83bf5be5b8b98", "path": "scripts/reading_order_post_v2_qualification/exercise.py", "role": "mechanism-exercise-implementation"},
+    {"gitBlobSha": "08c036c37e329039898e7ad3cf5e4d854407e129", "path": "scripts/reading_order_post_v2_qualification/verdict.py", "role": "verdict-implementation"},
+    {"gitBlobSha": "b4f420166e2c6afa84ee3e3f60471281185416cf", "path": "scripts/reading_order_post_v2_qualification/run_arm.py", "role": "diagnostic-wrapper"},
+    {"gitBlobSha": "38f04fd6dd1d7190ba9de27a0f5f20ffefd7dc52", "path": "scripts/reading_order_post_v2_qualification/spec.py", "role": "spec-validator"},
+    {"gitBlobSha": "48d666caa95aa738e8950eb8127a7e40dac3e4fe", "path": "scripts/reading_order_post_v2_qualification/replay_guard.py", "role": "replay-guard"},
+    {"gitBlobSha": "8e53c01e11005070f2db89c12c7b6a7e97979d20", "path": "scripts/reading_order_post_v2_qualification/preflight.py", "role": "preflight-validator"},
+    {"gitBlobSha": "255579039eb7780aa1efbc5c88aeddabd1bd62be", "path": "scripts/reading_order_post_v2_qualification/historical_guard.py", "role": "historical-h01-h16-content-reuse-guard"},
+    {"gitBlobSha": "a66f34bc8e4e1fb4a982da8098158f64a00bdb0c", "path": "scripts/reading_order_post_v2_qualification/run.py", "role": "qualification-runner"},
+    {"gitBlobSha": "aeecdd7c689322a6c98de78ff71cd622bce8726a", "path": "scripts/reading_order_post_v2_qualification/evidence.py", "role": "evidence-packager"},
+    {"gitBlobSha": "55042570b31201a342e6ed2e92b6b7a410280448", "path": "scripts/reading_order_post_v2_qualification/build_evidence.py", "role": "evidence-cli"},
+    {"gitBlobSha": "6fa6c120bd62c64784458faa77067346c78a37ad", "path": "scripts/reading_order_post_v2_qualification/provenance.py", "role": "provenance-capture"},
+    {"gitBlobSha": "31bbb8eb29c76a5c7550562a5c1b7b649c5329c7", "path": ".github/workflows/reading-order-post-v2-qualification.yml", "role": "github-qualification-workflow"}
+  ],
+  "status": "FROZEN_NOT_AUTHORIZED_FOR_EXECUTION",
+  "stopAndAntiReplay": {
+    "candidateChange": "Any candidate source, mechanism, threshold, fallback, diagnostic behavior affecting experiment semantics, scorer/verdict/schema change requires a new experiment identity and a genuinely new held-out corpus after pre-freeze.",
+    "contamination": "Once the Execute frozen qualification exactly once step begins for an identity, its corpus is observed/contaminated for future tuning.",
+    "failOrInconclusive": "FAIL or INCONCLUSIVE never authorizes tuning and replay on the same corpus identity.",
+    "oneExecution": "Exactly one observed execution is permitted for one frozen corpus+experiment+execution identity.",
+    "publicDemo": "Public Demo does not substitute for formal held-out qualification."
+  },
+  "topLevelVerdictPrecedence": ["INVALID_EXPERIMENT", "C1_FAIL", "C2_FAIL", "C3_FAIL", "B1_FAIL", "FINAL_FAIL", "C1_INCONCLUSIVE", "C2_INCONCLUSIVE", "C3_INCONCLUSIVE", "B1_INCONCLUSIVE", "READING_ORDER_POST_V2_HELDOUT_PASS"],
+  "topLevelVerdictVocabulary": ["READING_ORDER_POST_V2_HELDOUT_PASS", "INVALID_EXPERIMENT", "C1_FAIL", "C2_FAIL", "C3_FAIL", "B1_FAIL", "FINAL_FAIL", "C1_INCONCLUSIVE", "C2_INCONCLUSIVE", "C3_INCONCLUSIVE", "B1_INCONCLUSIVE"],
+  "universalGates": [
+    "candidate final wrong-pair set is a subset of CONTROL",
+    "candidate introduces zero wrong pairs versus CONTROL",
+    "no page gains a new wrong pair/inversion",
+    "global pairwise accuracy is greater than or equal to CONTROL",
+    "global normalized error is less than or equal to CONTROL",
+    "every required slice is nonempty/comparable and candidate slice accuracy is greater than or equal to CONTROL",
+    "every required slice normalized error is less than or equal to CONTROL",
+    "exact-sequence page count does not decrease",
+    "region integrity passes",
+    "three fresh-process deterministic repeats produce identical result hashes",
+    "uncertainty and fallback remain explicit",
+    "all required mechanism exercise minima are met for a successful candidate"
+  ],
+  "verdictAuthority": "Formal statuses and top-level verdict are machine-derived; human interpretation may add context but may not override the formal verdict.",
+  "workflowContract": {
+    "artifactRetentionDays": 90,
+    "checkout": {"fetchDepth": 0, "persistCredentials": false},
+    "deterministicEvidence": "success-only",
+    "environment": {"dependencyInstall": "uv sync --frozen --extra ocr", "python": "3.11", "uv": "0.12.3"},
+    "gitBlobSha": "31bbb8eb29c76a5c7550562a5c1b7b649c5329c7",
+    "path": ".github/workflows/reading-order-post-v2-qualification.yml",
+    "permissionRationale": "actions:read is required only for the duplicate/replay history query; there are no write permissions.",
+    "permissions": ["contents:read", "actions:read"],
+    "preEnvironmentChecks": ["explicit authorization true", "exact experiment identity", "input hash/SHA/qualification identity formats", "future corpus path restricted and historical v2 path rejected", "checked-out HEAD equals execution SHA", "HEAD tree equals expected tree", "current canonical origin/main equals execution SHA", "repository clean", "spec hash and immutable source identities valid", "sealed corpus design/manifest/inventory hashes valid", "canonical qualification identity valid", "duplicate/replay guard passes"],
+    "rawOutputsAndProvenance": "always preserved",
+    "realQualificationDuringFreezeForbidden": true,
+    "secrets": "No repository/user secrets are required. The ephemeral GitHub token is used only for read-only Actions-history replay detection.",
+    "trigger": "workflow_dispatch-only"
+  }
+}
