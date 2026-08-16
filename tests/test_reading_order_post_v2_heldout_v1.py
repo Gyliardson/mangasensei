@@ -94,7 +94,7 @@ def test_post_v2_heldout_v1_contract_manifest_and_historical_guard() -> None:
     assert manifest["version"] == design["version"]
 
     manifest_sha = hashlib.sha256((CORPUS_ROOT / "manifest.json").read_bytes()).hexdigest()
-    assert manifest_sha == "0" * 64, manifest_sha
+    assert manifest_sha == "f33fe44bf30521958f09f904e8031e079789120a2f2d0c341480eca0b20d00f4"
 
 
 def test_post_v2_heldout_v1_png_and_gt_input_integrity() -> None:
