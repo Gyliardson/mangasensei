@@ -153,6 +153,15 @@ def test_c1_c2_c3_interleaves_ambiguous_overlap_bridge(page_id: str) -> None:
     )
 
 
+def test_c3_h13_multiple_complete_internal_frames_fail_closed() -> None:
+    control = _run("H13", CalibrationConfig())
+    recovered = _run("H13", CalibrationConfig(c3_merged_frame_recovery=True))
+    assert not recovered.diagnostic.segmentation_reliable
+    assert recovered.diagnostic.recovery_reason == "rejected-multiple-strong-frame-candidates"
+    assert recovered.diagnostic.assignments == ()
+    assert _order(recovered) == _order(control)
+
+
 def test_c3_does_not_invent_second_frame_from_single_clean_frame() -> None:
     import cv2
 

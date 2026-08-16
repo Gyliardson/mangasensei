@@ -48,9 +48,6 @@ jobs:
       - name: Install frozen OCR dependency set
         run: uv sync --frozen --extra ocr
 
-      - name: Probe C3 line/frame geometry
-        run: uv run python -m scripts.reading_order_post_v2_calibration.inspect_c3_geometry
-
       - name: Run frozen-v2 parity and calibration regression tests
         run: uv run python -m pytest -q tests/reading_order_v2 tests/reading_order_post_v2_calibration
 

@@ -114,7 +114,7 @@ def _assert_frozen_v2_parity(
         )
 
 
-def _assignment_map(
+def _semantic_assignment_map(
     diagnostic: CalibrationDiagnostic,
 ) -> dict[str, tuple[object, ...]]:
     return {
@@ -122,17 +122,17 @@ def _assignment_map(
             item.status,
             item.assigned_group_index,
             item.candidate_group_indices,
-            item.reason,
         )
         for item in diagnostic.assignments
     }
 
 
-def _segmentation_record(diagnostic: CalibrationDiagnostic) -> tuple[object, ...]:
+def _semantic_segmentation_record(
+    diagnostic: CalibrationDiagnostic,
+) -> tuple[object, ...]:
     return (
         diagnostic.segmentation_reliable,
         diagnostic.segmentation_reason,
-        diagnostic.recovery_reason,
         tuple(
             (box.x1, box.y1, box.x2, box.y2)
             for box in diagnostic.segmentation_boxes
@@ -171,17 +171,17 @@ def _comparison(
             control_page = control_pages[page.page_id]
             control_diag = diagnostics["CONTROL"][page.page_id]
             candidate_diag = diagnostics[arm_name][page.page_id]
-            if page.observed_scored_order != control_page.observed_scored_order:
+            if candidate_diag.final_order != control_diag.final_order:
                 page_changes.append(
                     {
                         "pageId": page.page_id,
-                        "control": control_page.observed_scored_order,
-                        "candidate": page.observed_scored_order,
+                        "control": control_diag.final_order,
+                        "candidate": candidate_diag.final_order,
                     }
                 )
 
-            control_assignments = _assignment_map(control_diag)
-            candidate_assignments = _assignment_map(candidate_diag)
+            control_assignments = _semantic_assignment_map(control_diag)
+            candidate_assignments = _semantic_assignment_map(candidate_diag)
             region_ids = sorted(set(control_assignments) | set(candidate_assignments))
             for region_id in region_ids:
                 before = control_assignments.get(region_id)
@@ -196,8 +196,8 @@ def _comparison(
                         }
                     )
 
-            before_segmentation = _segmentation_record(control_diag)
-            after_segmentation = _segmentation_record(candidate_diag)
+            before_segmentation = _semantic_segmentation_record(control_diag)
+            after_segmentation = _semantic_segmentation_record(candidate_diag)
             if before_segmentation != after_segmentation:
                 segmentation_changes.append(
                     {
