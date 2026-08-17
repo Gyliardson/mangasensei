@@ -14,8 +14,8 @@ from scripts.reading_order_post_v2_qualification import (
     EVIDENCE_SCHEMA_VERSION,
     EXPERIMENT_ID,
     SPEC_SCHEMA_VERSION,
-    spec as spec_module,
 )
+from scripts.reading_order_post_v2_qualification import spec as spec_module
 from scripts.reading_order_post_v2_qualification.canonical import (
     sha256_path,
     verify_checksums,
