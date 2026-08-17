@@ -6,7 +6,9 @@ import struct
 import zlib
 from pathlib import Path
 
+import numpy as np
 import pytest
+from PIL import Image
 from scripts.reading_order_post_v2_qualification.contracts import ContractError, load_corpus_design
 from scripts.reading_order_post_v2_qualification.png_integrity import (
     validate_corpus_image_integrity,
@@ -15,13 +17,9 @@ from scripts.reading_order_post_v2_qualification.png_integrity import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RETIRED_V1_ROOT = REPO_ROOT / "assets" / "reading-order-post-v2" / "heldout-v1"
-FORENSIC_INVENTORY = (
-    REPO_ROOT
-    / "scripts"
-    / "reading_order_post_v2_qualification"
-    / "forensics"
-    / "heldout-v1-png-integrity.json"
-)
+FORENSIC_ROOT = REPO_ROOT / "scripts" / "reading_order_post_v2_qualification" / "forensics"
+FORENSIC_INVENTORY = FORENSIC_ROOT / "heldout-v1-png-integrity.json"
+RUNTIME_DECODE_INVENTORY = FORENSIC_ROOT / "heldout-v1-runtime-decode.json"
 
 
 def _chunk(chunk_type: bytes, data: bytes) -> bytes:
@@ -134,6 +132,35 @@ def test_retired_v1_png_integrity_inventory_is_exact() -> None:
     assert invalid == evidence["invalidPageIds"]
     assert len(actual_pages) == evidence["pageCount"] == 24
     assert len(actual_pages) - len(invalid) == evidence["validPageCount"] == 18
+    assert evidence["classification"] == "FORENSIC_ONLY_RETIRED_HELDOUT_NOT_SCIENTIFIC_EVIDENCE"
+
+
+def test_retired_v1_runtime_decoder_inventory_matches_run_arm_pixel_loading() -> None:
+    design = load_corpus_design(RETIRED_V1_ROOT / "corpus-design.json")
+    evidence = json.loads(RUNTIME_DECODE_INVENTORY.read_text(encoding="utf-8"))
+    actual_passes: list[str] = []
+    actual_failures: list[dict[str, str]] = []
+
+    for page_id in design.page_ids:
+        image_path = RETIRED_V1_ROOT / "images" / f"{page_id}.png"
+        try:
+            with Image.open(image_path) as opened:
+                assert opened.mode == evidence["expectedMode"]
+                assert opened.size == (evidence["expectedWidth"], evidence["expectedHeight"])
+                pixels = np.asarray(opened.convert("RGB"))
+                assert pixels.shape == (
+                    evidence["expectedHeight"],
+                    evidence["expectedWidth"],
+                    3,
+                )
+        except OSError as exc:
+            actual_failures.append({"pageId": page_id, "errorClass": type(exc).__name__})
+        else:
+            actual_passes.append(page_id)
+
+    assert actual_passes == evidence["decodePassPageIds"]
+    assert actual_failures == evidence["decodeFailures"]
+    assert len(actual_passes) + len(actual_failures) == evidence["pageCount"] == 24
     assert evidence["classification"] == "FORENSIC_ONLY_RETIRED_HELDOUT_NOT_SCIENTIFIC_EVIDENCE"
 
 
