@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -44,6 +45,12 @@ from scripts.reading_order_post_v2_qualification.scoring import (
     strict_wrong_set_improvement,
     wrong_set_is_subset,
 )
+from scripts.reading_order_post_v2_qualification.spec import (
+    LEGACY_SPEC_PATH,
+    RETIRED_BINDING_V2,
+    SpecError,
+    validate_spec,
+)
 from scripts.reading_order_post_v2_qualification.verdict import (
     ComponentStatus,
     Verdict,
@@ -56,7 +63,7 @@ SPEC_PATH = (
     / "scripts"
     / "reading_order_post_v2_qualification"
     / "spec"
-    / "experiment-spec-v1.json"
+    / "experiment-spec-v2.json"
 )
 WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "reading-order-post-v2-qualification.yml"
 CANDIDATE_PATH = (
@@ -69,6 +76,10 @@ CANDIDATE_PATH = (
     / "reading_order_post_v2_calibration.py"
 )
 PRODUCTION_PATH = REPO_ROOT / "backend" / "src" / "mangasensei" / "ocr" / "reading_order.py"
+
+
+def _resolved_spec() -> dict[str, object]:
+    return validate_spec(SPEC_PATH)
 
 
 def _pair(page_id: str, slice_name: str) -> PageGroundTruth:
@@ -88,7 +99,7 @@ def _empty_diagnostics() -> dict[ArmId, dict[str, dict[str, object]]]:
 
 
 def test_spec_declares_frozen_identity_constants_and_no_authorization() -> None:
-    spec = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
+    spec = _resolved_spec()
     assert spec["schemaVersion"] == SPEC_SCHEMA_VERSION
     assert spec["experimentId"] == EXPERIMENT_ID
     assert spec["diagnosticSchemaVersion"] == DIAGNOSTIC_SCHEMA_VERSION
@@ -103,7 +114,7 @@ def test_spec_declares_frozen_identity_constants_and_no_authorization() -> None:
         ),
         "treeSha": "68418482b8ccf5d7a3cb1c9ef3834505bd20cd4c",
     }
-    constants = {item["symbol"]: item for item in spec["numericConstants"]}
+    constants = {item["symbol"]: item for item in spec["numericConstants"]}  # type: ignore[index]
     assert constants["_BOUNDARY_GUARD_PX"]["value"] == 1
     assert constants["_BOUNDARY_GUARD_PX"]["provenanceCategory"] == "A"
     assert constants["_FRAME_MIN_SIDE_COVERAGE"]["value"] == 0.8
@@ -111,9 +122,13 @@ def test_spec_declares_frozen_identity_constants_and_no_authorization() -> None:
     assert constants["minor_major_axis_ratio"]["provenanceCategory"] == "D"
     assert constants["_panel_precedence_edges.same_level.x_overlap_max"]["value"] == 0.15
     assert constants["_panel_precedence_edges.aligned.y_overlap_max"]["value"] == 0.2
-    assert spec["freezeBoundaries"]["noFutureHeldoutAuthoredOrRevealedByFreeze"] is True
-    assert spec["freezeBoundaries"]["noQualificationExecutionAuthorizedBySpec"] is True
-    assert spec["freezeBoundaries"]["noProductionActivation"] is True
+    freeze = spec["freezeBoundaries"]
+    assert isinstance(freeze, dict)
+    assert freeze["noFutureHeldoutAuthoredOrRevealedByFreeze"] is True
+    assert freeze["noQualificationExecutionAuthorizedBySpec"] is True
+    assert freeze["noProductionActivation"] is True
+    assert freeze["noRetiredPostV2HeldoutV1Reuse"] is True
+    assert spec["retiredPostV2HeldoutV1Binding"] == RETIRED_BINDING_V2
     assert spec["baselineProductionBinding"] == {
         "commitSha": "f45facb2284d740df2f294800f705414e0ba465e",
         "role": (
@@ -139,14 +154,47 @@ def test_spec_declares_frozen_identity_constants_and_no_authorization() -> None:
     }
 
 
+def test_v2_overlay_preserves_v1_scientific_methodology_exactly() -> None:
+    legacy = json.loads(LEGACY_SPEC_PATH.read_text(encoding="utf-8"))
+    resolved = copy.deepcopy(_resolved_spec())
+
+    resolved["schemaVersion"] = legacy["schemaVersion"]
+    resolved["experimentId"] = legacy["experimentId"]
+    freeze = resolved["freezeBoundaries"]
+    assert isinstance(freeze, dict)
+    freeze.pop("noRetiredPostV2HeldoutV1Reuse")
+    design_coverage = resolved["newHeldoutDesignCoverage"]
+    assert isinstance(design_coverage, dict)
+    design_coverage["authoringBoundary"] = legacy["newHeldoutDesignCoverage"]["authoringBoundary"]
+    resolved.pop("retiredPostV2HeldoutV1Binding")
+    resolved["sourceBindings"] = legacy["sourceBindings"]
+    workflow_contract = resolved["workflowContract"]
+    assert isinstance(workflow_contract, dict)
+    workflow_contract["gitBlobSha"] = legacy["workflowContract"]["gitBlobSha"]
+    workflow_contract["preEnvironmentChecks"] = legacy["workflowContract"]["preEnvironmentChecks"]
+
+    assert resolved == legacy
+
+
+def test_historical_v1_spec_is_retired_and_non_executable() -> None:
+    with pytest.raises(SpecError, match="retired and non-executable"):
+        validate_spec(LEGACY_SPEC_PATH)
+
+
 def test_spec_fixes_eight_attributable_arms_and_required_slices() -> None:
-    spec = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
+    spec = _resolved_spec()
     assert spec["arms"] == [arm.value for arm in ArmId]
-    assert spec["armRationale"]["keepAllEight"] is True
-    assert spec["sliceMinima"]["c3-positive-recovery"] == {"minPairs": 10, "minPages": 4}
-    assert spec["sliceMinima"]["clean-control"] == {"minPairs": 16, "minPages": 6}
-    assert spec["corpusDesignRequirements"]["minimumPageCount"] == 24
-    assert spec["corpusDesignRequirements"]["minimumQualificationPairs"] == 120
+    arm_rationale = spec["armRationale"]
+    assert isinstance(arm_rationale, dict)
+    assert arm_rationale["keepAllEight"] is True
+    slice_minima = spec["sliceMinima"]
+    assert isinstance(slice_minima, dict)
+    assert slice_minima["c3-positive-recovery"] == {"minPairs": 10, "minPages": 4}
+    assert slice_minima["clean-control"] == {"minPairs": 16, "minPages": 6}
+    requirements = spec["corpusDesignRequirements"]
+    assert isinstance(requirements, dict)
+    assert requirements["minimumPageCount"] == 24
+    assert requirements["minimumQualificationPairs"] == 120
 
 
 def test_qualification_identity_binds_all_frozen_inputs() -> None:
@@ -394,6 +442,8 @@ def test_workflow_is_manual_least_privilege_pinned_and_fail_closed() -> None:
     assert "persist-credentials: false" in workflow
     assert "authorize_new_qualification" in workflow
     assert "test \"$AUTHORIZED\" = \"true\"" in workflow
+    assert f'test "$EXPERIMENT_ID" = "{EXPERIMENT_ID}"' in workflow
+    assert "EXPERIMENT_SPEC: scripts/reading_order_post_v2_qualification/spec/experiment-spec-v2.json" in workflow
     assert "refs/remotes/origin/main" in workflow
     assert "test -z \"$(git status --porcelain)\"" in workflow
     assert workflow.index("Reject duplicate or replayed observed identity") < workflow.index(
