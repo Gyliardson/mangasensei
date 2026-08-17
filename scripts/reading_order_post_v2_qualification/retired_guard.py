@@ -25,7 +25,10 @@ def _load_retired_manifest() -> dict[str, Any]:
     payload = _load_object(RETIRED_MANIFEST_PATH)
     if not isinstance(payload.get("inventory"), list):
         raise ValueError("retired post-v2 held-out v1 manifest is malformed")
-    if payload.get("corpusId") != RETIRED_CORPUS_ID or payload.get("version") != RETIRED_CORPUS_VERSION:
+    if (
+        payload.get("corpusId") != RETIRED_CORPUS_ID
+        or payload.get("version") != RETIRED_CORPUS_VERSION
+    ):
         raise ValueError("retired post-v2 held-out v1 manifest identity changed")
     return payload
 
