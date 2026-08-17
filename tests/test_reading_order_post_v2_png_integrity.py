@@ -30,12 +30,19 @@ def _chunk(chunk_type: bytes, data: bytes) -> bytes:
     return struct.pack(">I", len(data)) + chunk_type + data + struct.pack(">I", crc)
 
 
-def _png_bytes(*, width: int = 3, height: int = 2, truncate_idat: bool = False) -> bytes:
+def _png_bytes(
+    *,
+    width: int = 3,
+    height: int = 2,
+    truncate_idat: bool = False,
+    trailing_idat_bytes: bytes = b"",
+) -> bytes:
     ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
     raw = b"".join(b"\x00" + bytes([row + 1]) * (width * 3) for row in range(height))
     compressed = zlib.compress(raw)
     if truncate_idat:
         compressed = compressed[:-2]
+    compressed += trailing_idat_bytes
     return b"".join(
         (
             b"\x89PNG\r\n\x1a\n",
@@ -66,6 +73,14 @@ def test_validate_rgb_png_rejects_truncated_idat_even_with_valid_chunk_crc(tmp_p
     image.write_bytes(_png_bytes(truncate_idat=True))
 
     with pytest.raises(ContractError, match="invalid or truncated IDAT zlib stream"):
+        validate_rgb_png(image)
+
+
+def test_validate_rgb_png_rejects_trailing_bytes_inside_valid_idat(tmp_path: Path) -> None:
+    image = tmp_path / "trailing-idat.png"
+    image.write_bytes(_png_bytes(trailing_idat_bytes=b"not-part-of-zlib"))
+
+    with pytest.raises(ContractError, match="unexpected bytes after IDAT zlib stream"):
         validate_rgb_png(image)
 
 
