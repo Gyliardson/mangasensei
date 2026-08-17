@@ -443,7 +443,10 @@ def test_workflow_is_manual_least_privilege_pinned_and_fail_closed() -> None:
     assert "authorize_new_qualification" in workflow
     assert "test \"$AUTHORIZED\" = \"true\"" in workflow
     assert f'test "$EXPERIMENT_ID" = "{EXPERIMENT_ID}"' in workflow
-    assert "EXPERIMENT_SPEC: scripts/reading_order_post_v2_qualification/spec/experiment-spec-v2.json" in workflow
+    assert (
+        "EXPERIMENT_SPEC: scripts/reading_order_post_v2_qualification/"
+        "spec/experiment-spec-v2.json"
+    ) in workflow
     assert "refs/remotes/origin/main" in workflow
     assert "test -z \"$(git status --porcelain)\"" in workflow
     assert workflow.index("Reject duplicate or replayed observed identity") < workflow.index(
