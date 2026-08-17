@@ -1,0 +1,80 @@
+{
+  "baseSpec": {
+    "experimentId": "reading-order-post-v2-c1-c2-c3-b1-v1",
+    "gitBlobSha": "16e0a6b49cd2c351e3c76241e51beb52d9ce2591",
+    "path": "scripts/reading_order_post_v2_qualification/spec/experiment-spec-v1.json",
+    "schemaVersion": "reading-order-post-v2-experiment-spec-v1",
+    "sha256": "1078c23cc99b3298bb77ec4a1deb452ec417f672a33479f5c115435c438bbc35"
+  },
+  "experimentId": "reading-order-post-v2-c1-c2-c3-b1-v2",
+  "infrastructureOverlay": {
+    "freezeBoundaryAdditions": {
+      "noRetiredPostV2HeldoutV1Reuse": true
+    },
+    "newHeldoutAuthoringBoundary": "Requirements only are frozen here. This repository change contains no future held-out pages, images, coordinates, ground truth, expected outputs, or fake future hashes. Future authoring must be isolated from observed H01-H16 and Q001-Q024 material and from candidate outputs; Q001-Q024 may not be repaired, traced, renamed, or reused as future held-out cases.",
+    "retiredPostV2HeldoutV1Binding": {
+      "classification": "observed-invalid-retired-not-future-heldout-evidence",
+      "corpusId": "mangasensei-reading-order-post-v2-heldout-v1",
+      "corpusVersion": "1.0.0",
+      "manifestGitBlobSha": "0f913fde5a302ae9c254bdcbc9956522e0451d31",
+      "manifestSha256": "8bc6f0f7a173e618f4929d30b727ea3e58df6addf1f9a0e07585548f2088f62e",
+      "qualificationIdentity": "ropv2q-e9fd2e87e7d7a0a20c3bed83220b49a210455cdbc7af354c4d4d176b08ac2308",
+      "qualificationRunId": 31982883447,
+      "reuseForbidden": true
+    },
+    "sourceBindingOverrides": [
+      {
+        "gitBlobSha": "912d5ece5b9472fa96d99f29b038d60b9a0a9d3b",
+        "path": ".github/workflows/reading-order-post-v2-qualification.yml",
+        "role": "github-qualification-workflow"
+      },
+      {
+        "gitBlobSha": "0f913fde5a302ae9c254bdcbc9956522e0451d31",
+        "path": "assets/reading-order-post-v2/heldout-v1/manifest.json",
+        "role": "retired-post-v2-heldout-v1-content-hash-ledger"
+      },
+      {
+        "gitBlobSha": "d163660ef313e4c5c116d5958ff60c5e10823303",
+        "path": "scripts/reading_order_post_v2_qualification/__init__.py",
+        "role": "qualification-package-identity"
+      },
+      {
+        "gitBlobSha": "c8e8bdf099b8b21e257e1adbf7ec73d96e52a522",
+        "path": "scripts/reading_order_post_v2_qualification/evidence.py",
+        "role": "evidence-packager"
+      },
+      {
+        "gitBlobSha": "cd80fd966203cfc09eb5688eeb8501b0b97d6e1d",
+        "path": "scripts/reading_order_post_v2_qualification/png_integrity.py",
+        "role": "qualification-png-integrity"
+      },
+      {
+        "gitBlobSha": "b423df9f57ea49b16bdfd701b4468960439e070d",
+        "path": "scripts/reading_order_post_v2_qualification/preflight.py",
+        "role": "preflight-validator"
+      },
+      {
+        "gitBlobSha": "586372cc2ec8054dce62c2d18dcbbc56ac5b56c2",
+        "path": "scripts/reading_order_post_v2_qualification/retired_guard.py",
+        "role": "retired-post-v2-heldout-v1-reuse-guard"
+      },
+      {
+        "gitBlobSha": "220f0adc68822f3b480bab77f3503884fd23c085",
+        "path": "scripts/reading_order_post_v2_qualification/spec.py",
+        "role": "spec-validator"
+      },
+      {
+        "gitBlobSha": "16e0a6b49cd2c351e3c76241e51beb52d9ce2591",
+        "path": "scripts/reading_order_post_v2_qualification/spec/experiment-spec-v1.json",
+        "role": "frozen-v1-scientific-methodology-base"
+      }
+    ],
+    "workflowPreEnvironmentChecksAppend": [
+      "retired post-v2 held-out v1 corpus identity/content reuse rejected",
+      "sealed corpus PNG streams pass strict RGB8 CRC and complete IDAT decode validation"
+    ]
+  },
+  "repository": "Gyliardson/mangasensei",
+  "schemaVersion": "reading-order-post-v2-experiment-spec-v2",
+  "status": "FROZEN_NOT_AUTHORIZED_FOR_EXECUTION"
+}
