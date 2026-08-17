@@ -54,12 +54,12 @@
         "role": "preflight-validator"
       },
       {
-        "gitBlobSha": "586372cc2ec8054dce62c2d18dcbbc56ac5b56c2",
+        "gitBlobSha": "b7f1ab98561080805ec877838e1227a282094ea4",
         "path": "scripts/reading_order_post_v2_qualification/retired_guard.py",
         "role": "retired-post-v2-heldout-v1-reuse-guard"
       },
       {
-        "gitBlobSha": "220f0adc68822f3b480bab77f3503884fd23c085",
+        "gitBlobSha": "efa5c74fbb0982275fbeafb3583b7fb7c323ba91",
         "path": "scripts/reading_order_post_v2_qualification/spec.py",
         "role": "spec-validator"
       },
