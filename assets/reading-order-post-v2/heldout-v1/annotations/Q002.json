@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "reading-order-post-v2-annotation-v1",
+  "pageId": "Q002",
+  "readingOrder": [
+    "Q002-R01",
+    "Q002-R02",
+    "Q002-R03",
+    "Q002-R04",
+    "Q002-R05",
+    "Q002-R06",
+    "Q002-R07",
+    "Q002-R08"
+  ],
+  "unscoredRegionIds": [],
+  "qualificationPairs": [
+    {
+      "id": "Q002-P01",
+      "earlier": "Q002-R01",
+      "later": "Q002-R02",
+      "slices": [
+        "clean-control"
+      ]
+    },
+    {
+      "id": "Q002-P02",
+      "earlier": "Q002-R02",
+      "later": "Q002-R03",
+      "slices": [
+        "clean-control"
+      ]
+    },
+    {
+      "id": "Q002-P03",
+      "earlier": "Q002-R03",
+      "later": "Q002-R04",
+      "slices": [
+        "clean-control"
+      ]
+    },
+    {
+      "id": "Q002-P04",
+      "earlier": "Q002-R04",
+      "later": "Q002-R05",
+      "slices": [
+        "clean-control"
+      ]
+    },
+    {
+      "id": "Q002-P05",
+      "earlier": "Q002-R05",
+      "later": "Q002-R06",
+      "slices": [
+        "clean-control"
+      ]
+    },
+    {
+      "id": "Q002-P06",
+      "earlier": "Q002-R06",
+      "later": "Q002-R07",
+      "slices": [
+        "clean-control"
+      ]
+    },
+    {
+      "id": "Q002-P07",
+      "earlier": "Q002-R07",
+      "later": "Q002-R08",
+      "slices": [
+        "clean-control"
+      ]
+    }
+  ],
+  "layoutTags": [
+    "authored-clean-grid",
+    "clean-control",
+    "synthetic-project-authored"
+  ]
+}

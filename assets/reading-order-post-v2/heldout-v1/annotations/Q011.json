@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "reading-order-post-v2-annotation-v1",
+  "pageId": "Q011",
+  "readingOrder": [
+    "Q011-R01",
+    "Q011-R02",
+    "Q011-R03",
+    "Q011-R04",
+    "Q011-R05",
+    "Q011-R06",
+    "Q011-R07",
+    "Q011-R08"
+  ],
+  "unscoredRegionIds": [],
+  "qualificationPairs": [
+    {
+      "id": "Q011-P01",
+      "earlier": "Q011-R01",
+      "later": "Q011-R02",
+      "slices": [
+        "c2-gutter-bridge"
+      ]
+    },
+    {
+      "id": "Q011-P02",
+      "earlier": "Q011-R02",
+      "later": "Q011-R03",
+      "slices": [
+        "c2-one-sided-non-unique-fail-closed"
+      ]
+    },
+    {
+      "id": "Q011-P03",
+      "earlier": "Q011-R03",
+      "later": "Q011-R04",
+      "slices": [
+        "c2-gutter-bridge"
+      ]
+    },
+    {
+      "id": "Q011-P04",
+      "earlier": "Q011-R04",
+      "later": "Q011-R05",
+      "slices": [
+        "c2-one-sided-non-unique-fail-closed"
+      ]
+    },
+    {
+      "id": "Q011-P05",
+      "earlier": "Q011-R05",
+      "later": "Q011-R06",
+      "slices": [
+        "c2-gutter-bridge"
+      ]
+    },
+    {
+      "id": "Q011-P06",
+      "earlier": "Q011-R06",
+      "later": "Q011-R07",
+      "slices": [
+        "c2-one-sided-non-unique-fail-closed"
+      ]
+    },
+    {
+      "id": "Q011-P07",
+      "earlier": "Q011-R07",
+      "later": "Q011-R08",
+      "slices": [
+        "c2-gutter-bridge"
+      ]
+    }
+  ],
+  "layoutTags": [
+    "authored-one-sided-fail-closed",
+    "authored-unique-gutter",
+    "c2",
+    "synthetic-project-authored"
+  ]
+}

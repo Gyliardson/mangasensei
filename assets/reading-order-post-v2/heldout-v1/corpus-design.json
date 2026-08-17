@@ -1,0 +1,114 @@
+{
+  "schemaVersion": "reading-order-post-v2-corpus-design-v1",
+  "corpusId": "mangasensei-reading-order-post-v2-heldout-v1",
+  "version": "1.0.0",
+  "pageIds": [
+    "Q001",
+    "Q002",
+    "Q003",
+    "Q004",
+    "Q005",
+    "Q006",
+    "Q007",
+    "Q008",
+    "Q009",
+    "Q010",
+    "Q011",
+    "Q012",
+    "Q013",
+    "Q014",
+    "Q015",
+    "Q016",
+    "Q017",
+    "Q018",
+    "Q019",
+    "Q020",
+    "Q021",
+    "Q022",
+    "Q023",
+    "Q024"
+  ],
+  "requirements": {
+    "minimumPageCount": 24,
+    "minimumQualificationPairs": 120,
+    "minimumScoredRegions": 96,
+    "minimumCombinedMechanismPages": 4,
+    "minimumIntentionalFallbackPages": 3,
+    "minimumCleanControlPages": 6
+  },
+  "requiredSlices": {
+    "c1-boundary-positive": {
+      "minPairs": 10,
+      "minPages": 4
+    },
+    "c1-near-boundary-negative": {
+      "minPairs": 8,
+      "minPages": 4
+    },
+    "c2-gutter-bridge": {
+      "minPairs": 8,
+      "minPages": 3
+    },
+    "c2-ambiguous-overlap-bridge": {
+      "minPairs": 8,
+      "minPages": 3
+    },
+    "c2-pair-precedence-slot": {
+      "minPairs": 8,
+      "minPages": 3
+    },
+    "c2-one-sided-non-unique-fail-closed": {
+      "minPairs": 8,
+      "minPages": 3
+    },
+    "c2-conflict-cycle-safety": {
+      "minPairs": 6,
+      "minPages": 2
+    },
+    "c3-positive-recovery": {
+      "minPairs": 10,
+      "minPages": 4
+    },
+    "c3-zero-multiple-anchor-negative": {
+      "minPairs": 6,
+      "minPages": 2
+    },
+    "c3-zero-multiple-companion-negative": {
+      "minPairs": 6,
+      "minPages": 2
+    },
+    "c3-invalid-topology-negative": {
+      "minPairs": 6,
+      "minPages": 2
+    },
+    "c3-insufficient-visible-support-negative": {
+      "minPairs": 6,
+      "minPages": 2
+    },
+    "b1-horizontal": {
+      "minPairs": 10,
+      "minPages": 4
+    },
+    "b1-vertical": {
+      "minPairs": 10,
+      "minPages": 4
+    },
+    "b1-mixed-orientation": {
+      "minPairs": 10,
+      "minPages": 4
+    },
+    "combined-c1-c2-c3-b1": {
+      "minPairs": 12,
+      "minPages": 4
+    },
+    "clean-control": {
+      "minPairs": 16,
+      "minPages": 6
+    },
+    "intentional-fallback": {
+      "minPairs": 8,
+      "minPages": 3
+    }
+  },
+  "authorshipBoundary": "new-project-authored-no-historical-v2-case-reuse"
+}

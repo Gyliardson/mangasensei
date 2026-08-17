@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "reading-order-post-v2-annotation-v1",
+  "pageId": "Q017",
+  "readingOrder": [
+    "Q017-R01",
+    "Q017-R02",
+    "Q017-R03",
+    "Q017-R04",
+    "Q017-R05",
+    "Q017-R06",
+    "Q017-R07",
+    "Q017-R08"
+  ],
+  "unscoredRegionIds": [],
+  "qualificationPairs": [
+    {
+      "id": "Q017-P01",
+      "earlier": "Q017-R01",
+      "later": "Q017-R02",
+      "slices": [
+        "c2-conflict-cycle-safety",
+        "c3-invalid-topology-negative",
+        "intentional-fallback"
+      ]
+    },
+    {
+      "id": "Q017-P02",
+      "earlier": "Q017-R02",
+      "later": "Q017-R03",
+      "slices": [
+        "c3-insufficient-visible-support-negative",
+        "intentional-fallback"
+      ]
+    },
+    {
+      "id": "Q017-P03",
+      "earlier": "Q017-R03",
+      "later": "Q017-R04",
+      "slices": [
+        "c2-conflict-cycle-safety",
+        "c3-invalid-topology-negative",
+        "intentional-fallback"
+      ]
+    },
+    {
+      "id": "Q017-P04",
+      "earlier": "Q017-R04",
+      "later": "Q017-R05",
+      "slices": [
+        "c3-insufficient-visible-support-negative",
+        "intentional-fallback"
+      ]
+    },
+    {
+      "id": "Q017-P05",
+      "earlier": "Q017-R05",
+      "later": "Q017-R06",
+      "slices": [
+        "c2-conflict-cycle-safety",
+        "c3-invalid-topology-negative",
+        "intentional-fallback"
+      ]
+    },
+    {
+      "id": "Q017-P06",
+      "earlier": "Q017-R06",
+      "later": "Q017-R07",
+      "slices": [
+        "c3-insufficient-visible-support-negative",
+        "intentional-fallback"
+      ]
+    },
+    {
+      "id": "Q017-P07",
+      "earlier": "Q017-R07",
+      "later": "Q017-R08",
+      "slices": [
+        "c2-conflict-cycle-safety",
+        "c3-invalid-topology-negative",
+        "intentional-fallback"
+      ]
+    }
+  ],
+  "layoutTags": [
+    "authored-conflict-cycle",
+    "authored-insufficient-visible-support",
+    "authored-invalid-topology",
+    "intentional-fallback",
+    "synthetic-project-authored"
+  ]
+}

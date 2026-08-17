@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "reading-order-post-v2-annotation-v1",
+  "pageId": "Q022",
+  "readingOrder": [
+    "Q022-R01",
+    "Q022-R02",
+    "Q022-R03",
+    "Q022-R04",
+    "Q022-R05",
+    "Q022-R06",
+    "Q022-R07",
+    "Q022-R08"
+  ],
+  "unscoredRegionIds": [],
+  "qualificationPairs": [
+    {
+      "id": "Q022-P01",
+      "earlier": "Q022-R01",
+      "later": "Q022-R02",
+      "slices": [
+        "c3-positive-recovery",
+        "combined-c1-c2-c3-b1"
+      ]
+    },
+    {
+      "id": "Q022-P02",
+      "earlier": "Q022-R02",
+      "later": "Q022-R03",
+      "slices": [
+        "c3-positive-recovery",
+        "combined-c1-c2-c3-b1"
+      ]
+    },
+    {
+      "id": "Q022-P03",
+      "earlier": "Q022-R03",
+      "later": "Q022-R04",
+      "slices": [
+        "c3-positive-recovery",
+        "combined-c1-c2-c3-b1"
+      ]
+    },
+    {
+      "id": "Q022-P04",
+      "earlier": "Q022-R04",
+      "later": "Q022-R05",
+      "slices": [
+        "c3-positive-recovery",
+        "combined-c1-c2-c3-b1"
+      ]
+    },
+    {
+      "id": "Q022-P05",
+      "earlier": "Q022-R05",
+      "later": "Q022-R06",
+      "slices": [
+        "c3-positive-recovery",
+        "combined-c1-c2-c3-b1"
+      ]
+    },
+    {
+      "id": "Q022-P06",
+      "earlier": "Q022-R06",
+      "later": "Q022-R07",
+      "slices": [
+        "c3-positive-recovery",
+        "combined-c1-c2-c3-b1"
+      ]
+    },
+    {
+      "id": "Q022-P07",
+      "earlier": "Q022-R07",
+      "later": "Q022-R08",
+      "slices": [
+        "c3-positive-recovery",
+        "combined-c1-c2-c3-b1"
+      ]
+    }
+  ],
+  "layoutTags": [
+    "authored-combined-mechanisms",
+    "authored-single-anchor-occluded-companion",
+    "synthetic-project-authored"
+  ]
+}
