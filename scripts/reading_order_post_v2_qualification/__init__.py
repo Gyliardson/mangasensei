@@ -1,7 +1,7 @@
 """Frozen post-v2 Reading Order qualification tooling."""
 
-EXPERIMENT_ID = "reading-order-post-v2-c1-c2-c3-b1-v1"
-SPEC_SCHEMA_VERSION = "reading-order-post-v2-experiment-spec-v1"
+EXPERIMENT_ID = "reading-order-post-v2-c1-c2-c3-b1-v2"
+SPEC_SCHEMA_VERSION = "reading-order-post-v2-experiment-spec-v2"
 DIAGNOSTIC_SCHEMA_VERSION = "reading-order-post-v2-diagnostic-v1"
 EVIDENCE_SCHEMA_VERSION = "reading-order-post-v2-evidence-v1"
 CORPUS_DESIGN_SCHEMA_VERSION = "reading-order-post-v2-corpus-design-v1"

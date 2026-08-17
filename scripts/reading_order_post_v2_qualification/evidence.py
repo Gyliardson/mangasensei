@@ -21,13 +21,15 @@ from .spec import validate_spec
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-README = """# Reading Order post-v2 held-out qualification evidence
+
+def _readme(experiment_id: str) -> str:
+    return f"""# Reading Order post-v2 held-out qualification evidence
 
 This deterministic bundle is evidence for exactly one authorized execution of
-`reading-order-post-v2-c1-c2-c3-b1-v1`. It is qualification evidence only for the
-sealed corpus, spec hash, repository SHA/tree, and qualification identity recorded
-inside the bundle. It is not production activation and does not authorize replay,
-tuning, release, or reuse of the corpus as future held-out evidence.
+`{experiment_id}`. It is qualification evidence only for the sealed corpus, spec
+hash, repository SHA/tree, and qualification identity recorded inside the bundle.
+It is not production activation and does not authorize replay, tuning, release, or
+reuse of the corpus as future held-out evidence.
 """
 
 
@@ -190,11 +192,12 @@ def build_evidence(
         staging / "provenance" / "run-metadata.json",
     )
 
+    experiment_id = str(spec["experimentId"])
     write_canonical_json(
         staging / "evidence-metadata.json",
         {
             "schemaVersion": EVIDENCE_SCHEMA_VERSION,
-            "experimentId": spec["experimentId"],
+            "experimentId": experiment_id,
             "qualificationIdentity": run_metadata["qualificationIdentity"],
             "classification": "NEW_FROZEN_HELDOUT_QUALIFICATION_NOT_PRODUCTION_ACTIVATION",
         },
@@ -213,7 +216,9 @@ def build_evidence(
     for name in ("comparison.json", "exercise.json", "repeat-hashes.json", "verdict.json"):
         _copy(output_root / "summary" / name, staging / name)
     _write_output_inventory(output_root, staging / "output-inventory.sha256")
-    (staging / "README.md").write_text(README, encoding="utf-8", newline="\n")
+    (staging / "README.md").write_text(
+        _readme(experiment_id), encoding="utf-8", newline="\n"
+    )
 
     write_checksums(staging)
     validate_staging_tree(staging)

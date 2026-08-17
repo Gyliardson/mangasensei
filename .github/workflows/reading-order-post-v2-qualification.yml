@@ -51,7 +51,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  EXPERIMENT_SPEC: scripts/reading_order_post_v2_qualification/spec/experiment-spec-v1.json
+  EXPERIMENT_SPEC: scripts/reading_order_post_v2_qualification/spec/experiment-spec-v2.json
   OUTPUT_ROOT: var/research/reading-order-post-v2
 
 jobs:
@@ -89,7 +89,7 @@ jobs:
           } > "$PROVENANCE_DIR/dispatch-request.txt"
 
           test "$AUTHORIZED" = "true"
-          test "$EXPERIMENT_ID" = "reading-order-post-v2-c1-c2-c3-b1-v1"
+          test "$EXPERIMENT_ID" = "reading-order-post-v2-c1-c2-c3-b1-v2"
           [[ "$EXECUTION_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$EXPECTED_TREE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$SPEC_SHA256" =~ ^[0-9a-f]{64}$ ]]
