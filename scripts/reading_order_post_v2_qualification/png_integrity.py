@@ -68,7 +68,8 @@ def validate_rgb_png(path: Path) -> PngImageInfo:
         actual_crc = zlib.crc32(chunk_type)
         actual_crc = zlib.crc32(chunk_data, actual_crc) & 0xFFFFFFFF
         if stored_crc != actual_crc:
-            raise _contract_error(path, f"CRC mismatch in {chunk_type.decode('ascii', 'replace')} chunk")
+            chunk_name = chunk_type.decode("ascii", "replace")
+            raise _contract_error(path, f"CRC mismatch in {chunk_name} chunk")
 
         if info is None and chunk_type != b"IHDR":
             raise _contract_error(path, "IHDR must be the first PNG chunk")
