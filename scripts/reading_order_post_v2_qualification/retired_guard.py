@@ -12,9 +12,18 @@ RETIRED_MANIFEST_PATH = (
 )
 
 
-def _load_manifest(path: Path) -> dict[str, Any]:
+def _load_object(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or not isinstance(payload.get("inventory"), list):
+    if not isinstance(payload, dict):
+        raise ValueError(f"expected JSON object: {path}")
+    return payload
+
+
+def _load_retired_manifest() -> dict[str, Any]:
+    if not RETIRED_MANIFEST_PATH.is_file():
+        raise FileNotFoundError("retired post-v2 held-out v1 manifest is missing")
+    payload = _load_object(RETIRED_MANIFEST_PATH)
+    if not isinstance(payload.get("inventory"), list):
         raise ValueError("retired post-v2 held-out v1 manifest is malformed")
     if payload.get("corpusId") != RETIRED_CORPUS_ID or payload.get("version") != RETIRED_CORPUS_VERSION:
         raise ValueError("retired post-v2 held-out v1 manifest identity changed")
@@ -22,9 +31,7 @@ def _load_manifest(path: Path) -> dict[str, Any]:
 
 
 def _retired_content_sha256() -> frozenset[str]:
-    if not RETIRED_MANIFEST_PATH.is_file():
-        raise FileNotFoundError("retired post-v2 held-out v1 manifest is missing")
-    payload = _load_manifest(RETIRED_MANIFEST_PATH)
+    payload = _load_retired_manifest()
     digests = {
         item.get("sha256")
         for item in payload["inventory"]
@@ -35,15 +42,20 @@ def _retired_content_sha256() -> frozenset[str]:
     return frozenset(digests)
 
 
-def assert_no_retired_post_v2_v1_content_reuse(corpus_root: Path) -> None:
+def assert_no_retired_post_v2_v1_reuse(corpus_root: Path) -> None:
+    design_path = corpus_root / "corpus-design.json"
     manifest_path = corpus_root / "manifest.json"
-    if not manifest_path.is_file():
-        raise FileNotFoundError("future sealed corpus manifest is missing")
-    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    inventory = payload.get("inventory") if isinstance(payload, dict) else None
+    if not design_path.is_file() or not manifest_path.is_file():
+        raise FileNotFoundError("future sealed corpus design/manifest is missing")
+
+    design = _load_object(design_path)
+    manifest = _load_object(manifest_path)
+    if design.get("corpusId") == RETIRED_CORPUS_ID or manifest.get("corpusId") == RETIRED_CORPUS_ID:
+        raise ValueError("retired post-v2 held-out v1 corpus identity reuse is forbidden")
+
+    inventory = manifest.get("inventory")
     if not isinstance(inventory, list):
         raise ValueError("future corpus manifest must contain an inventory array")
-
     retired = _retired_content_sha256()
     reused = sorted(
         str(item["file"])
