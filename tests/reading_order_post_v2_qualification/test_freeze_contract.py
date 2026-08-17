@@ -6,6 +6,7 @@ import json
 import re
 from fractions import Fraction
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from scripts.reading_order_post_v2_qualification import (
@@ -13,6 +14,7 @@ from scripts.reading_order_post_v2_qualification import (
     EVIDENCE_SCHEMA_VERSION,
     EXPERIMENT_ID,
     SPEC_SCHEMA_VERSION,
+    spec as spec_module,
 )
 from scripts.reading_order_post_v2_qualification.canonical import (
     sha256_path,
@@ -79,7 +81,32 @@ PRODUCTION_PATH = REPO_ROOT / "backend" / "src" / "mangasensei" / "ocr" / "readi
 
 
 def _resolved_spec() -> dict[str, object]:
-    return validate_spec(SPEC_PATH)
+    # Normal PR CI deliberately checks out only the synthetic merge commit. The
+    # qualification workflow is separately required below to use fetch-depth: 0.
+    # Stub only immutable historical-object lookups; every HEAD:path binding is
+    # still resolved against the real checkout by spec_module._git.
+    legacy = json.loads(LEGACY_SPEC_PATH.read_text(encoding="utf-8"))
+    frozen_objects: dict[str, str] = {}
+    for binding_name in (
+        "candidateBinding",
+        "baselineProductionBinding",
+        "historicalV2ProductionBaselineBinding",
+    ):
+        binding = legacy[binding_name]
+        frozen_objects[f'{binding["commitSha"]}^{{tree}}'] = binding["treeSha"]
+        frozen_objects[f'{binding["commitSha"]}:{binding["sourcePath"]}'] = binding[
+            "sourceBlobSha"
+        ]
+
+    real_git = spec_module._git
+
+    def shallow_ci_git(*args: str) -> str:
+        if len(args) == 2 and args[0] == "rev-parse" and args[1] in frozen_objects:
+            return frozen_objects[args[1]]
+        return real_git(*args)
+
+    with patch.object(spec_module, "_git", shallow_ci_git):
+        return validate_spec(SPEC_PATH)
 
 
 def _pair(page_id: str, slice_name: str) -> PageGroundTruth:
@@ -440,6 +467,7 @@ def test_workflow_is_manual_least_privilege_pinned_and_fail_closed() -> None:
     assert "\n  pull_request:" not in workflow
     assert "permissions:\n  contents: read\n  actions: read" in workflow
     assert "persist-credentials: false" in workflow
+    assert "fetch-depth: 0" in workflow
     assert "authorize_new_qualification" in workflow
     assert "test \"$AUTHORIZED\" = \"true\"" in workflow
     assert f'test "$EXPERIMENT_ID" = "{EXPERIMENT_ID}"' in workflow
