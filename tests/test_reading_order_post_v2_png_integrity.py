@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import struct
 import zlib
 from pathlib import Path
@@ -14,6 +15,13 @@ from scripts.reading_order_post_v2_qualification.png_integrity import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RETIRED_V1_ROOT = REPO_ROOT / "assets" / "reading-order-post-v2" / "heldout-v1"
+FORENSIC_INVENTORY = (
+    REPO_ROOT
+    / "scripts"
+    / "reading_order_post_v2_qualification"
+    / "forensics"
+    / "heldout-v1-png-integrity.json"
+)
 
 
 def _chunk(chunk_type: bytes, data: bytes) -> bytes:
@@ -36,6 +44,11 @@ def _png_bytes(*, width: int = 3, height: int = 2, truncate_idat: bool = False) 
             _chunk(b"IEND", b""),
         )
     )
+
+
+def _git_blob_sha(payload: bytes) -> str:
+    header = f"blob {len(payload)}\0".encode()
+    return hashlib.sha1(header + payload, usedforsecurity=False).hexdigest()  # noqa: S324
 
 
 def test_validate_rgb_png_accepts_complete_noninterlaced_rgb(tmp_path: Path) -> None:
@@ -69,28 +82,44 @@ def test_validate_rgb_png_rejects_chunk_crc_mismatch(tmp_path: Path) -> None:
 
 def test_retired_v1_png_integrity_inventory_is_exact() -> None:
     design = load_corpus_design(RETIRED_V1_ROOT / "corpus-design.json")
-    invalid: dict[str, str] = {}
-    inventory: dict[str, dict[str, object]] = {}
+    evidence = json.loads(FORENSIC_INVENTORY.read_text(encoding="utf-8"))
+    expected_pages = {page["pageId"]: page for page in evidence["pages"]}
+    actual_pages: dict[str, dict[str, object]] = {}
 
     for page_id in design.page_ids:
         image = RETIRED_V1_ROOT / "images" / f"{page_id}.png"
-        digest = hashlib.sha256(image.read_bytes()).hexdigest()
+        payload = image.read_bytes()
+        actual: dict[str, object] = {
+            "pageId": page_id,
+            "file": f"images/{page_id}.png",
+            "gitBlobSha": _git_blob_sha(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
         try:
             info = validate_rgb_png(image)
         except ContractError as exc:
-            invalid[page_id] = str(exc)
-            inventory[page_id] = {"sha256": digest, "valid": False, "error": str(exc)}
+            prefix = f"{image}: "
+            message = str(exc)
+            assert message.startswith(prefix)
+            actual.update({"valid": False, "error": message.removeprefix(prefix)})
         else:
-            inventory[page_id] = {
-                "sha256": digest,
-                "valid": True,
-                "mode": "RGB",
-                "width": info.width,
-                "height": info.height,
-            }
+            actual.update(
+                {
+                    "valid": True,
+                    "mode": "RGB",
+                    "width": info.width,
+                    "height": info.height,
+                }
+            )
+        actual_pages[page_id] = actual
 
-    assert set(inventory) == set(design.page_ids)
-    assert set(invalid) == {"Q003", "Q010"}, inventory
+    assert set(expected_pages) == set(design.page_ids)
+    assert actual_pages == expected_pages
+    invalid = sorted(page_id for page_id, page in actual_pages.items() if not page["valid"])
+    assert invalid == evidence["invalidPageIds"]
+    assert len(actual_pages) == evidence["pageCount"] == 24
+    assert len(actual_pages) - len(invalid) == evidence["validPageCount"] == 18
+    assert evidence["classification"] == "FORENSIC_ONLY_RETIRED_HELDOUT_NOT_SCIENTIFIC_EVIDENCE"
 
 
 def test_retired_v1_is_rejected_before_any_arm_execution() -> None:
