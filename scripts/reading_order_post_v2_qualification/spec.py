@@ -43,7 +43,9 @@ RETIRED_BINDING_V2 = {
     "corpusVersion": "1.0.0",
     "manifestGitBlobSha": "0f913fde5a302ae9c254bdcbc9956522e0451d31",
     "manifestSha256": "8bc6f0f7a173e618f4929d30b727ea3e58df6addf1f9a0e07585548f2088f62e",
-    "qualificationIdentity": "ropv2q-e9fd2e87e7d7a0a20c3bed83220b49a210455cdbc7af354c4d4d176b08ac2308",
+    "qualificationIdentity": (
+        "ropv2q-e9fd2e87e7d7a0a20c3bed83220b49a210455cdbc7af354c4d4d176b08ac2308"
+    ),
     "qualificationRunId": 31982883447,
     "reuseForbidden": True,
 }
