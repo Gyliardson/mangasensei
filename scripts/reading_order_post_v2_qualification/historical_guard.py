@@ -35,7 +35,7 @@ HISTORICAL_V2_HELDOUT_CONTENT_SHA256 = frozenset(
         "2f530b0a4f1cfdfcbca8173ab320e302c7e0ecc789c51097ce0b5f8a4bba176f",
         "f72c6d00840aa4bf0f968d64caf5218383ecaa87839f23d82cf0fab347b9267c",
         "d46ba6d8fb1210691e343358248b70dbbd90b55de86bc171a85038c1acf8c78d",
-        "14c375ad3909fcf5b6e08bb977a5c97958d369ab5d028c51ad75692ba94a64c6",
+        "14c375ad39095521961e0af3e49147860987796b6ece93dadde7f37d5b441d10",
         "e2fa48573c3e191425376e3a83787ce128d45f8971e1f055a2e73188dc965fd4",
         "6039417ec091b40d7b2b03fabf0f44910d6f5db15efe8f194e2809eecb4db837",
         "6e518ecc3e8bb5dfcc61926ca26a0c6b5d9f274cd52f4a3a6601613af709bab8",
@@ -63,6 +63,11 @@ HISTORICAL_V2_HELDOUT_CONTENT_SHA256 = frozenset(
     }
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+RETIRED_POST_V2_V1_MANIFEST = (
+    REPO_ROOT / "assets" / "reading-order-post-v2" / "heldout-v1" / "manifest.json"
+)
+
 
 def _manifest_inventory(path: Path) -> list[dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -71,22 +76,42 @@ def _manifest_inventory(path: Path) -> list[dict[str, Any]]:
     return [item for item in payload["inventory"] if isinstance(item, dict)]
 
 
+def _retired_post_v2_v1_content_sha256() -> frozenset[str]:
+    if not RETIRED_POST_V2_V1_MANIFEST.is_file():
+        raise FileNotFoundError("retired post-v2 held-out v1 manifest is missing")
+    digests: set[str] = set()
+    for item in _manifest_inventory(RETIRED_POST_V2_V1_MANIFEST):
+        digest = item.get("sha256")
+        if isinstance(digest, str):
+            digests.add(digest)
+    if not digests:
+        raise ValueError("retired post-v2 held-out v1 manifest has no content hashes")
+    return frozenset(digests)
+
+
 def assert_no_historical_v2_content_reuse(corpus_root: Path) -> None:
     manifest_path = corpus_root / "manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError("future sealed corpus manifest is missing")
-    reused: list[str] = []
+    retired_post_v2 = _retired_post_v2_v1_content_sha256()
+    reused_historical: list[str] = []
+    reused_retired_post_v2: list[str] = []
     for item in _manifest_inventory(manifest_path):
         relative = item.get("file")
         digest = item.get("sha256")
-        if (
-            isinstance(relative, str)
-            and isinstance(digest, str)
-            and digest in HISTORICAL_V2_HELDOUT_CONTENT_SHA256
-        ):
-            reused.append(relative)
-    if reused:
+        if not isinstance(relative, str) or not isinstance(digest, str):
+            continue
+        if digest in HISTORICAL_V2_HELDOUT_CONTENT_SHA256:
+            reused_historical.append(relative)
+        if digest in retired_post_v2:
+            reused_retired_post_v2.append(relative)
+    if reused_historical:
         raise ValueError(
             "historical H01-H16 held-out content hash reuse is forbidden: "
-            + ", ".join(sorted(reused))
+            + ", ".join(sorted(reused_historical))
+        )
+    if reused_retired_post_v2:
+        raise ValueError(
+            "retired post-v2 held-out v1 content hash reuse is forbidden: "
+            + ", ".join(sorted(reused_retired_post_v2))
         )
