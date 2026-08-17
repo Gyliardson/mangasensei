@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
 import subprocess
@@ -22,6 +23,50 @@ from .contracts import DESIGN_REQUIREMENTS, EXERCISE_MINIMA, REQUIRED_SLICES, SL
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
+
+LEGACY_SPEC_REPO_PATH = "scripts/reading_order_post_v2_qualification/spec/experiment-spec-v1.json"
+LEGACY_SPEC_PATH = REPO_ROOT / LEGACY_SPEC_REPO_PATH
+LEGACY_SPEC_SCHEMA_VERSION = "reading-order-post-v2-experiment-spec-v1"
+LEGACY_EXPERIMENT_ID = "reading-order-post-v2-c1-c2-c3-b1-v1"
+LEGACY_SPEC_SHA256 = "1078c23cc99b3298bb77ec4a1deb452ec417f672a33479f5c115435c438bbc35"
+LEGACY_SPEC_GIT_BLOB = "16e0a6b49cd2c351e3c76241e51beb52d9ce2591"
+
+AUTHORING_BOUNDARY_V2 = (
+    "Requirements only are frozen here. This repository change contains no future held-out "
+    "pages, images, coordinates, ground truth, expected outputs, or fake future hashes. Future "
+    "authoring must be isolated from observed H01-H16 and Q001-Q024 material and from candidate "
+    "outputs; Q001-Q024 may not be repaired, traced, renamed, or reused as future held-out cases."
+)
+RETIRED_BINDING_V2 = {
+    "classification": "observed-invalid-retired-not-future-heldout-evidence",
+    "corpusId": "mangasensei-reading-order-post-v2-heldout-v1",
+    "corpusVersion": "1.0.0",
+    "manifestGitBlobSha": "0f913fde5a302ae9c254bdcbc9956522e0451d31",
+    "manifestSha256": "8bc6f0f7a173e618f4929d30b727ea3e58df6addf1f9a0e07585548f2088f62e",
+    "qualificationIdentity": "ropv2q-e9fd2e87e7d7a0a20c3bed83220b49a210455cdbc7af354c4d4d176b08ac2308",
+    "qualificationRunId": 31982883447,
+    "reuseForbidden": True,
+}
+WORKFLOW_CHECKS_V2 = [
+    "retired post-v2 held-out v1 corpus identity/content reuse rejected",
+    "sealed corpus PNG streams pass strict RGB8 CRC and complete IDAT decode validation",
+]
+
+ALLOWED_SOURCE_BINDING_OVERRIDES = {
+    ".github/workflows/reading-order-post-v2-qualification.yml": "github-qualification-workflow",
+    "assets/reading-order-post-v2/heldout-v1/manifest.json": (
+        "retired-post-v2-heldout-v1-content-hash-ledger"
+    ),
+    "scripts/reading_order_post_v2_qualification/__init__.py": "qualification-package-identity",
+    "scripts/reading_order_post_v2_qualification/evidence.py": "evidence-packager",
+    "scripts/reading_order_post_v2_qualification/png_integrity.py": "qualification-png-integrity",
+    "scripts/reading_order_post_v2_qualification/preflight.py": "preflight-validator",
+    "scripts/reading_order_post_v2_qualification/retired_guard.py": (
+        "retired-post-v2-heldout-v1-reuse-guard"
+    ),
+    "scripts/reading_order_post_v2_qualification/spec.py": "spec-validator",
+    LEGACY_SPEC_REPO_PATH: "frozen-v1-scientific-methodology-base",
+}
 
 
 class SpecError(ValueError):
@@ -49,14 +94,131 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
-def validate_spec(path: Path, *, expected_sha256: str | None = None) -> dict[str, Any]:
-    if expected_sha256 is not None and sha256_path(path) != expected_sha256:
-        raise SpecError("experiment spec SHA-256 mismatch")
-    spec = _load(path)
-    if spec.get("schemaVersion") != SPEC_SCHEMA_VERSION:
+def _resolve_v2_overlay(path: Path) -> dict[str, Any]:
+    overlay = _load(path)
+    required_overlay_keys = {
+        "schemaVersion",
+        "experimentId",
+        "repository",
+        "status",
+        "baseSpec",
+        "infrastructureOverlay",
+    }
+    if set(overlay) != required_overlay_keys:
+        raise SpecError("v2 experiment overlay shape changed")
+    if overlay["schemaVersion"] != SPEC_SCHEMA_VERSION:
+        if overlay["schemaVersion"] == LEGACY_SPEC_SCHEMA_VERSION:
+            raise SpecError("historical v1 experiment spec is retired and non-executable")
         raise SpecError("wrong experiment spec schema version")
-    if spec.get("experimentId") != EXPERIMENT_ID:
+    if overlay["experimentId"] != EXPERIMENT_ID:
         raise SpecError("wrong experiment identity")
+    if overlay["repository"] != "Gyliardson/mangasensei":
+        raise SpecError("wrong canonical repository")
+    if overlay["status"] != "FROZEN_NOT_AUTHORIZED_FOR_EXECUTION":
+        raise SpecError("experiment spec status changed")
+
+    expected_base = {
+        "path": LEGACY_SPEC_REPO_PATH,
+        "schemaVersion": LEGACY_SPEC_SCHEMA_VERSION,
+        "experimentId": LEGACY_EXPERIMENT_ID,
+        "sha256": LEGACY_SPEC_SHA256,
+        "gitBlobSha": LEGACY_SPEC_GIT_BLOB,
+    }
+    if overlay["baseSpec"] != expected_base:
+        raise SpecError("v2 base scientific spec identity changed")
+    if sha256_path(LEGACY_SPEC_PATH) != LEGACY_SPEC_SHA256:
+        raise SpecError("historical v1 experiment spec SHA-256 changed")
+    if _git("rev-parse", f"HEAD:{LEGACY_SPEC_REPO_PATH}") != LEGACY_SPEC_GIT_BLOB:
+        raise SpecError("historical v1 experiment spec Git blob changed")
+
+    base = _load(LEGACY_SPEC_PATH)
+    if base.get("schemaVersion") != LEGACY_SPEC_SCHEMA_VERSION:
+        raise SpecError("historical v1 spec schema changed")
+    if base.get("experimentId") != LEGACY_EXPERIMENT_ID:
+        raise SpecError("historical v1 experiment identity changed")
+    if base.get("status") != "FROZEN_NOT_AUTHORIZED_FOR_EXECUTION":
+        raise SpecError("historical v1 spec status changed")
+
+    raw_infra = overlay["infrastructureOverlay"]
+    if not isinstance(raw_infra, dict) or set(raw_infra) != {
+        "freezeBoundaryAdditions",
+        "newHeldoutAuthoringBoundary",
+        "retiredPostV2HeldoutV1Binding",
+        "sourceBindingOverrides",
+        "workflowPreEnvironmentChecksAppend",
+    }:
+        raise SpecError("v2 infrastructure overlay shape changed")
+    if raw_infra["freezeBoundaryAdditions"] != {"noRetiredPostV2HeldoutV1Reuse": True}:
+        raise SpecError("v2 freeze-boundary additions changed")
+    if raw_infra["newHeldoutAuthoringBoundary"] != AUTHORING_BOUNDARY_V2:
+        raise SpecError("v2 future-heldout authoring boundary changed")
+    if raw_infra["retiredPostV2HeldoutV1Binding"] != RETIRED_BINDING_V2:
+        raise SpecError("retired post-v2 held-out binding changed")
+    if raw_infra["workflowPreEnvironmentChecksAppend"] != WORKFLOW_CHECKS_V2:
+        raise SpecError("v2 workflow pre-environment checks changed")
+
+    raw_overrides = raw_infra["sourceBindingOverrides"]
+    if not isinstance(raw_overrides, list):
+        raise SpecError("v2 source binding overrides missing")
+    overrides: dict[str, dict[str, str]] = {}
+    for index, record in enumerate(raw_overrides):
+        if not isinstance(record, dict) or set(record) != {"path", "role", "gitBlobSha"}:
+            raise SpecError(f"sourceBindingOverrides[{index}] malformed")
+        repo_path, role, blob = record["path"], record["role"], record["gitBlobSha"]
+        if not all(isinstance(item, str) and item for item in (repo_path, role, blob)):
+            raise SpecError(f"sourceBindingOverrides[{index}] invalid")
+        if repo_path in overrides:
+            raise SpecError("duplicate v2 source binding override")
+        overrides[repo_path] = {"path": repo_path, "role": role, "gitBlobSha": blob}
+    if set(overrides) != set(ALLOWED_SOURCE_BINDING_OVERRIDES):
+        raise SpecError("v2 source binding override path set changed")
+    for repo_path, expected_role in ALLOWED_SOURCE_BINDING_OVERRIDES.items():
+        if overrides[repo_path]["role"] != expected_role:
+            raise SpecError(f"v2 source binding role changed: {repo_path}")
+        if _git("rev-parse", f"HEAD:{repo_path}") != overrides[repo_path]["gitBlobSha"]:
+            raise SpecError(f"v2 source binding does not match HEAD: {repo_path}")
+
+    resolved = copy.deepcopy(base)
+    resolved["schemaVersion"] = SPEC_SCHEMA_VERSION
+    resolved["experimentId"] = EXPERIMENT_ID
+    freeze = resolved.get("freezeBoundaries")
+    if not isinstance(freeze, dict):
+        raise SpecError("historical v1 freeze boundaries missing")
+    freeze.update(raw_infra["freezeBoundaryAdditions"])
+    design_coverage = resolved.get("newHeldoutDesignCoverage")
+    if not isinstance(design_coverage, dict):
+        raise SpecError("historical v1 held-out design coverage missing")
+    design_coverage["authoringBoundary"] = AUTHORING_BOUNDARY_V2
+    resolved["retiredPostV2HeldoutV1Binding"] = copy.deepcopy(RETIRED_BINDING_V2)
+
+    raw_bindings = resolved.get("sourceBindings")
+    if not isinstance(raw_bindings, list):
+        raise SpecError("historical v1 source bindings missing")
+    bindings_by_path: dict[str, dict[str, str]] = {}
+    for record in raw_bindings:
+        if not isinstance(record, dict) or set(record) != {"path", "role", "gitBlobSha"}:
+            raise SpecError("historical v1 source binding malformed")
+        bindings_by_path[str(record["path"])] = dict(record)
+    bindings_by_path.update(overrides)
+    resolved["sourceBindings"] = [bindings_by_path[name] for name in sorted(bindings_by_path)]
+
+    workflow_contract = resolved.get("workflowContract")
+    if not isinstance(workflow_contract, dict):
+        raise SpecError("historical v1 workflow contract missing")
+    workflow_binding = overrides[".github/workflows/reading-order-post-v2-qualification.yml"]
+    workflow_contract["gitBlobSha"] = workflow_binding["gitBlobSha"]
+    checks = workflow_contract.get("preEnvironmentChecks")
+    if not isinstance(checks, list) or not all(isinstance(item, str) for item in checks):
+        raise SpecError("historical v1 workflow pre-environment checks missing")
+    workflow_contract["preEnvironmentChecks"] = [*checks, *WORKFLOW_CHECKS_V2]
+    return resolved
+
+
+def _validate_resolved_spec(spec: dict[str, Any]) -> None:
+    if spec.get("schemaVersion") != SPEC_SCHEMA_VERSION:
+        raise SpecError("wrong resolved experiment spec schema version")
+    if spec.get("experimentId") != EXPERIMENT_ID:
+        raise SpecError("wrong resolved experiment identity")
     if spec.get("repository") != "Gyliardson/mangasensei":
         raise SpecError("wrong canonical repository")
     if spec.get("status") != "FROZEN_NOT_AUTHORIZED_FOR_EXECUTION":
@@ -106,13 +268,7 @@ def validate_spec(path: Path, *, expected_sha256: str | None = None) -> dict[str
     historical_baseline = spec.get("historicalV2ProductionBaselineBinding")
     if not isinstance(current_baseline, dict) or not isinstance(historical_baseline, dict):
         raise SpecError("production baseline bindings missing")
-    expected_binding_keys = {
-        "commitSha",
-        "treeSha",
-        "sourcePath",
-        "sourceBlobSha",
-        "role",
-    }
+    expected_binding_keys = {"commitSha", "treeSha", "sourcePath", "sourceBlobSha", "role"}
     if set(current_baseline) != expected_binding_keys:
         raise SpecError("current production baseline binding shape changed")
     historical_keys = expected_binding_keys | {
@@ -146,10 +302,7 @@ def validate_spec(path: Path, *, expected_sha256: str | None = None) -> dict[str
         ),
     }:
         raise SpecError("historical v2 production baseline identity changed")
-    for label, binding in (
-        ("current", current_baseline),
-        ("historical", historical_baseline),
-    ):
+    for label, binding in (("current", current_baseline), ("historical", historical_baseline)):
         binding_commit = str(binding["commitSha"])
         binding_tree = str(binding["treeSha"])
         binding_path = str(binding["sourcePath"])
@@ -177,4 +330,13 @@ def validate_spec(path: Path, *, expected_sha256: str | None = None) -> dict[str
         if _git("rev-parse", f"HEAD:{repo_path}") != blob:
             raise SpecError(f"frozen source binding changed: {repo_path}")
 
-    return spec
+
+def validate_spec(path: Path, *, expected_sha256: str | None = None) -> dict[str, Any]:
+    if expected_sha256 is not None and sha256_path(path) != expected_sha256:
+        raise SpecError("experiment spec SHA-256 mismatch")
+    raw = _load(path)
+    if raw.get("schemaVersion") == LEGACY_SPEC_SCHEMA_VERSION:
+        raise SpecError("historical v1 experiment spec is retired and non-executable")
+    resolved = _resolve_v2_overlay(path)
+    _validate_resolved_spec(resolved)
+    return resolved
