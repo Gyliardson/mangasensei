@@ -110,13 +110,18 @@ def validate_rgb_png(path: Path) -> PngImageInfo:
     if not seen_iend:
         raise _contract_error(path, "missing IEND chunk")
 
+    scanline_size = 1 + info.width * 3
+    expected_size = scanline_size * info.height
+    decompressor = zlib.decompressobj()
     try:
-        decompressed = zlib.decompress(b"".join(idat_parts))
+        decompressed = decompressor.decompress(b"".join(idat_parts), expected_size + 1)
     except zlib.error as exc:
         raise _contract_error(path, f"invalid or truncated IDAT zlib stream: {exc}") from exc
 
-    scanline_size = 1 + info.width * 3
-    expected_size = scanline_size * info.height
+    if not decompressor.eof:
+        raise _contract_error(path, "invalid or truncated IDAT zlib stream: end marker not reached")
+    if decompressor.unused_data or decompressor.unconsumed_tail:
+        raise _contract_error(path, "unexpected bytes after IDAT zlib stream")
     if len(decompressed) != expected_size:
         raise _contract_error(
             path,
