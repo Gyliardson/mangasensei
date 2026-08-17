@@ -6,7 +6,6 @@ import zlib
 from pathlib import Path
 
 import pytest
-
 from scripts.reading_order_post_v2_qualification.contracts import ContractError, load_corpus_design
 from scripts.reading_order_post_v2_qualification.png_integrity import (
     validate_corpus_image_integrity,
