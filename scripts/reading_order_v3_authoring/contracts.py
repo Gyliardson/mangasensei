@@ -1,0 +1,356 @@
+from __future__ import annotations
+
+import json
+import math
+import re
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+from typing import Any
+
+DESIGN_SCHEMA_VERSION = "reading-order-v3-authoring-design-v1"
+INPUT_SCHEMA_VERSION = "reading-order-v3-authoring-input-v1"
+ANNOTATION_SCHEMA_VERSION = "reading-order-v3-authoring-annotation-v1"
+MANIFEST_SCHEMA_VERSION = "reading-order-v3-authoring-manifest-v1"
+AUTHORSHIP_BOUNDARY = "isolated-candidate-independent-v3"
+
+POSITIVE_FAMILIES = (
+    "c1-boundary-positive",
+    "c2-gutter-bridge",
+    "c2-ambiguous-overlap-bridge",
+    "c2-pair-precedence-slot",
+    "c3-positive-recovery",
+    "b1-horizontal",
+    "b1-vertical",
+    "b1-mixed-orientation",
+)
+C3_REJECTION_FAMILY = "c3_rejection_pages"
+
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$")
+_PAGE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+class ContractError(ValueError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class RegionInput:
+    region_id: str
+    source_index: int
+    lines: tuple[tuple[tuple[int, int], ...], ...]
+    angle: float
+
+
+@dataclass(frozen=True, slots=True)
+class PageInput:
+    page_id: str
+    width: int
+    height: int
+    regions: tuple[RegionInput, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PageAnnotation:
+    page_id: str
+    reading_order: tuple[str, ...]
+    unscored_region_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PageAuthoringRecord:
+    page_id: str
+    source: str
+    image: str
+    input: str
+    annotation: str
+    positive_families: tuple[str, ...]
+    primary_positive_family: str | None
+    c3_rejection: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CorpusDesign:
+    corpus_id: str
+    version: str
+    pages: tuple[PageAuthoringRecord, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CoverageSummary:
+    dedicated_positive_pages: dict[str, tuple[str, ...]]
+    c3_rejection_pages: tuple[str, ...]
+
+
+def _load_object(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ContractError(f"{path}: invalid JSON object") from exc
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise ContractError(f"{path}: expected JSON object")
+    return value
+
+
+def _exact_keys(data: dict[str, Any], required: set[str], where: str) -> None:
+    if set(data) != required:
+        raise ContractError(
+            f"{where}: property mismatch: missing={sorted(required-set(data))}, "
+            f"extra={sorted(set(data)-required)}"
+        )
+
+
+def _identifier(value: object, where: str) -> str:
+    if not isinstance(value, str) or _IDENTIFIER_RE.fullmatch(value) is None:
+        raise ContractError(f"{where}: invalid identifier")
+    return value
+
+
+def _page_id(value: object, where: str) -> str:
+    if not isinstance(value, str) or _PAGE_ID_RE.fullmatch(value) is None:
+        raise ContractError(f"{where}: invalid page ID")
+    return value
+
+
+def _relative_path(value: object, where: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ContractError(f"{where}: nonempty relative path required")
+    pure = PurePosixPath(value)
+    if pure.is_absolute() or ".." in pure.parts or "." in pure.parts or pure.as_posix() != value:
+        raise ContractError(f"{where}: safe normalized POSIX relative path required")
+    if value in {"manifest.json", "corpus-design.json"}:
+        raise ContractError(f"{where}: reserved authoring path")
+    return value
+
+
+def _string_array(value: object, where: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ContractError(f"{where}: string array required")
+    return tuple(value)
+
+
+def load_design(path: Path) -> CorpusDesign:
+    data = _load_object(path)
+    _exact_keys(
+        data,
+        {
+            "schemaVersion",
+            "corpusId",
+            "version",
+            "authorshipBoundary",
+            "provenanceDeclaration",
+            "pages",
+        },
+        "corpus-design",
+    )
+    if data["schemaVersion"] != DESIGN_SCHEMA_VERSION:
+        raise ContractError("corpus-design: bad schema version")
+    corpus_id = _identifier(data["corpusId"], "corpus-design.corpusId")
+    version = _identifier(data["version"], "corpus-design.version")
+    if data["authorshipBoundary"] != AUTHORSHIP_BOUNDARY:
+        raise ContractError("corpus-design: wrong authorship boundary")
+
+    provenance = data["provenanceDeclaration"]
+    if not isinstance(provenance, dict):
+        raise ContractError("corpus-design.provenanceDeclaration: object required")
+    expected_provenance = {
+        "priorHeldoutEvidenceInspected": False,
+        "calibrationOutputsInspected": False,
+        "candidateDiagnosticsInspected": False,
+        "candidateExecuted": False,
+        "qualificationExecuted": False,
+        "annotationsAdaptedToCandidateOutput": False,
+    }
+    if provenance != expected_provenance:
+        raise ContractError("corpus-design: clean-room provenance declaration is not satisfied")
+
+    raw_pages = data["pages"]
+    if not isinstance(raw_pages, list) or not raw_pages:
+        raise ContractError("corpus-design.pages: nonempty array required")
+    pages: list[PageAuthoringRecord] = []
+    seen_page_ids: set[str] = set()
+    seen_paths: set[str] = set()
+    positive_set = set(POSITIVE_FAMILIES)
+    for index, raw in enumerate(raw_pages):
+        where = f"corpus-design.pages[{index}]"
+        if not isinstance(raw, dict):
+            raise ContractError(f"{where}: object required")
+        _exact_keys(
+            raw,
+            {"pageId", "source", "image", "input", "annotation", "authoringCoverage"},
+            where,
+        )
+        page_id = _page_id(raw["pageId"], f"{where}.pageId")
+        if page_id in seen_page_ids:
+            raise ContractError(f"corpus-design: duplicate page ID {page_id}")
+        seen_page_ids.add(page_id)
+
+        role_paths = {
+            role: _relative_path(raw[role], f"{where}.{role}")
+            for role in ("source", "image", "input", "annotation")
+        }
+        for role, relative in role_paths.items():
+            if relative in seen_paths:
+                raise ContractError(f"corpus-design: duplicate role path {relative} ({role})")
+            seen_paths.add(relative)
+
+        coverage = raw["authoringCoverage"]
+        if not isinstance(coverage, dict):
+            raise ContractError(f"{where}.authoringCoverage: object required")
+        _exact_keys(
+            coverage,
+            {"positiveFamilies", "primaryPositiveFamily", "c3Rejection"},
+            f"{where}.authoringCoverage",
+        )
+        positive_families = _string_array(
+            coverage["positiveFamilies"], f"{where}.authoringCoverage.positiveFamilies"
+        )
+        if len(set(positive_families)) != len(positive_families):
+            raise ContractError(f"{where}: duplicate positive family")
+        unknown = sorted(set(positive_families) - positive_set)
+        if unknown:
+            raise ContractError(f"{where}: unknown positive authoring families {unknown}")
+        primary = coverage["primaryPositiveFamily"]
+        if primary is not None and (not isinstance(primary, str) or primary not in positive_set):
+            raise ContractError(f"{where}.authoringCoverage.primaryPositiveFamily: invalid")
+        if primary is not None and primary not in positive_families:
+            raise ContractError(f"{where}: primary positive family must be declared on the page")
+        c3_rejection = coverage["c3Rejection"]
+        if not isinstance(c3_rejection, bool):
+            raise ContractError(f"{where}.authoringCoverage.c3Rejection: boolean required")
+        pages.append(
+            PageAuthoringRecord(
+                page_id=page_id,
+                source=role_paths["source"],
+                image=role_paths["image"],
+                input=role_paths["input"],
+                annotation=role_paths["annotation"],
+                positive_families=positive_families,
+                primary_positive_family=primary,
+                c3_rejection=c3_rejection,
+            )
+        )
+    return CorpusDesign(corpus_id=corpus_id, version=version, pages=tuple(pages))
+
+
+def load_input(path: Path) -> PageInput:
+    data = _load_object(path)
+    _exact_keys(data, {"schemaVersion", "pageId", "width", "height", "regions"}, str(path))
+    if data["schemaVersion"] != INPUT_SCHEMA_VERSION:
+        raise ContractError(f"{path}: bad input schema version")
+    page_id = _page_id(data["pageId"], f"{path}.pageId")
+    width, height = data["width"], data["height"]
+    if (
+        isinstance(width, bool)
+        or isinstance(height, bool)
+        or not isinstance(width, int)
+        or not isinstance(height, int)
+        or width <= 0
+        or height <= 0
+    ):
+        raise ContractError(f"{path}: positive integer dimensions required")
+    raw_regions = data["regions"]
+    if not isinstance(raw_regions, list) or not raw_regions:
+        raise ContractError(f"{path}.regions: nonempty array required")
+    regions: list[RegionInput] = []
+    seen_ids: set[str] = set()
+    seen_indexes: set[int] = set()
+    for position, raw in enumerate(raw_regions):
+        where = f"{path}.regions[{position}]"
+        if not isinstance(raw, dict):
+            raise ContractError(f"{where}: object required")
+        _exact_keys(raw, {"regionId", "sourceIndex", "lines", "angle"}, where)
+        region_id = _page_id(raw["regionId"], f"{where}.regionId")
+        source_index = raw["sourceIndex"]
+        if isinstance(source_index, bool) or not isinstance(source_index, int) or source_index < 0:
+            raise ContractError(f"{where}.sourceIndex: nonnegative integer required")
+        if region_id in seen_ids or source_index in seen_indexes:
+            raise ContractError(f"{path}: duplicate region identity/index")
+        seen_ids.add(region_id)
+        seen_indexes.add(source_index)
+        raw_lines = raw["lines"]
+        if not isinstance(raw_lines, list) or not raw_lines:
+            raise ContractError(f"{where}.lines: nonempty array required")
+        lines: list[tuple[tuple[int, int], ...]] = []
+        for line_index, raw_line in enumerate(raw_lines):
+            if not isinstance(raw_line, list) or len(raw_line) != 4:
+                raise ContractError(f"{where}.lines[{line_index}]: quadrilateral required")
+            points: list[tuple[int, int]] = []
+            for raw_point in raw_line:
+                if (
+                    not isinstance(raw_point, list)
+                    or len(raw_point) != 2
+                    or any(
+                        isinstance(item, bool) or not isinstance(item, int) for item in raw_point
+                    )
+                ):
+                    raise ContractError(f"{where}: line points must be integer [x,y] pairs")
+                x, y = raw_point
+                if not (0 <= x <= width and 0 <= y <= height):
+                    raise ContractError(f"{where}: line point outside page")
+                points.append((x, y))
+            lines.append(tuple(points))
+        angle = raw["angle"]
+        if (
+            isinstance(angle, bool)
+            or not isinstance(angle, int | float)
+            or not math.isfinite(angle)
+        ):
+            raise ContractError(f"{where}.angle: finite number required")
+        regions.append(RegionInput(region_id, source_index, tuple(lines), float(angle)))
+    if sorted(seen_indexes) != list(range(len(seen_indexes))):
+        raise ContractError(f"{path}: sourceIndex must be contiguous from zero")
+    return PageInput(
+        page_id=page_id,
+        width=width,
+        height=height,
+        regions=tuple(sorted(regions, key=lambda item: item.source_index)),
+    )
+
+
+def load_annotation(path: Path) -> PageAnnotation:
+    data = _load_object(path)
+    _exact_keys(
+        data,
+        {"schemaVersion", "pageId", "readingOrder", "unscoredRegionIds"},
+        str(path),
+    )
+    if data["schemaVersion"] != ANNOTATION_SCHEMA_VERSION:
+        raise ContractError(f"{path}: bad annotation schema version")
+    page_id = _page_id(data["pageId"], f"{path}.pageId")
+    reading = _string_array(data["readingOrder"], f"{path}.readingOrder")
+    unscored = _string_array(data["unscoredRegionIds"], f"{path}.unscoredRegionIds")
+    for region_id in (*reading, *unscored):
+        _page_id(region_id, f"{path}: region ID")
+    if len(set(reading)) != len(reading):
+        raise ContractError(f"{path}.readingOrder: duplicate region ID")
+    if len(set(unscored)) != len(unscored):
+        raise ContractError(f"{path}.unscoredRegionIds: duplicate region ID")
+    if set(reading) & set(unscored):
+        raise ContractError(f"{path}: scored and unscored region IDs overlap")
+    return PageAnnotation(page_id, reading, unscored)
+
+
+def validate_authoring_coverage(design: CorpusDesign) -> CoverageSummary:
+    dedicated = {family: [] for family in POSITIVE_FAMILIES}
+    c3_pages: list[str] = []
+    for page in design.pages:
+        if (
+            len(page.positive_families) == 1
+            and page.primary_positive_family == page.positive_families[0]
+        ):
+            dedicated[page.positive_families[0]].append(page.page_id)
+        if page.c3_rejection:
+            c3_pages.append(page.page_id)
+    missing = [family for family in POSITIVE_FAMILIES if not dedicated[family]]
+    if missing:
+        raise ContractError(f"authoring coverage: missing dedicated positive families {missing}")
+    if not c3_pages:
+        raise ContractError(
+            f"authoring coverage: {C3_REJECTION_FAMILY} requires page-level coverage"
+        )
+    return CoverageSummary(
+        dedicated_positive_pages={
+            family: tuple(page_ids) for family, page_ids in dedicated.items()
+        },
+        c3_rejection_pages=tuple(c3_pages),
+    )
