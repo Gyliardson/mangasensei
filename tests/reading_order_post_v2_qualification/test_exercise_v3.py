@@ -4,7 +4,6 @@ import hashlib
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -19,6 +18,7 @@ from scripts.reading_order_post_v2_qualification.exercise_v3 import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+GIT = "/usr/bin/git"
 METHODOLOGY_PATH = (
     REPO_ROOT
     / "scripts"
@@ -42,8 +42,9 @@ def _sha256(path: Path) -> str:
 
 
 def _git_blob(path: str) -> str:
-    return subprocess.run(
-        ["git", "rev-parse", f"HEAD:{path}"],
+    # Repository-owned paths are intentionally resolved against immutable HEAD.
+    return subprocess.run(  # noqa: S603
+        [GIT, "rev-parse", f"HEAD:{path}"],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
@@ -212,7 +213,9 @@ def _break_case(metric: str, diagnostics: dict[ArmId, dict[str, dict[str, object
     elif metric == "c2_conflict_cycle_fallback_pairs":
         diagnostics[ArmId.C2_ONLY]["Q901"]["fallbackReason"] = None
     elif metric == "c3_positive_pairs":
-        diagnostics[ArmId.C3_ONLY]["Q901"]["recoveryReason"] = "rejected-no-unique-strong-frame-anchor"
+        diagnostics[ArmId.C3_ONLY]["Q901"]["recoveryReason"] = (
+            "rejected-no-unique-strong-frame-anchor"
+        )
     elif metric == "c3_rejection_pairs":
         diagnostics[ArmId.C3_ONLY]["Q901"]["recoveryReason"] = "not-eligible"
     elif metric in {"b1_horizontal_pairs", "b1_vertical_pairs", "b1_mixed_pairs"}:
@@ -270,7 +273,8 @@ def test_v3_c3_negative_claim_is_generic_not_category_specific() -> None:
     report = build_exercise_report_v3(annotations=(page,), diagnostics=diagnostics)
     assert report.counts["c3_rejection_pairs"].count == 1
     assert not any(
-        name.startswith("c3_zero_multiple_") or name.startswith("c3_invalid_topology_")
+        name.startswith("c3_zero_multiple_")
+        or name.startswith("c3_invalid_topology_")
         or name.startswith("c3_insufficient_visible_")
         for name in report.counts
     )

@@ -98,9 +98,9 @@
       "mechanismFunctionsMayBePatched": false,
       "deterministicRepeatRequired": true,
       "candidateReachabilityTestPath": "tests/reading_order_post_v2_calibration/test_reachability_v3.py",
-      "candidateReachabilityTestGitBlobSha": "5ceeab3e0108dabb2865fd3cf0641e1a49c7757b",
+      "candidateReachabilityTestGitBlobSha": "6cb5747f224ea88c1c5c3e0e1a89ba3f7043fe09",
       "evaluatorContractTestPath": "tests/reading_order_post_v2_qualification/test_exercise_v3.py",
-      "evaluatorContractTestGitBlobSha": "6507ce244157e50972295c880f5399654f937474",
+      "evaluatorContractTestGitBlobSha": "3a06917ad0d0779c8db5a4aef734de2d7700cd7c",
       "requiredCases": {
         "c1_guarded_pairs": "synthetic-boundary-guard-transition",
         "c2_gutter_pairs": "synthetic-unique-gutter-relation",
