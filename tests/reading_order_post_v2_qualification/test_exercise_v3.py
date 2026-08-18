@@ -354,7 +354,8 @@ def test_v3_invalid_diagnostic_is_harness_invalid_and_never_counts(
         diagnostics[ArmId.C2_ONLY]["Q901"]["relationEdges"] = {}
     elif mutation == "malformed-assignment":
         assignment = diagnostics[ArmId.C2_ONLY]["Q901"]["assignments"]
-        assert isinstance(assignment, list) and isinstance(assignment[0], dict)
+        assert isinstance(assignment, list)
+        assert isinstance(assignment[0], dict)
         del assignment[0]["candidateGroupIndices"]
     elif mutation == "inconsistent-fallback":
         diagnostics[ArmId.C2_ONLY]["Q901"]["usedPanelEvidence"] = False

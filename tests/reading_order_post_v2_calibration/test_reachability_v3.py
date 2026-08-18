@@ -5,14 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
-import mangasensei.ocr.diagnostics.reading_order_post_v2_calibration as candidate_module
-from mangasensei.ocr.diagnostics.reading_order_post_v2_calibration import (
-    CalibrationResult,
-    run_post_v2_calibration_candidate,
-)
-from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ExperimentRegion
-from mangasensei.ocr.reading_order import PanelBox, PanelSegmentation
 from scripts.reading_order_post_v2_qualification import DIAGNOSTIC_SCHEMA_VERSION
 from scripts.reading_order_post_v2_qualification.contracts import (
     ArmId,
@@ -21,6 +13,14 @@ from scripts.reading_order_post_v2_qualification.contracts import (
 )
 from scripts.reading_order_post_v2_qualification.exercise_v3 import build_exercise_report_v3
 from scripts.reading_order_post_v2_qualification.run_arm import _config as production_arm_config
+
+import mangasensei.ocr.diagnostics.reading_order_post_v2_calibration as candidate_module
+from mangasensei.ocr.diagnostics.reading_order_post_v2_calibration import (
+    CalibrationResult,
+    run_post_v2_calibration_candidate,
+)
+from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ExperimentRegion
+from mangasensei.ocr.reading_order import PanelBox, PanelSegmentation
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUN_ARM_PATH = REPO_ROOT / "scripts" / "reading_order_post_v2_qualification" / "run_arm.py"
@@ -183,7 +183,7 @@ def _run_c3(
     arm: ArmId,
 ) -> dict[str, object]:
     pixels = np.full((1000, 1000, 3), 255, dtype=np.uint8)
-    refs = _refs(((760, 150, 800, 230), (180, 740, 230, 820)))
+    refs = _refs(((180, 180, 220, 220), (600, 400, 640, 440)))
     merged = PanelBox(100, 100, 900, 900)
     pre = PanelSegmentation((merged,), False, "fewer-than-two-groups")
     monkeypatch.setattr(candidate_module, "segment_panel_groups", lambda _pixels: pre)
@@ -475,16 +475,20 @@ def test_v3_reachability_serializer_tracks_run_arm_production_shape() -> None:
     tree = ast.parse(RUN_ARM_PATH.read_text(encoding="utf-8"))
     diagnostic_keys: set[str] | None = None
     for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and any(
-            isinstance(target, ast.Name) and target.id == "diagnostic" for target in node.targets
+        if (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "diagnostic"
+                for target in node.targets
+            )
+            and isinstance(node.value, ast.Dict)
         ):
-            if isinstance(node.value, ast.Dict):
-                diagnostic_keys = {
-                    key.value
-                    for key in node.value.keys
-                    if isinstance(key, ast.Constant) and isinstance(key.value, str)
-                }
-                break
+            diagnostic_keys = {
+                key.value
+                for key in node.value.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            }
+            break
     assert diagnostic_keys == PRODUCTION_DIAGNOSTIC_KEYS
 
 
