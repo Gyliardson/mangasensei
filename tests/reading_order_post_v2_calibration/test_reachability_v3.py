@@ -180,7 +180,8 @@ def test_v3_reachability_c1_candidate_to_production_diagnostic_to_evaluator(
     )
     before = diagnostics[ArmId.CONTROL][PAGE_ID]["assignments"]
     after = diagnostic["assignments"]
-    assert isinstance(before, list) and isinstance(after, list)
+    assert isinstance(before, list)
+    assert isinstance(after, list)
     assert before[0]["status"] == "confident"
     assert after[0]["status"] == "unassigned"
 

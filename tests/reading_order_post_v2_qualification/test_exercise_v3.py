@@ -3,8 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import pytest
 from scripts.reading_order_post_v2_qualification.contracts import (

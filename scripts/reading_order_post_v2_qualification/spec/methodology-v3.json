@@ -123,9 +123,9 @@
       "candidateToProductionShapeToEvaluatorRequired": true,
       "productionDiagnosticSerializerPath": "scripts/reading_order_post_v2_qualification/run_arm.py",
       "candidateReachabilityTestPath": "tests/reading_order_post_v2_calibration/test_reachability_v3.py",
-      "candidateReachabilityTestGitBlobSha": "58fe329ccb157e63fcc2b6b39a49d091630d04b5",
+      "candidateReachabilityTestGitBlobSha": "2457b035803bd013e2dbe4b215d916bdbcde8591",
       "evaluatorContractTestPath": "tests/reading_order_post_v2_qualification/test_exercise_v3.py",
-      "evaluatorContractTestGitBlobSha": "3a18ed8c363399710f89ab4cff3f62ff39fddb9a",
+      "evaluatorContractTestGitBlobSha": "d8153893682a02dfffadfe70dbc7422b794f1e17",
       "requiredCases": {
         "c1_guarded_pairs": "synthetic-boundary-guard-transition",
         "c2_gutter_pairs": "synthetic-unique-gutter-relation",
