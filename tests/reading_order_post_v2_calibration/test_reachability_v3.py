@@ -1,68 +1,143 @@
 from __future__ import annotations
 
-import numpy as np
+import ast
+import json
+from pathlib import Path
+
 import pytest
+import scripts.reading_order_post_v2_qualification.run_arm as run_arm_module
+from PIL import Image
+from scripts.reading_order_post_v2_qualification import INPUT_SCHEMA_VERSION
+from scripts.reading_order_post_v2_qualification.contracts import (
+    ArmId,
+    PageGroundTruth,
+    QualificationPair,
+)
+from scripts.reading_order_post_v2_qualification.exercise_v3 import build_exercise_report_v3
 
 import mangasensei.ocr.diagnostics.reading_order_post_v2_calibration as candidate_module
-from mangasensei.ocr.diagnostics.reading_order_post_v2_calibration import (
-    CalibrationConfig,
-    CalibrationResult,
-    run_post_v2_calibration_candidate,
-)
-from mangasensei.ocr.diagnostics.reading_order_v2_contracts import ExperimentRegion
 from mangasensei.ocr.reading_order import PanelBox, PanelSegmentation
 
-
-class _SyntheticRegion:
-    def __init__(
-        self,
-        xyxy: tuple[int, int, int, int],
-        *,
-        direction: str = "v",
-    ) -> None:
-        self.xyxy = xyxy
-        self.direction = direction
+PAGE_ID = "Q901"
+EXECUTION_SHA = "0" * 40
 
 
-def _refs(
+def _region_id(index: int) -> str:
+    return f"reachability-r{index}"
+
+
+def _write_corpus(
+    root: Path,
     region_boxes: tuple[tuple[int, int, int, int], ...],
-    *,
-    directions: tuple[str, ...] | None = None,
-) -> tuple[ExperimentRegion, ...]:
-    if directions is None:
-        directions = tuple("v" for _ in region_boxes)
-    assert len(directions) == len(region_boxes)
-    return tuple(
-        ExperimentRegion(
-            f"reachability-r{index}",
-            index,
-            _SyntheticRegion(box, direction=directions[index]),
+) -> Path:
+    corpus = root / "corpus"
+    (corpus / "inputs").mkdir(parents=True)
+    (corpus / "images").mkdir(parents=True)
+    regions: list[dict[str, object]] = []
+    for index, (x1, y1, x2, y2) in enumerate(region_boxes):
+        regions.append(
+            {
+                "regionId": _region_id(index),
+                "sourceIndex": index,
+                "lines": [[[x1, y1], [x2, y1], [x2, y2], [x1, y2]]],
+                "angle": 0,
+            }
         )
-        for index, box in enumerate(region_boxes)
+    (corpus / "inputs" / f"{PAGE_ID}.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": INPUT_SCHEMA_VERSION,
+                "pageId": PAGE_ID,
+                "width": 1000,
+                "height": 1000,
+                "regions": regions,
+            }
+        ),
+        encoding="utf-8",
     )
+    Image.new("RGB", (1000, 1000), "white").save(corpus / "images" / f"{PAGE_ID}.png")
+    return corpus
 
 
-def _run_with_panels(
+def _patch_panels(
     monkeypatch: pytest.MonkeyPatch,
+    segmentation: PanelSegmentation,
+) -> None:
+    monkeypatch.setattr(candidate_module, "segment_panel_groups", lambda _pixels: segmentation)
+    monkeypatch.setattr(run_arm_module, "segment_panel_groups", lambda _pixels: segmentation)
+
+
+def _execute(
     *,
-    panel_boxes: tuple[PanelBox, ...],
-    region_boxes: tuple[tuple[int, int, int, int], ...],
-    config: CalibrationConfig,
-    directions: tuple[str, ...] | None = None,
-) -> CalibrationResult:
-    pixels = np.full((1000, 1000, 3), 255, dtype=np.uint8)
-    refs = _refs(region_boxes, directions=directions)
-    monkeypatch.setattr(
-        candidate_module,
-        "segment_panel_groups",
-        lambda _pixels: PanelSegmentation(panel_boxes, True, "reliable"),
+    corpus: Path,
+    output_root: Path,
+    arm: ArmId,
+    repeat: int,
+) -> dict[str, object]:
+    diagnostic_path, _ = run_arm_module.execute_page(
+        corpus_root=corpus,
+        page_id=PAGE_ID,
+        arm_id=arm,
+        execution_sha=EXECUTION_SHA,
+        repeat=repeat,
+        output_root=output_root,
     )
-    return run_post_v2_calibration_candidate(
-        pixels,
-        refs,
-        page_height=1000,
-        config=config,
+    loaded = json.loads(diagnostic_path.read_text(encoding="utf-8"))
+    assert isinstance(loaded, dict)
+    return loaded
+
+
+def _page(
+    slice_name: str,
+    region_count: int,
+    *,
+    pair: tuple[int, int],
+) -> PageGroundTruth:
+    ids = tuple(_region_id(index) for index in range(region_count))
+    earlier_index, later_index = pair
+    return PageGroundTruth(
+        page_id=PAGE_ID,
+        reading_order=ids,
+        unscored_region_ids=(),
+        qualification_pairs=(
+            QualificationPair(
+                "p1",
+                ids[earlier_index],
+                ids[later_index],
+                (slice_name,),
+            ),
+        ),
+        layout_tags=(),
     )
+
+
+def _diagnostics_for_arms(
+    *,
+    corpus: Path,
+    output_root: Path,
+    arms: tuple[ArmId, ...],
+) -> dict[ArmId, dict[str, dict[str, object]]]:
+    return {
+        arm: {PAGE_ID: _execute(corpus=corpus, output_root=output_root, arm=arm, repeat=1)}
+        for arm in arms
+    }
+
+
+def _assert_composed_count_and_repeat(
+    *,
+    metric: str,
+    page: PageGroundTruth,
+    diagnostics: dict[ArmId, dict[str, dict[str, object]]],
+    repeat_arm: ArmId,
+    corpus: Path,
+    output_root: Path,
+) -> dict[str, object]:
+    report = build_exercise_report_v3(annotations=(page,), diagnostics=diagnostics)
+    assert report.counts[metric].count == 1
+    first = diagnostics[repeat_arm][PAGE_ID]
+    second = _execute(corpus=corpus, output_root=output_root, arm=repeat_arm, repeat=2)
+    assert first == second
+    return first
 
 
 def _complete_frame_lines(box: PanelBox) -> tuple[tuple[float, float, float, float], ...]:
@@ -74,217 +149,312 @@ def _complete_frame_lines(box: PanelBox) -> tuple[tuple[float, float, float, flo
     )
 
 
-def _run_c3(
+def test_v3_reachability_c1_candidate_to_production_diagnostic_to_evaluator(
     monkeypatch: pytest.MonkeyPatch,
-    *,
-    lines: tuple[tuple[float, float, float, float], ...],
-) -> CalibrationResult:
-    pixels = np.full((1000, 1000, 3), 255, dtype=np.uint8)
-    refs = _refs(((760, 150, 800, 230), (180, 740, 230, 820)))
-    merged = PanelBox(100, 100, 900, 900)
-    monkeypatch.setattr(
-        candidate_module,
-        "segment_panel_groups",
-        lambda _pixels: PanelSegmentation((merged,), False, "fewer-than-two-groups"),
-    )
-    monkeypatch.setattr(candidate_module, "_line_segments", lambda _gray: lines)
-    return run_post_v2_calibration_candidate(
-        pixels,
-        refs,
-        page_height=1000,
-        config=CalibrationConfig(c3_merged_frame_recovery=True),
-    )
-
-
-def _rules(result: CalibrationResult) -> tuple[str, ...]:
-    return tuple(edge.rule for edge in result.diagnostic.relation_edges)
-
-
-def test_v3_reachability_c1_guard_is_synthetic_and_deterministic(
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    panels = (PanelBox(0, 0, 100, 100), PanelBox(200, 0, 300, 100))
-    regions = ((-10, 40, 10, 60), (20, 20, 40, 40), (220, 20, 240, 40))
-    control = _run_with_panels(
-        monkeypatch,
-        panel_boxes=panels,
-        region_boxes=regions,
-        config=CalibrationConfig(),
+    segmentation = PanelSegmentation(
+        (PanelBox(10, 0, 110, 100), PanelBox(200, 0, 300, 100)),
+        True,
+        "reliable",
     )
-    guarded = _run_with_panels(
-        monkeypatch,
-        panel_boxes=panels,
-        region_boxes=regions,
-        config=CalibrationConfig(c1_boundary_guard=True),
+    _patch_panels(monkeypatch, segmentation)
+    corpus = _write_corpus(
+        tmp_path,
+        ((0, 40, 20, 60), (30, 20, 50, 40), (220, 20, 240, 40)),
     )
-    repeat = _run_with_panels(
-        monkeypatch,
-        panel_boxes=panels,
-        region_boxes=regions,
-        config=CalibrationConfig(c1_boundary_guard=True),
+    output_root = tmp_path / "out"
+    diagnostics = _diagnostics_for_arms(
+        corpus=corpus,
+        output_root=output_root,
+        arms=(ArmId.CONTROL, ArmId.C1_ONLY),
     )
-    before = control.diagnostic.assignments[0]
-    after = guarded.diagnostic.assignments[0]
-    assert before.status == "confident"
-    assert before.candidate_group_indices == (0,)
-    assert after.status == "unassigned"
-    assert after.candidate_group_indices == ()
-    assert guarded.diagnostic == repeat.diagnostic
-
-
-def test_v3_reachability_c2_gutter_rule_is_synthetic(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    result = _run_with_panels(
-        monkeypatch,
-        panel_boxes=(PanelBox(0, 0, 100, 100), PanelBox(200, 0, 300, 100)),
-        region_boxes=((20, 20, 40, 40), (220, 20, 240, 40), (140, 40, 160, 60)),
-        config=CalibrationConfig(c2_uncertain_relations=True),
+    page = _page("c1-boundary-positive", 3, pair=(0, 1))
+    diagnostic = _assert_composed_count_and_repeat(
+        metric="c1_guarded_pairs",
+        page=page,
+        diagnostics=diagnostics,
+        repeat_arm=ArmId.C1_ONLY,
+        corpus=corpus,
+        output_root=output_root,
     )
-    assert result.diagnostic.assignments[2].status == "unassigned"
-    assert "unique-gutter-between-hard-panels" in _rules(result)
-
-
-def test_v3_reachability_c2_overlap_rule_is_synthetic(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    result = _run_with_panels(
-        monkeypatch,
-        panel_boxes=(PanelBox(0, 0, 120, 100), PanelBox(100, 0, 220, 100)),
-        region_boxes=((20, 20, 40, 40), (180, 20, 200, 40), (105, 40, 115, 60)),
-        config=CalibrationConfig(c2_uncertain_relations=True),
-    )
-    assert result.diagnostic.assignments[2].status == "ambiguous"
-    assert "validated-overlap-bridge-right-before-left" in _rules(result)
-
-
-def test_v3_reachability_c2_pair_precedence_rule_is_synthetic(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    result = _run_with_panels(
-        monkeypatch,
-        panel_boxes=(
-            PanelBox(0, 0, 100, 100),
-            PanelBox(0, 200, 100, 300),
-            PanelBox(0, 400, 100, 500),
-        ),
-        region_boxes=(
-            (20, 20, 40, 40),
-            (20, 220, 40, 240),
-            (20, 420, 40, 440),
-            (20, 110, 40, 190),
-        ),
-        config=CalibrationConfig(c2_uncertain_relations=True),
-    )
-    assert result.diagnostic.assignments[3].status == "unassigned"
-    assert any(rule.startswith("uncertain-") for rule in _rules(result))
-
-
-def test_v3_reachability_c2_fail_closed_no_relation_is_synthetic(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    result = _run_with_panels(
-        monkeypatch,
-        panel_boxes=(PanelBox(0, 0, 100, 100), PanelBox(0, 200, 100, 300)),
-        region_boxes=((20, 20, 40, 40), (20, 220, 40, 240), (150, 350, 250, 450)),
-        config=CalibrationConfig(c2_uncertain_relations=True),
-    )
-    assert result.diagnostic.assignments[2].status == "unassigned"
-    assert result.diagnostic.relation_edges == ()
-    assert result.diagnostic.fallback_reason is None
-
-
-def test_v3_reachability_c2_conflict_fallback_is_synthetic(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    result = _run_with_panels(
-        monkeypatch,
-        panel_boxes=(PanelBox(0, 0, 100, 100), PanelBox(300, 200, 400, 300)),
-        region_boxes=((20, 20, 40, 40), (320, 220, 340, 240), (150, 50, 250, 250)),
-        config=CalibrationConfig(c2_uncertain_relations=True),
-    )
-    assert result.diagnostic.fallback_reason == "uncertain-relation-conflict"
-    assert not result.diagnostic.used_panel_evidence
-    assert result.diagnostic.final_order == result.diagnostic.fallback_order
-
-
-def test_v3_reachability_c3_positive_recovery_is_synthetic(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    anchor = PanelBox(400, 300, 700, 700)
-    lines = _complete_frame_lines(anchor) + (
-        (100.0, 100.0, 500.0, 100.0),
-        (100.0, 500.0, 500.0, 500.0),
-        (100.0, 100.0, 100.0, 500.0),
-        (500.0, 100.0, 500.0, 300.0),
-    )
-    first = _run_c3(monkeypatch, lines=lines)
-    second = _run_c3(monkeypatch, lines=lines)
-    assert first.diagnostic.segmentation_reliable
-    assert first.diagnostic.segmentation_reason == "recovered-merged-frame"
-    assert (
-        first.diagnostic.recovery_reason
-        == "accepted-strong-anchor-plus-occlusion-supported-frame"
-    )
-    assert first.diagnostic == second.diagnostic
-
-
-def test_v3_reachability_c3_generic_rejection_is_synthetic(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    lines = (
-        (200.0, 200.0, 500.0, 200.0),
-        (200.0, 800.0, 500.0, 800.0),
-        (200.0, 200.0, 200.0, 500.0),
-        (800.0, 200.0, 800.0, 500.0),
-    )
-    first = _run_c3(monkeypatch, lines=lines)
-    second = _run_c3(monkeypatch, lines=lines)
-    assert first.diagnostic.recovery_reason.startswith("rejected-")
-    assert not first.diagnostic.used_panel_evidence
-    assert first.diagnostic.final_order == first.diagnostic.fallback_order
-    assert first.diagnostic == second.diagnostic
+    before = diagnostics[ArmId.CONTROL][PAGE_ID]["assignments"]
+    after = diagnostic["assignments"]
+    assert isinstance(before, list) and isinstance(after, list)
+    assert before[0]["status"] == "confident"
+    assert after[0]["status"] == "unassigned"
 
 
 @pytest.mark.parametrize(
-    ("directions", "mode"),
+    ("metric", "slice_name", "panels", "regions", "pair", "expected_rule"),
     [
-        (("h", "h", "v"), "horizontal"),
-        (("v", "v", "h"), "vertical"),
-        (("h", "v", "h"), "mixed"),
+        (
+            "c2_gutter_pairs",
+            "c2-gutter-bridge",
+            (PanelBox(0, 0, 100, 100), PanelBox(200, 0, 300, 100)),
+            ((20, 20, 40, 40), (220, 20, 240, 40), (140, 40, 160, 60)),
+            (0, 2),
+            "unique-gutter-between-hard-panels",
+        ),
+        (
+            "c2_overlap_pairs",
+            "c2-ambiguous-overlap-bridge",
+            (PanelBox(0, 0, 120, 100), PanelBox(100, 0, 220, 100)),
+            ((20, 20, 40, 40), (180, 20, 200, 40), (105, 40, 115, 60)),
+            (0, 2),
+            "validated-overlap-bridge-right-before-left",
+        ),
+        (
+            "c2_pair_precedence_pairs",
+            "c2-pair-precedence-slot",
+            (
+                PanelBox(0, 0, 100, 100),
+                PanelBox(0, 200, 100, 300),
+                PanelBox(0, 400, 100, 500),
+            ),
+            (
+                (20, 20, 40, 40),
+                (20, 220, 40, 240),
+                (20, 420, 40, 440),
+                (20, 110, 40, 190),
+            ),
+            (0, 3),
+            "uncertain-",
+        ),
     ],
 )
-def test_v3_reachability_b1_same_panel_orientation_is_synthetic(
+def test_v3_reachability_c2_rule_candidate_to_production_diagnostic_to_evaluator(
     monkeypatch: pytest.MonkeyPatch,
-    directions: tuple[str, ...],
-    mode: str,
+    tmp_path: Path,
+    metric: str,
+    slice_name: str,
+    panels: tuple[PanelBox, ...],
+    regions: tuple[tuple[int, int, int, int], ...],
+    pair: tuple[int, int],
+    expected_rule: str,
 ) -> None:
-    result = _run_with_panels(
-        monkeypatch,
-        panel_boxes=(PanelBox(0, 0, 100, 100), PanelBox(200, 0, 300, 100)),
-        region_boxes=((220, 20, 240, 40), (250, 20, 270, 40), (20, 20, 40, 40)),
-        directions=directions,
-        config=CalibrationConfig(b1_local_order=True),
+    _patch_panels(monkeypatch, PanelSegmentation(panels, True, "reliable"))
+    corpus = _write_corpus(tmp_path, regions)
+    output_root = tmp_path / "out"
+    diagnostics = _diagnostics_for_arms(
+        corpus=corpus,
+        output_root=output_root,
+        arms=(ArmId.C2_ONLY, ArmId.C1_C2, ArmId.C1_C2_C3, ArmId.C1_C2_C3_B1),
     )
-    first, second = result.diagnostic.assignments[:2]
-    assert result.diagnostic.used_panel_evidence
-    assert first.status == second.status == "confident"
-    assert first.assigned_group_index == second.assigned_group_index == 1
-    observed = {directions[0], directions[1]}
-    if mode == "horizontal":
-        assert observed == {"h"}
-    elif mode == "vertical":
-        assert observed == {"v"}
+    page = _page(slice_name, len(regions), pair=pair)
+    diagnostic = _assert_composed_count_and_repeat(
+        metric=metric,
+        page=page,
+        diagnostics=diagnostics,
+        repeat_arm=ArmId.C2_ONLY,
+        corpus=corpus,
+        output_root=output_root,
+    )
+    edges = diagnostic["relationEdges"]
+    assert isinstance(edges, list)
+    rules = tuple(str(edge["rule"]) for edge in edges)
+    if expected_rule.endswith("-"):
+        assert any(rule.startswith(expected_rule) for rule in rules)
     else:
-        assert observed == {"h", "v"}
+        assert expected_rule in rules
 
 
-def test_v3_reachability_cases_do_not_patch_candidate_mechanism_functions() -> None:
+def test_v3_reachability_c2_fail_closed_candidate_to_production_diagnostic_to_evaluator(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    panels = (PanelBox(0, 0, 100, 100), PanelBox(0, 200, 100, 300))
+    regions = ((20, 20, 40, 40), (20, 220, 40, 240), (150, 350, 250, 450))
+    _patch_panels(monkeypatch, PanelSegmentation(panels, True, "reliable"))
+    corpus = _write_corpus(tmp_path, regions)
+    output_root = tmp_path / "out"
+    diagnostics = _diagnostics_for_arms(
+        corpus=corpus,
+        output_root=output_root,
+        arms=(ArmId.C2_ONLY,),
+    )
+    page = _page("c2-one-sided-non-unique-fail-closed", 3, pair=(0, 2))
+    diagnostic = _assert_composed_count_and_repeat(
+        metric="c2_fail_closed_no_relation_pairs",
+        page=page,
+        diagnostics=diagnostics,
+        repeat_arm=ArmId.C2_ONLY,
+        corpus=corpus,
+        output_root=output_root,
+    )
+    assert diagnostic["relationEdges"] == []
+    assert diagnostic["fallbackReason"] is None
+
+
+def test_v3_reachability_c2_conflict_candidate_to_production_diagnostic_to_evaluator(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    panels = (PanelBox(0, 0, 100, 100), PanelBox(300, 200, 400, 300))
+    regions = ((20, 20, 40, 40), (320, 220, 340, 240), (150, 50, 250, 250))
+    _patch_panels(monkeypatch, PanelSegmentation(panels, True, "reliable"))
+    corpus = _write_corpus(tmp_path, regions)
+    output_root = tmp_path / "out"
+    diagnostics = _diagnostics_for_arms(
+        corpus=corpus,
+        output_root=output_root,
+        arms=(ArmId.CONTROL, ArmId.C2_ONLY),
+    )
+    page = _page("c2-conflict-cycle-safety", 3, pair=(0, 1))
+    diagnostic = _assert_composed_count_and_repeat(
+        metric="c2_conflict_cycle_fallback_pairs",
+        page=page,
+        diagnostics=diagnostics,
+        repeat_arm=ArmId.C2_ONLY,
+        corpus=corpus,
+        output_root=output_root,
+    )
+    assert diagnostic["fallbackReason"] == "uncertain-relation-conflict"
+    assert diagnostic["usedPanelEvidence"] is False
+    assert diagnostic["finalOrder"] == diagnostic["fallbackOrder"]
+
+
+@pytest.mark.parametrize(
+    ("metric", "slice_name", "lines", "accepted"),
+    [
+        (
+            "c3_positive_pairs",
+            "c3-positive-recovery",
+            _complete_frame_lines(PanelBox(400, 300, 700, 700))
+            + (
+                (100.0, 100.0, 500.0, 100.0),
+                (100.0, 500.0, 500.0, 500.0),
+                (100.0, 100.0, 100.0, 500.0),
+                (500.0, 100.0, 500.0, 300.0),
+            ),
+            True,
+        ),
+        (
+            "c3_rejection_pages",
+            "c3-invalid-topology-negative",
+            (
+                (200.0, 200.0, 500.0, 200.0),
+                (200.0, 800.0, 500.0, 800.0),
+                (200.0, 200.0, 200.0, 500.0),
+                (800.0, 200.0, 800.0, 500.0),
+            ),
+            False,
+        ),
+    ],
+)
+def test_v3_reachability_c3_candidate_to_production_diagnostic_to_evaluator(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    metric: str,
+    slice_name: str,
+    lines: tuple[tuple[float, float, float, float], ...],
+    accepted: bool,
+) -> None:
+    merged = PanelBox(100, 100, 900, 900)
+    segmentation = PanelSegmentation((merged,), False, "fewer-than-two-groups")
+    _patch_panels(monkeypatch, segmentation)
+    monkeypatch.setattr(candidate_module, "_line_segments", lambda _gray: lines)
+    regions = ((150, 150, 200, 250), (600, 500, 650, 600))
+    corpus = _write_corpus(tmp_path, regions)
+    output_root = tmp_path / "out"
+    diagnostics = _diagnostics_for_arms(
+        corpus=corpus,
+        output_root=output_root,
+        arms=(ArmId.C3_ONLY, ArmId.C1_C2_C3, ArmId.C1_C2_C3_B1),
+    )
+    page = _page(slice_name, 2, pair=(0, 1))
+    diagnostic = _assert_composed_count_and_repeat(
+        metric=metric,
+        page=page,
+        diagnostics=diagnostics,
+        repeat_arm=ArmId.C3_ONLY,
+        corpus=corpus,
+        output_root=output_root,
+    )
+    if accepted:
+        assert diagnostic["segmentation"]["reason"] == "recovered-merged-frame"
+        assert (
+            diagnostic["recoveryReason"]
+            == "accepted-strong-anchor-plus-occlusion-supported-frame"
+        )
+    else:
+        assert str(diagnostic["recoveryReason"]).startswith("rejected-")
+        assert diagnostic["usedPanelEvidence"] is False
+        assert diagnostic["finalOrder"] == diagnostic["fallbackOrder"]
+
+
+@pytest.mark.parametrize(
+    ("metric", "slice_name", "regions", "expected_directions"),
+    [
+        (
+            "b1_horizontal_pairs",
+            "b1-horizontal",
+            ((220, 20, 260, 40), (250, 50, 290, 70), (20, 20, 40, 60)),
+            ("h", "h"),
+        ),
+        (
+            "b1_vertical_pairs",
+            "b1-vertical",
+            ((220, 20, 240, 60), (250, 20, 270, 60), (20, 20, 60, 40)),
+            ("v", "v"),
+        ),
+        (
+            "b1_mixed_pairs",
+            "b1-mixed-orientation",
+            ((220, 20, 260, 40), (250, 20, 270, 60), (20, 20, 60, 40)),
+            ("h", "v"),
+        ),
+    ],
+)
+def test_v3_reachability_b1_candidate_to_production_diagnostic_to_evaluator(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    metric: str,
+    slice_name: str,
+    regions: tuple[tuple[int, int, int, int], ...],
+    expected_directions: tuple[str, str],
+) -> None:
+    panels = (PanelBox(0, 0, 100, 100), PanelBox(200, 0, 320, 120))
+    _patch_panels(monkeypatch, PanelSegmentation(panels, True, "reliable"))
+    corpus = _write_corpus(tmp_path, regions)
+    output_root = tmp_path / "out"
+    diagnostics = _diagnostics_for_arms(
+        corpus=corpus,
+        output_root=output_root,
+        arms=(ArmId.B1_ONLY, ArmId.C1_C2_C3_B1),
+    )
+    page = _page(slice_name, 3, pair=(0, 1))
+    diagnostic = _assert_composed_count_and_repeat(
+        metric=metric,
+        page=page,
+        diagnostics=diagnostics,
+        repeat_arm=ArmId.B1_ONLY,
+        corpus=corpus,
+        output_root=output_root,
+    )
+    directions = diagnostic["regionDirections"]
+    assert isinstance(directions, dict)
+    assert (directions[_region_id(0)], directions[_region_id(1)]) == expected_directions
+
+
+def test_v3_reachability_monkeypatches_only_frozen_upstream_seams() -> None:
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    patched_names = {
+        call.args[1].value
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and call.func.attr == "setattr"
+        and len(call.args) >= 2
+        and isinstance(call.args[1], ast.Constant)
+        and isinstance(call.args[1].value, str)
+    }
     forbidden = {
         "_assignment_observations",
         "_uncertain_relation_edges",
         "_recover_merged_frames",
         "_b1_local_order",
     }
-    patched_upstream_seams = {"segment_panel_groups", "_line_segments"}
-    assert forbidden.isdisjoint(patched_upstream_seams)
+    allowed = {"segment_panel_groups", "_line_segments"}
+    assert forbidden.isdisjoint(patched_names)
+    assert patched_names <= allowed
