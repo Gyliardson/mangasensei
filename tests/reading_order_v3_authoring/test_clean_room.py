@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
-
 from scripts.reading_order_v3_authoring import (
     ANNOTATION_SCHEMA_VERSION,
     AUTHORSHIP_BOUNDARY,
