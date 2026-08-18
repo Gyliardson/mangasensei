@@ -117,7 +117,7 @@
       "candidateReachabilityTestPath": "tests/reading_order_post_v2_calibration/test_reachability_v3.py",
       "candidateReachabilityTestGitBlobSha": "9af47b2392685e1a5ec8a852a2545a31f4ca081b",
       "evaluatorContractTestPath": "tests/reading_order_post_v2_qualification/test_exercise_v3.py",
-      "evaluatorContractTestGitBlobSha": "3d5f1a60229a6f2eb824bea619d4d5452ebaae1e",
+      "evaluatorContractTestGitBlobSha": "466d3a362a6b2c6be97b1f8f40caebd42246f5f6",
       "requiredCases": {
         "c1_guarded_pairs": "synthetic-boundary-guard-transition",
         "c2_gutter_pairs": "synthetic-unique-gutter-relation",
