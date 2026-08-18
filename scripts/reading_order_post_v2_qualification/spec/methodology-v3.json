@@ -62,7 +62,7 @@
   },
   "runtimeReachability": {
     "evaluatorPath": "scripts/reading_order_post_v2_qualification/exercise_v3.py",
-    "evaluatorGitBlobSha": "1fdbb4692015eb74fb93cc7b42d9a3f9a69e259a",
+    "evaluatorGitBlobSha": "0f74b52e3484cdef7b4f8215e009d04e595ac7de",
     "positivePredicatesDelegatedToFrozenV2Evaluator": true,
     "invalidDiagnosticSemantics": {
       "classification": "INVALID_EXPERIMENT",
@@ -122,10 +122,11 @@
           "fallbackReason",
           "usedPanelEvidence",
           "fallbackOrder",
+          "finalOrder",
           "regionDirections",
           "regionIntegrity"
         ],
-        "finalOrderPolicy": "validated structurally against nodeOrder blocks; panel-local B0/B1 order is intentionally not reimplemented or exact-compared"
+        "finalOrderPolicy": "exact-frozen-producer-recomputation"
       }
     },
     "productionDiagnosticContract": {
@@ -223,8 +224,10 @@
         "emptyPanelNodesMaterializeEmptyBlocks": true,
         "uncertainNodeMaterializesExactlyOneRegion": true,
         "panelBlockMustBeContiguousAndContainExactlyAssignedRegions": true,
-        "panelInternalOrderValidated": false,
-        "panelInternalOrderRationale": "B0/B1 local order is candidate behavior and is not reimplemented inside the validator"
+        "categoryAStructuralBlockValidationRetained": true,
+        "panelInternalOrderProducerAuthenticated": true,
+        "producerAuthentication": "exact frozen-producer final_order recomputation",
+        "manualB0B1ReimplementationForbidden": true
       },
       "recoveryAndFallback": {
         "nonC3RecoveryReason": "disabled",
@@ -270,6 +273,7 @@
         "assignmentGeometryRecomputed": true,
         "relationGeometryAndUniqueSlotRecomputed": true,
         "nodeOrderAndFallbackStateRecomputed": true,
+        "finalOrderRecomputed": true,
         "arbitrarySemanticClaimsRejected": true,
         "futureExecutableRunnerMustSupplyTrustedRuntimeInput": true
       },
@@ -327,7 +331,7 @@
       "candidateReachabilityTestPath": "tests/reading_order_post_v2_calibration/test_reachability_v3.py",
       "candidateReachabilityTestGitBlobSha": "c1fa63cffd6a0e1e49702b0f8030e52e3cec740a",
       "evaluatorContractTestPath": "tests/reading_order_post_v2_qualification/test_exercise_v3.py",
-      "evaluatorContractTestGitBlobSha": "691a80e034f1c6590e778397df2eed913cf59997",
+      "evaluatorContractTestGitBlobSha": "c414a9ae1980f83009a6980e76e57220d33eb250",
       "requiredCases": {
         "c1_guarded_pairs": "synthetic-boundary-guard-transition",
         "c2_gutter_pairs": "synthetic-unique-gutter-relation",
@@ -352,6 +356,82 @@
     "v2IdentityRemainsConsumed": true,
     "productionActivationAuthorized": false,
     "futureRunnerMustSupplyTrustedArmPageInputAndPixels": true,
-    "futureRunnerMustAuthenticateProducerDerivedFactsBeforeExercise": true
+    "futureRunnerMustAuthenticateProducerDerivedFactsBeforeExercise": true,
+    "runnerContract": {
+      "contractFreezeOnly": true,
+      "executableRunnerImplementedHere": false,
+      "inheritedFailClosedPreflight": {
+        "requiredBeforePrimaryCandidateEvaluation": true,
+        "requiredBeforeProducerAuthenticationRecomputation": true,
+        "secondPreflightImplementationForbidden": true,
+        "exactExecutionShaRequired": true,
+        "exactExecutionTreeRequired": true,
+        "cleanCheckoutAndWorktreeRequired": true,
+        "frozenCandidateCommitTreeBindingRequired": true,
+        "frozenCandidateCommitPathBlobBindingRequired": true,
+        "headCandidatePathBlobBindingRequired": true,
+        "headCandidateBlobMustEqualFrozenCandidateGitBlobSha": true,
+        "allApplicableInheritedFrozenSourceBindingsRequired": true
+      },
+      "sealedCorpusIntegrity": {
+        "sealedCorpusOnly": true,
+        "manifestIntegrityRequired": true,
+        "designIntegrityRequired": true,
+        "inventoryIntegrityRequired": true,
+        "inputIntegrityRequired": true,
+        "imageIntegrityRequired": true
+      },
+      "trustedPageInputDerivation": {
+        "pageDerivedInternallyOnly": true,
+        "pageSource": "already-validated sealed corpus input file",
+        "pageLoader": "load_arm_input",
+        "pixelsDerivedInternallyOnly": true,
+        "pixelsSource": "corresponding already-validated sealed PNG",
+        "callerSuppliedArmPageInputForbidden": true,
+        "callerSuppliedPixelBufferForbidden": true,
+        "bindingChain": [
+          "sealed manifest inventory",
+          "exact input bytes",
+          "exact image bytes",
+          "pageId",
+          "ArmPageInput",
+          "decoded pixels"
+        ]
+      },
+      "canonicalPixels": {
+        "decodedFromVerifiedSealedPng": true,
+        "colorMode": "RGB",
+        "dtype": "uint8",
+        "shape": "H x W x 3",
+        "privateStableSnapshot": true,
+        "replacementOrMutationBetweenPrimaryAndAuthenticationForbidden": true
+      },
+      "candidateRuntimeAuthenticity": {
+        "producerAuthenticationValidOnlyAfterSourceBindingPreflight": true,
+        "monkeypatchAndTestSeamsForbidden": true,
+        "moduleSubstitutionForbidden": true,
+        "cleanAuthenticatedSourceStateRequired": true,
+        "sameFrozenCalibrationConfigSemanticsPerArm": true,
+        "syntheticCalibrationMonkeypatchModelIsQualificationEvidence": false
+      },
+      "diagnosticExecutionShaBinding": {
+        "everyDiagnosticMustEqualAuthorizedExecutionSha": true,
+        "authorizedExecutionShaSource": "qualification identity plus inherited fail-closed preflight",
+        "sharedSyntacticallyValidShaAloneIsInsufficient": true
+      },
+      "producerAuthenticationRecomputation": {
+        "intraHarnessVerificationWithinSameQualification": true,
+        "secondWorkflowDispatch": false,
+        "secondQualification": false,
+        "replay": false,
+        "newQualificationIdentity": false,
+        "additionalStandaloneAuthorization": false,
+        "oneQualificationRuleAppliesToWorkflowExecutionIdentity": true,
+        "sameFrozenInputRequired": true,
+        "sameAuthenticatedSourceRequired": true,
+        "sameArmConfigRequired": true,
+        "sameQualificationExecutionContextRequired": true
+      }
+    }
   }
 }

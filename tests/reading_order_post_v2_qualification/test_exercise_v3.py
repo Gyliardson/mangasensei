@@ -277,12 +277,15 @@ def test_v3_methodology_is_frozen_but_not_currently_dispatchable() -> None:
 
     authenticity = runtime["evidenceAuthenticityLayers"]
     assert authenticity["envelopeStructuralValidity"]["category"] == "CATEGORY_A"
+    assert authenticity["envelopeStructuralValidity"]["provesProducerAuthenticityAlone"] is False
     assert authenticity["trustedInputBinding"]["category"] == "CATEGORY_B"
     assert authenticity["producerSemanticAuthentication"]["category"] == "CATEGORY_B"
     assert authenticity["producerSemanticAuthentication"]["usesFrozenCandidateDirectly"] is True
     producer_auth = authenticity["producerSemanticAuthentication"]
     assert producer_auth["manualEquivalentAlgorithmForbidden"] is True
     assert producer_auth["arbitraryDiagnosticClaimsAccepted"] is False
+    assert "finalOrder" in producer_auth["recomputedFields"]
+    assert producer_auth["finalOrderPolicy"] == "exact-frozen-producer-recomputation"
 
     production = runtime["productionDiagnosticContract"]
     assert production["serializationReference"].endswith("/run_arm.py")
@@ -292,9 +295,12 @@ def test_v3_methodology_is_frozen_but_not_currently_dispatchable() -> None:
         "frozen-producer-recomputation"
     )
     assert production["finalOrder"]["panelBlocksFollowNodeOrder"] is True
-    assert production["finalOrder"]["panelInternalOrderValidated"] is False
+    assert production["finalOrder"]["categoryAStructuralBlockValidationRetained"] is True
+    assert production["finalOrder"]["panelInternalOrderProducerAuthenticated"] is True
+    assert production["finalOrder"]["manualB0B1ReimplementationForbidden"] is True
     assert production["assignments"]["regionIdSourceIndexBoundToTrustedArmPageInput"] is True
     assert production["producerDerivedFacts"]["trustedPixelsRequired"] is True
+    assert production["producerDerivedFacts"]["finalOrderRecomputed"] is True
 
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
     assert V3_EXPERIMENT_ID not in workflow
@@ -314,7 +320,122 @@ def test_v3_methodology_separates_authoring_coverage_from_runtime_reachability()
     assert runtime["positiveGateIndependence"]["dedicatedMechanismPagesRequired"] is True
 
 
-def test_v3_final_order_accepts_any_internal_order_within_panel_block(
+def test_v3_methodology_freezes_future_runner_root_of_trust() -> None:
+    methodology = json.loads(METHODOLOGY_PATH.read_text(encoding="utf-8"))
+    future = methodology["futureQualificationBoundary"]
+    runner = future["runnerContract"]
+    assert runner["contractFreezeOnly"] is True
+    assert runner["executableRunnerImplementedHere"] is False
+
+    preflight = runner["inheritedFailClosedPreflight"]
+    assert preflight["requiredBeforePrimaryCandidateEvaluation"] is True
+    assert preflight["requiredBeforeProducerAuthenticationRecomputation"] is True
+    assert preflight["secondPreflightImplementationForbidden"] is True
+    assert preflight["exactExecutionShaRequired"] is True
+    assert preflight["exactExecutionTreeRequired"] is True
+    assert preflight["cleanCheckoutAndWorktreeRequired"] is True
+    assert preflight["headCandidateBlobMustEqualFrozenCandidateGitBlobSha"] is True
+    assert preflight["allApplicableInheritedFrozenSourceBindingsRequired"] is True
+
+    corpus = runner["sealedCorpusIntegrity"]
+    assert corpus == {
+        "sealedCorpusOnly": True,
+        "manifestIntegrityRequired": True,
+        "designIntegrityRequired": True,
+        "inventoryIntegrityRequired": True,
+        "inputIntegrityRequired": True,
+        "imageIntegrityRequired": True,
+    }
+
+    trusted = runner["trustedPageInputDerivation"]
+    assert trusted["pageDerivedInternallyOnly"] is True
+    assert trusted["pageLoader"] == "load_arm_input"
+    assert trusted["pixelsDerivedInternallyOnly"] is True
+    assert trusted["callerSuppliedArmPageInputForbidden"] is True
+    assert trusted["callerSuppliedPixelBufferForbidden"] is True
+    assert trusted["bindingChain"] == [
+        "sealed manifest inventory",
+        "exact input bytes",
+        "exact image bytes",
+        "pageId",
+        "ArmPageInput",
+        "decoded pixels",
+    ]
+
+    pixels = runner["canonicalPixels"]
+    assert pixels["decodedFromVerifiedSealedPng"] is True
+    assert pixels["colorMode"] == "RGB"
+    assert pixels["dtype"] == "uint8"
+    assert pixels["shape"] == "H x W x 3"
+    assert pixels["privateStableSnapshot"] is True
+    assert pixels["replacementOrMutationBetweenPrimaryAndAuthenticationForbidden"] is True
+
+    source = runner["candidateRuntimeAuthenticity"]
+    assert source["producerAuthenticationValidOnlyAfterSourceBindingPreflight"] is True
+    assert source["monkeypatchAndTestSeamsForbidden"] is True
+    assert source["moduleSubstitutionForbidden"] is True
+    assert source["cleanAuthenticatedSourceStateRequired"] is True
+    assert source["sameFrozenCalibrationConfigSemanticsPerArm"] is True
+    assert source["syntheticCalibrationMonkeypatchModelIsQualificationEvidence"] is False
+
+
+def test_v3_methodology_freezes_recomputation_as_same_qualification_verification() -> None:
+    methodology = json.loads(METHODOLOGY_PATH.read_text(encoding="utf-8"))
+    recomputation = methodology["futureQualificationBoundary"]["runnerContract"][
+        "producerAuthenticationRecomputation"
+    ]
+    assert recomputation["intraHarnessVerificationWithinSameQualification"] is True
+    assert recomputation["secondWorkflowDispatch"] is False
+    assert recomputation["secondQualification"] is False
+    assert recomputation["replay"] is False
+    assert recomputation["newQualificationIdentity"] is False
+    assert recomputation["additionalStandaloneAuthorization"] is False
+    assert recomputation["oneQualificationRuleAppliesToWorkflowExecutionIdentity"] is True
+    assert recomputation["sameFrozenInputRequired"] is True
+    assert recomputation["sameAuthenticatedSourceRequired"] is True
+    assert recomputation["sameArmConfigRequired"] is True
+    assert recomputation["sameQualificationExecutionContextRequired"] is True
+
+
+def test_v3_methodology_binds_diagnostic_execution_sha_to_authorized_execution() -> None:
+    methodology = json.loads(METHODOLOGY_PATH.read_text(encoding="utf-8"))
+    binding = methodology["futureQualificationBoundary"]["runnerContract"][
+        "diagnosticExecutionShaBinding"
+    ]
+    assert binding["everyDiagnosticMustEqualAuthorizedExecutionSha"] is True
+    assert binding["authorizedExecutionShaSource"] == (
+        "qualification identity plus inherited fail-closed preflight"
+    )
+    assert binding["sharedSyntacticallyValidShaAloneIsInsufficient"] is True
+
+
+def test_v3_final_order_emitted_by_producer_is_authenticated(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    page, diagnostics, trusted = _producer_case(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slice_name="b1-horizontal",
+        arms=(ArmId.B1_ONLY, ArmId.C1_C2_C3_B1),
+        panels=(PanelBox(0, 0, 120, 120), PanelBox(200, 0, 320, 120)),
+        regions=(
+            (20, 20, 40, 40),
+            (60, 50, 80, 70),
+            (220, 20, 240, 40),
+            (260, 50, 280, 70),
+        ),
+        pair=("r1", "r2"),
+    )
+    report = build_exercise_report_v3(
+        annotations=(page,),
+        diagnostics=diagnostics,
+        trusted_page_inputs=trusted,
+    )
+    assert report.counts["b1_horizontal_pairs"].count == 1
+
+
+def test_v3_final_order_rejects_internal_panel_order_mutation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -337,18 +458,25 @@ def test_v3_final_order_accepts_any_internal_order_within_panel_block(
     multi = next(regions for regions in groups.values() if len(regions) >= 2)
     final_order = target["finalOrder"]
     assert isinstance(final_order, list)
+    original = list(final_order)
     positions = [final_order.index(region_id) for region_id in multi[:2]]
     final_order[positions[0]], final_order[positions[1]] = (
         final_order[positions[1]],
         final_order[positions[0]],
     )
-
-    report = build_exercise_report_v3(
-        annotations=(page,),
-        diagnostics=diagnostics,
-        trusted_page_inputs=trusted,
+    assert set(final_order) == set(original)
+    assert target["nodeOrder"] == diagnostics[ArmId.B1_ONLY]["Q901"]["nodeOrder"]
+    assert target["assignments"] == diagnostics[ArmId.B1_ONLY]["Q901"]["assignments"]
+    assert _materialized_blocks(target) == _materialized_blocks(
+        diagnostics[ArmId.B1_ONLY]["Q901"]
     )
-    assert report.counts["b1_horizontal_pairs"].count == 1
+
+    _assert_invalid(
+        page=page,
+        diagnostics=diagnostics,
+        trusted=trusted,
+        expected_fragment="finalOrder: does not match frozen producer recomputation",
+    )
 
 
 @pytest.mark.parametrize(
@@ -708,6 +836,50 @@ def test_v3_prior_production_shape_regressions_remain_fail_closed(
                 "rule": "uncertain-aligned-top-before-bottom",
             }
         ]
+
+    _assert_invalid(
+        page=page,
+        diagnostics=diagnostics,
+        trusted=trusted,
+        expected_fragment=expected_fragment,
+    )
+
+
+@pytest.mark.parametrize(
+    ("pixel_case", "expected_fragment"),
+    [
+        ("not-ndarray", "trusted pixels must be a numpy ndarray"),
+        ("wrong-dtype", "trusted pixels must use uint8 dtype"),
+        ("wrong-height", "trusted pixels must use exact H x W x 3 RGB shape"),
+        ("wrong-channels", "trusted pixels must use exact H x W x 3 RGB shape"),
+    ],
+)
+def test_v3_trusted_pixels_require_canonical_runtime_representation(
+    pixel_case: str,
+    expected_fragment: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    page, diagnostics, trusted = _producer_case(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slice_name="c2-one-sided-non-unique-fail-closed",
+        arms=(ArmId.C2_ONLY,),
+        panels=(PanelBox(0, 0, 100, 100), PanelBox(0, 200, 100, 300)),
+        regions=((20, 20, 40, 40), (20, 220, 40, 240), (150, 350, 250, 450)),
+        pair=("r1", "r3"),
+    )
+    original = trusted["Q901"]
+    bad_pixels: Any
+    if pixel_case == "not-ndarray":
+        bad_pixels = object()
+    elif pixel_case == "wrong-dtype":
+        bad_pixels = original.pixels.astype(np.float32)
+    elif pixel_case == "wrong-height":
+        bad_pixels = original.pixels[:-1, :, :]
+    else:
+        bad_pixels = original.pixels[:, :, :2]
+    trusted["Q901"] = V3TrustedPageInput(page=original.page, pixels=bad_pixels)
 
     _assert_invalid(
         page=page,

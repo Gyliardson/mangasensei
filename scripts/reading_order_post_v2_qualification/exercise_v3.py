@@ -4,6 +4,9 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, TypeGuard
 
+import numpy as np
+from numpy.typing import NDArray
+
 import mangasensei.ocr.diagnostics.reading_order_post_v2_calibration as candidate_module
 
 from . import DIAGNOSTIC_SCHEMA_VERSION
@@ -156,6 +159,7 @@ _PRODUCER_AUTH_FIELDS = (
     "fallbackReason",
     "usedPanelEvidence",
     "fallbackOrder",
+    "finalOrder",
     "regionDirections",
     "regionIntegrity",
 )
@@ -166,7 +170,7 @@ class V3TrustedPageInput:
     """Candidate-independent runtime inputs needed to authenticate v3 evidence."""
 
     page: ArmPageInput
-    pixels: Any
+    pixels: NDArray[np.uint8]
 
 
 class V3DiagnosticValidationError(ValueError):
@@ -903,15 +907,17 @@ def _box_dict(box: Any) -> dict[str, int]:
 def _trusted_pixels_shape(
     trusted: V3TrustedPageInput, where: str, problems: list[str]
 ) -> bool:
-    shape = getattr(trusted.pixels, "shape", None)
-    if (
-        not isinstance(shape, tuple)
-        or len(shape) < 2
-        or shape[0] != trusted.page.height
-        or shape[1] != trusted.page.width
-    ):
+    pixels = trusted.pixels
+    if not isinstance(pixels, np.ndarray):
+        problems.append(f"{where}: trusted pixels must be a numpy ndarray")
+        return False
+    if pixels.dtype != np.uint8:
+        problems.append(f"{where}: trusted pixels must use uint8 dtype")
+        return False
+    expected_shape = (trusted.page.height, trusted.page.width, 3)
+    if pixels.ndim != 3 or pixels.shape != expected_shape:
         problems.append(
-            f"{where}: trusted pixels must match ArmPageInput width/height"
+            f"{where}: trusted pixels must use exact H x W x 3 RGB shape"
         )
         return False
     return True
@@ -980,6 +986,7 @@ def _producer_semantics(
         "fallbackReason": result.diagnostic.fallback_reason,
         "usedPanelEvidence": result.diagnostic.used_panel_evidence,
         "fallbackOrder": list(result.diagnostic.fallback_order),
+        "finalOrder": list(result.diagnostic.final_order),
         "regionDirections": {
             ref.region_id: str(getattr(ref.region, "direction", ""))
             for ref in regions
