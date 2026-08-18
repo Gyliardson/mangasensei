@@ -361,9 +361,10 @@ def _break_case(metric: str, diagnostics: dict[ArmId, dict[str, dict[str, object
         diagnostics[ArmId.C1_ONLY]["Q901"] = _default_diag(ArmId.C1_ONLY)
     elif metric in {"c2_gutter_pairs", "c2_overlap_pairs", "c2_pair_precedence_pairs"}:
         diagnostics[ArmId.C2_ONLY]["Q901"]["relationEdges"] = []
-    elif metric == "c2_fail_closed_no_relation_pairs":
-        diagnostics[ArmId.C2_ONLY]["Q901"] = _default_diag(ArmId.C2_ONLY)
-    elif metric == "c2_conflict_cycle_fallback_pairs":
+    elif metric in {
+        "c2_fail_closed_no_relation_pairs",
+        "c2_conflict_cycle_fallback_pairs",
+    }:
         diagnostics[ArmId.C2_ONLY]["Q901"] = _default_diag(ArmId.C2_ONLY)
     elif metric in {"c3_positive_pairs", "c3_rejection_pages"}:
         for arm in (ArmId.C3_ONLY, ArmId.C1_C2_C3, ArmId.C1_C2_C3_B1):

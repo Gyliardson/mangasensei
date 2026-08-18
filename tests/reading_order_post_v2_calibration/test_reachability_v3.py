@@ -391,14 +391,20 @@ def test_v3_reachability_monkeypatch_seams_are_static_and_allowlisted() -> None:
     for call in setattr_calls:
         assert isinstance(call.func, ast.Attribute)
         receiver = call.func.value
-        assert (
-            isinstance(receiver, ast.Name) and receiver.id == "monkeypatch"
-        ), f"non-monkeypatch setattr call at line {call.lineno}"
+        assert isinstance(receiver, ast.Name), (
+            f"non-monkeypatch setattr call at line {call.lineno}"
+        )
+        assert receiver.id == "monkeypatch", (
+            f"non-monkeypatch setattr call at line {call.lineno}"
+        )
         assert len(call.args) >= 2, (
             f"unresolved monkeypatch.setattr target at line {call.lineno}"
         )
         target = call.args[1]
-        assert isinstance(target, ast.Constant) and isinstance(target.value, str), (
+        assert isinstance(target, ast.Constant), (
+            f"dynamic monkeypatch.setattr target at line {call.lineno}"
+        )
+        assert isinstance(target.value, str), (
             f"dynamic monkeypatch.setattr target at line {call.lineno}"
         )
         targets.append(target.value)
