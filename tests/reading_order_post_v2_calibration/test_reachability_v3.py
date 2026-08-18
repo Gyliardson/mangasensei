@@ -375,24 +375,40 @@ def test_v3_candidate_production_diagnostic_reaches_evaluator_deterministically(
     assert mismatch_report.counts[case.metric].count == 0
 
 
-def test_v3_reachability_cases_do_not_patch_candidate_mechanism_functions() -> None:
+def test_v3_reachability_monkeypatch_seams_are_static_and_allowlisted() -> None:
     source = Path(__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
-    patched_names = {
-        node.args[1].value
+    setattr_calls = [
+        node
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "setattr"
-        and len(node.args) >= 2
-        and isinstance(node.args[1], ast.Constant)
-        and isinstance(node.args[1].value, str)
-    }
+    ]
+    assert setattr_calls
+
+    targets: list[str] = []
+    for call in setattr_calls:
+        assert isinstance(call.func, ast.Attribute)
+        receiver = call.func.value
+        assert (
+            isinstance(receiver, ast.Name) and receiver.id == "monkeypatch"
+        ), f"non-monkeypatch setattr call at line {call.lineno}"
+        assert len(call.args) >= 2, (
+            f"unresolved monkeypatch.setattr target at line {call.lineno}"
+        )
+        target = call.args[1]
+        assert isinstance(target, ast.Constant) and isinstance(target.value, str), (
+            f"dynamic monkeypatch.setattr target at line {call.lineno}"
+        )
+        targets.append(target.value)
+
+    allowed = {"segment_panel_groups", "_line_segments"}
     forbidden = {
         "_assignment_observations",
         "_uncertain_relation_edges",
         "_recover_merged_frames",
         "_b1_local_order",
     }
-    assert forbidden.isdisjoint(patched_names)
-    assert patched_names <= {"segment_panel_groups", "_line_segments"}
+    assert set(targets) == allowed
+    assert forbidden.isdisjoint(targets)

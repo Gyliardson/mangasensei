@@ -62,7 +62,7 @@
   },
   "runtimeReachability": {
     "evaluatorPath": "scripts/reading_order_post_v2_qualification/exercise_v3.py",
-    "evaluatorGitBlobSha": "ea7a77c477a2083c5aca335dbfabd13d8b971f2b",
+    "evaluatorGitBlobSha": "63804c6edc933b2ab1001e7a145e4abe0efe5d97",
     "positivePredicatesDelegatedToFrozenV2Evaluator": true,
     "invalidDiagnosticSemantics": {
       "classification": "INVALID_EXPERIMENT",
@@ -71,6 +71,127 @@
       "missingMalformedOrInconsistentDiagnosticsAreInvalid": true,
       "countsForbidden": true,
       "futureExecutableRunnerMustTranslateValidationFailure": true
+    },
+    "productionDiagnosticContract": {
+      "serializationReference": "scripts/reading_order_post_v2_qualification/run_arm.py",
+      "topLevelFieldSetExact": true,
+      "topLevelFields": [
+        "schemaVersion",
+        "experimentArm",
+        "executionSha",
+        "pageId",
+        "preSegmentation",
+        "segmentation",
+        "recoveryReason",
+        "assignments",
+        "relationEdges",
+        "nodeOrder",
+        "fallbackReason",
+        "usedPanelEvidence",
+        "fallbackOrder",
+        "finalOrder",
+        "regionDirections",
+        "regionIntegrity"
+      ],
+      "preSegmentation": {
+        "boxesRequired": true,
+        "boxCountEqualsSerializedBoxesLength": true,
+        "boxShape": "integer x1/y1/x2/y2 with 0 <= x1 < x2 and 0 <= y1 < y2",
+        "boxOrder": "y1,x1,y2,x2",
+        "directReasonVocabulary": [
+          "reliable",
+          "fewer-than-two-groups",
+          "too-many-groups",
+          "group-too-small",
+          "group-too-narrow",
+          "group-too-short",
+          "nested-or-inset-evidence",
+          "ambiguous-overlap"
+        ]
+      },
+      "segmentation": {
+        "boxesRequired": true,
+        "sameBoxShapeAndOrderAsPreSegmentation": true,
+        "recoveredState": "recovered-merged-frame requires reliable=true and exactly two boxes"
+      },
+      "regionSet": {
+        "expectedSet": "annotation.reading_order union annotation.unscored_region_ids; corpus validation binds that union to the arm-visible input region IDs",
+        "allSerializedRegionViewsUseFullPageSet": true,
+        "views": [
+          "fallbackOrder",
+          "finalOrder",
+          "regionDirections",
+          "assignments when segmentation is reliable"
+        ]
+      },
+      "assignments": {
+        "requiredForEveryRegionWhenSegmentationReliable": true,
+        "forbiddenWhenSegmentationUnreliable": true,
+        "sourceIndexEqualsSerializerPosition": true,
+        "candidateGroupIndicesUniqueIncreasingAndWithinSegmentation": true,
+        "statusReasonCandidateAssignedIndexAndUncertainLabelCrossChecked": true,
+        "uncertainNodeLabelFormat": "u{sourceIndex:03d}"
+      },
+      "nodeGraph": {
+        "nodeOrderRequired": true,
+        "successNodeOrderCoversAllPanelAndUncertainNodes": true,
+        "fallbackNodeOrderEmpty": true,
+        "panelNodeFormat": "g{segmentationBoxIndex:03d}",
+        "relationEndpointsMustBelongToNodeVocabulary": true,
+        "relationMustConnectPanelAndUncertainNode": true,
+        "relationRules": [
+          "unique-gutter-between-hard-panels",
+          "validated-overlap-bridge-right-before-left",
+          "uncertain-same-level-right-before-left",
+          "uncertain-aligned-top-before-bottom",
+          "uncertain-nonoverlap-top-before-bottom"
+        ],
+        "gutterAndOverlapAreExactTwoEdgeBrackets": true,
+        "overlapRequiresTwoCandidateAmbiguousAssignment": true,
+        "genericUncertainRelationsRequirePredecessorAndSuccessor": true,
+        "successEdgesMustRespectNodeOrder": true
+      },
+      "recoveryAndFallback": {
+        "nonC3RecoveryReason": "disabled",
+        "c3ReliablePreReason": "not-needed",
+        "c3IneligiblePreReason": "not-eligible",
+        "c3AcceptedReason": "accepted-strong-anchor-plus-occlusion-supported-frame",
+        "c3RejectedReasons": [
+          "rejected-insufficient-long-frame-sides",
+          "rejected-multiple-strong-frame-candidates",
+          "rejected-no-unique-strong-frame-anchor",
+          "rejected-ambiguous-or-missing-occlusion-supported-frame",
+          "rejected-group-too-small",
+          "rejected-group-too-narrow",
+          "rejected-group-too-short",
+          "rejected-nested-or-inset-evidence",
+          "rejected-ambiguous-overlap"
+        ],
+        "reliableSegmentationFallbackReasons": [
+          "insufficient-confident-panel-groups",
+          "precedence-cycle",
+          "uncertain-relation-conflict"
+        ],
+        "fallbackRequiresUsedPanelEvidenceFalseNodeOrderEmptyAndFinalEqualsFallback": true,
+        "successRequiresUsedPanelEvidenceTrueFallbackReasonNullAndTwoConfidentGroups": true
+      },
+      "regionDirections": {
+        "vocabulary": [
+          "h",
+          "v"
+        ],
+        "derivation": "build_textblock_regions fixes direction=auto with nonempty input lines; TextBlock.direction therefore materializes h or v before the frozen candidate and run_arm asserts it is unchanged"
+      },
+      "regionIntegrity": {
+        "required": true,
+        "allFlagsMustBeTrue": true
+      },
+      "crossArmInvariants": {
+        "preSegmentationEqualForSamePage": true,
+        "fallbackOrderEqualForSamePage": true,
+        "regionDirectionsEqualForSamePage": true,
+        "c3SegmentationAndRecoveryReasonEqualAcrossC3EnabledArms": true
+      }
     },
     "c3NegativeSemantics": "generic-page-rejection-only",
     "c3NegativeWitnessUnit": "unique-page",
@@ -115,9 +236,9 @@
       "candidateToProductionDiagnosticToEvaluatorRequired": true,
       "productionDiagnosticSerializationReference": "scripts/reading_order_post_v2_qualification/run_arm.py",
       "candidateReachabilityTestPath": "tests/reading_order_post_v2_calibration/test_reachability_v3.py",
-      "candidateReachabilityTestGitBlobSha": "9af47b2392685e1a5ec8a852a2545a31f4ca081b",
+      "candidateReachabilityTestGitBlobSha": "8a7445ca30e0509b0cf7eb76800f9983401f5116",
       "evaluatorContractTestPath": "tests/reading_order_post_v2_qualification/test_exercise_v3.py",
-      "evaluatorContractTestGitBlobSha": "466d3a362a6b2c6be97b1f8f40caebd42246f5f6",
+      "evaluatorContractTestGitBlobSha": "56110f80a434eaec33a84f9b9f79ef153052ddee",
       "requiredCases": {
         "c1_guarded_pairs": "synthetic-boundary-guard-transition",
         "c2_gutter_pairs": "synthetic-unique-gutter-relation",
