@@ -79,7 +79,7 @@ def _cases() -> tuple[_SyntheticCase, ...]:
     gutter_panels = (PanelBox(0, 0, 100, 100), PanelBox(200, 0, 300, 100))
     gutter_regions = ((20, 20, 40, 40), (220, 20, 240, 40), (140, 40, 160, 60))
     merged = (PanelBox(100, 100, 900, 900),)
-    c3_regions = ((760, 150, 800, 230), (180, 740, 230, 820))
+    c3_regions = ((150, 150, 200, 230), (600, 550, 650, 630))
     return (
         _SyntheticCase(
             metric="c1_guarded_pairs",
