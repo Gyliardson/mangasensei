@@ -13,8 +13,12 @@ from scripts.reading_order_post_v2_qualification.contracts import (
     ArmId,
     PageGroundTruth,
     QualificationPair,
+    load_arm_input,
 )
-from scripts.reading_order_post_v2_qualification.exercise_v3 import build_exercise_report_v3
+from scripts.reading_order_post_v2_qualification.exercise_v3 import (
+    V3TrustedPageInput,
+    build_exercise_report_v3,
+)
 
 import mangasensei.ocr.diagnostics.reading_order_post_v2_calibration as candidate_module
 from mangasensei.ocr.reading_order import PanelBox, PanelSegmentation
@@ -75,9 +79,17 @@ def _cases() -> tuple[_SyntheticCase, ...]:
     c3_arms = (ArmId.C3_ONLY, ArmId.C1_C2_C3, ArmId.C1_C2_C3_B1)
     b1_arms = (ArmId.B1_ONLY, ArmId.C1_C2_C3_B1)
     fail_closed_panels = (PanelBox(0, 0, 100, 100), PanelBox(0, 200, 100, 300))
-    fail_closed_regions = ((20, 20, 40, 40), (20, 220, 40, 240), (150, 350, 250, 450))
+    fail_closed_regions = (
+        (20, 20, 40, 40),
+        (20, 220, 40, 240),
+        (150, 350, 250, 450),
+    )
     gutter_panels = (PanelBox(0, 0, 100, 100), PanelBox(200, 0, 300, 100))
-    gutter_regions = ((20, 20, 40, 40), (220, 20, 240, 40), (140, 40, 160, 60))
+    gutter_regions = (
+        (20, 20, 40, 40),
+        (220, 20, 240, 40),
+        (140, 40, 160, 60),
+    )
     merged = (PanelBox(100, 100, 900, 900),)
     c3_regions = ((150, 150, 200, 230), (600, 550, 650, 630))
     return (
@@ -252,6 +264,13 @@ def _write_corpus(
     )
 
 
+def _trusted_input(root: Path, page_id: str) -> V3TrustedPageInput:
+    page = load_arm_input(root / "inputs" / f"{page_id}.json")
+    with Image.open(root / "images" / f"{page_id}.png") as opened:
+        pixels = np.asarray(opened.convert("RGB"))
+    return V3TrustedPageInput(page=page, pixels=pixels)
+
+
 def _set_allowed_seams(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -344,7 +363,11 @@ def test_v3_candidate_production_diagnostic_reaches_evaluator_deterministically(
         region_count=len(case.regions),
         pair=case.pair,
     )
-    report = build_exercise_report_v3(annotations=(page,), diagnostics=first)
+    report = build_exercise_report_v3(
+        annotations=(page,),
+        diagnostics=first,
+        trusted_page_inputs={"Q901": _trusted_input(target_root, "Q901")},
+    )
     assert report.counts[case.metric].count == 1
 
     mismatch_root = tmp_path / "mismatch"
@@ -370,21 +393,76 @@ def test_v3_candidate_production_diagnostic_reaches_evaluator_deterministically(
         pair=case.mismatch_pair or case.pair,
     )
     mismatch_report = build_exercise_report_v3(
-        annotations=(mismatch_page,), diagnostics=mismatch
+        annotations=(mismatch_page,),
+        diagnostics=mismatch,
+        trusted_page_inputs={"Q902": _trusted_input(mismatch_root, "Q902")},
     )
     assert mismatch_report.counts[case.metric].count == 0
 
 
+def test_v3_c3_rejection_counts_unique_page_witness_not_pairs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    case = next(item for item in _cases() if item.metric == "c3_rejection_pages")
+    root = tmp_path / "c3-rejection"
+    _write_corpus(root, page_id="Q901", region_boxes=case.regions)
+    _set_allowed_seams(
+        monkeypatch,
+        panels=case.panels,
+        reliable=case.segmentation_reliable,
+        reason=case.segmentation_reason,
+        lines=case.lines,
+    )
+    diagnostics = _execute_diagnostics(
+        corpus_root=root,
+        output_root=root / "output",
+        page_id="Q901",
+        arms=case.arms,
+        repeat=1,
+    )
+    page = PageGroundTruth(
+        page_id="Q901",
+        reading_order=("r1", "r2"),
+        unscored_region_ids=(),
+        qualification_pairs=(
+            QualificationPair(
+                "p1", "r1", "r2", ("c3-zero-multiple-anchor-negative",)
+            ),
+            QualificationPair(
+                "p2", "r1", "r2", ("c3-invalid-topology-negative",)
+            ),
+        ),
+        layout_tags=(),
+    )
+    report = build_exercise_report_v3(
+        annotations=(page,),
+        diagnostics=diagnostics,
+        trusted_page_inputs={"Q901": _trusted_input(root, "Q901")},
+    )
+    count = report.counts["c3_rejection_pages"]
+    assert count.count == 1
+    assert count.page_ids == ("Q901",)
+    assert count.pair_ids == ()
+
+
 def test_v3_reachability_monkeypatch_seams_are_static_and_allowlisted() -> None:
-    source = Path(__file__).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    setattr_calls = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "setattr"
-    ]
+    paths = (
+        Path(__file__),
+        Path(__file__).parents[1]
+        / "reading_order_post_v2_qualification"
+        / "test_exercise_v3.py",
+    )
+    setattr_calls: list[ast.Call] = []
+    for path in paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        setattr_calls.extend(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "setattr"
+        )
     assert setattr_calls
 
     targets: list[str] = []

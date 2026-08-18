@@ -1,26 +1,32 @@
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 import subprocess
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
-from scripts.reading_order_post_v2_qualification import DIAGNOSTIC_SCHEMA_VERSION
+import scripts.reading_order_post_v2_qualification.run_arm as run_arm_module
+from PIL import Image
 from scripts.reading_order_post_v2_qualification.contracts import (
     ArmId,
     PageGroundTruth,
     QualificationPair,
+    load_arm_input,
 )
 from scripts.reading_order_post_v2_qualification.exercise_v3 import (
     EXERCISE_MINIMA_V3,
     V3_INVALID_DIAGNOSTIC_HARNESS_STATUS,
     V3_INVALID_EXPERIMENT_CLASSIFICATION,
     V3DiagnosticValidationError,
+    V3TrustedPageInput,
     build_exercise_report_v3,
 )
+
+import mangasensei.ocr.diagnostics.reading_order_post_v2_calibration as candidate_module
+from mangasensei.ocr.reading_order import PanelBox, PanelSegmentation
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GIT = "/usr/bin/git"
@@ -38,15 +44,15 @@ V2_SPEC_PATH = (
     / "spec"
     / "experiment-spec-v2.json"
 )
-WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "reading-order-post-v2-qualification.yml"
+WORKFLOW_PATH = (
+    REPO_ROOT
+    / ".github"
+    / "workflows"
+    / "reading-order-post-v2-qualification.yml"
+)
 V3_EXPERIMENT_ID = "reading-order-post-v2-c1-c2-c3-b1-v3"
 EXECUTION_SHA = "f45facb2284d740df2f294800f705414e0ba465e"
-REGION_IDS = ("r1", "r2", "r3")
-BASE_BOXES = (
-    {"x1": 0, "y1": 0, "x2": 120, "y2": 120},
-    {"x1": 200, "y1": 200, "x2": 320, "y2": 320},
-)
-MERGED_BOX = {"x1": 0, "y1": 0, "x2": 320, "y2": 320}
+PAGE_SIZE = 1000
 
 
 def _sha256(path: Path) -> str:
@@ -63,337 +69,183 @@ def _git_blob(path: str) -> str:
     ).stdout.strip()
 
 
-def _page(slice_name: str) -> PageGroundTruth:
+def _quad(box: tuple[int, int, int, int]) -> list[list[int]]:
+    x1, y1, x2, y2 = box
+    return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+
+
+def _write_corpus(
+    root: Path,
+    *,
+    page_id: str,
+    region_boxes: tuple[tuple[int, int, int, int], ...],
+) -> None:
+    (root / "inputs").mkdir(parents=True)
+    (root / "images").mkdir(parents=True)
+    payload = {
+        "schemaVersion": "reading-order-post-v2-input-v1",
+        "pageId": page_id,
+        "width": PAGE_SIZE,
+        "height": PAGE_SIZE,
+        "regions": [
+            {
+                "regionId": f"r{index + 1}",
+                "sourceIndex": index,
+                "lines": [_quad(box)],
+                "angle": 0,
+            }
+            for index, box in enumerate(region_boxes)
+        ],
+    }
+    (root / "inputs" / f"{page_id}.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
+    Image.fromarray(np.full((PAGE_SIZE, PAGE_SIZE, 3), 255, dtype=np.uint8)).save(
+        root / "images" / f"{page_id}.png"
+    )
+
+
+def _trusted_input(root: Path, page_id: str) -> V3TrustedPageInput:
+    page = load_arm_input(root / "inputs" / f"{page_id}.json")
+    with Image.open(root / "images" / f"{page_id}.png") as opened:
+        pixels = np.asarray(opened.convert("RGB"))
+    return V3TrustedPageInput(page=page, pixels=pixels)
+
+
+def _set_allowed_seams(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    panels: tuple[PanelBox, ...],
+    reliable: bool = True,
+    reason: str = "reliable",
+    lines: tuple[tuple[float, float, float, float], ...] | None = None,
+) -> None:
+    segmentation = PanelSegmentation(panels, reliable, reason)
+    monkeypatch.setattr(candidate_module, "segment_panel_groups", lambda _pixels: segmentation)
+    monkeypatch.setattr(run_arm_module, "segment_panel_groups", lambda _pixels: segmentation)
+    if lines is not None:
+        monkeypatch.setattr(candidate_module, "_line_segments", lambda _gray: lines)
+
+
+def _annotation(
+    *,
+    page_id: str,
+    slice_name: str,
+    region_count: int,
+    pair: tuple[str, str],
+) -> PageGroundTruth:
     return PageGroundTruth(
-        page_id="Q901",
-        reading_order=REGION_IDS,
+        page_id=page_id,
+        reading_order=tuple(f"r{index + 1}" for index in range(region_count)),
         unscored_region_ids=(),
-        qualification_pairs=(QualificationPair("p1", "r1", "r2", (slice_name,)),),
+        qualification_pairs=(QualificationPair("p1", pair[0], pair[1], (slice_name,)),),
         layout_tags=(),
     )
 
 
-def _assignment(
-    arm: ArmId,
-    region_id: str,
+def _producer_case(
     *,
-    status: str,
-    candidate_group_indices: list[int],
-    assigned_group_index: int | None,
-) -> dict[str, object]:
-    source_index = int(region_id.removeprefix("r")) - 1
-    guarded = arm.c1
-    if status == "confident":
-        reason = (
-            "unique-guarded-center-containment"
-            if guarded
-            else "unique-center-containment"
-        )
-    elif status == "ambiguous":
-        reason = (
-            "multiple-guarded-center-containment"
-            if guarded
-            else "multiple-center-containment"
-        )
-    elif status == "unassigned":
-        reason = (
-            "no-guarded-center-containment"
-            if guarded
-            else "no-center-containment"
-        )
-    else:
-        raise AssertionError(status)
-    return {
-        "regionId": region_id,
-        "sourceIndex": source_index,
-        "candidateGroupIndices": candidate_group_indices,
-        "status": status,
-        "reason": reason,
-        "assignedGroupIndex": assigned_group_index,
-        "uncertainNodeLabel": (
-            f"u{source_index:03d}" if assigned_group_index is None else None
-        ),
-    }
-
-
-def _baseline_assignments(arm: ArmId) -> list[dict[str, object]]:
-    return [
-        _assignment(
-            arm,
-            "r1",
-            status="confident",
-            candidate_group_indices=[0],
-            assigned_group_index=0,
-        ),
-        _assignment(
-            arm,
-            "r2",
-            status="confident",
-            candidate_group_indices=[0],
-            assigned_group_index=0,
-        ),
-        _assignment(
-            arm,
-            "r3",
-            status="confident",
-            candidate_group_indices=[1],
-            assigned_group_index=1,
-        ),
-    ]
-
-
-def _uncertain_r1_assignments(arm: ArmId) -> list[dict[str, object]]:
-    assignments = _baseline_assignments(arm)
-    assignments[0] = _assignment(
-        arm,
-        "r1",
-        status="unassigned",
-        candidate_group_indices=[],
-        assigned_group_index=None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    slice_name: str,
+    arms: tuple[ArmId, ...],
+    panels: tuple[PanelBox, ...],
+    regions: tuple[tuple[int, int, int, int], ...],
+    pair: tuple[str, str],
+    reliable: bool = True,
+    reason: str = "reliable",
+    lines: tuple[tuple[float, float, float, float], ...] | None = None,
+) -> tuple[
+    PageGroundTruth,
+    dict[ArmId, dict[str, dict[str, object]]],
+    dict[str, V3TrustedPageInput],
+]:
+    root = tmp_path / "corpus"
+    _write_corpus(root, page_id="Q901", region_boxes=regions)
+    _set_allowed_seams(
+        monkeypatch,
+        panels=panels,
+        reliable=reliable,
+        reason=reason,
+        lines=lines,
     )
-    return assignments
-
-
-def _ambiguous_r1_assignments(arm: ArmId) -> list[dict[str, object]]:
-    assignments = _baseline_assignments(arm)
-    assignments[0] = _assignment(
-        arm,
-        "r1",
-        status="ambiguous",
-        candidate_group_indices=[0, 1],
-        assigned_group_index=None,
+    diagnostics: dict[ArmId, dict[str, dict[str, object]]] = {}
+    for arm in arms:
+        diagnostic_path, _ = run_arm_module.execute_page(
+            corpus_root=root,
+            page_id="Q901",
+            arm_id=arm,
+            execution_sha=EXECUTION_SHA,
+            repeat=1,
+            output_root=root / "output",
+        )
+        raw = json.loads(diagnostic_path.read_text(encoding="utf-8"))
+        assert isinstance(raw, dict)
+        diagnostics[arm] = {"Q901": raw}
+    page = _annotation(
+        page_id="Q901",
+        slice_name=slice_name,
+        region_count=len(regions),
+        pair=pair,
     )
-    return assignments
-
-
-def _default_diag(arm: ArmId) -> dict[str, object]:
-    boxes = [dict(box) for box in BASE_BOXES]
-    return {
-        "schemaVersion": DIAGNOSTIC_SCHEMA_VERSION,
-        "experimentArm": arm.value,
-        "executionSha": EXECUTION_SHA,
-        "pageId": "Q901",
-        "preSegmentation": {
-            "reliable": True,
-            "reason": "reliable",
-            "boxCount": len(boxes),
-            "boxes": copy.deepcopy(boxes),
-        },
-        "segmentation": {
-            "reliable": True,
-            "reason": "reliable",
-            "boxes": copy.deepcopy(boxes),
-        },
-        "recoveryReason": "not-needed" if arm.c3 else "disabled",
-        "assignments": _baseline_assignments(arm),
-        "relationEdges": [],
-        "nodeOrder": ["g000", "g001"],
-        "fallbackReason": None,
-        "usedPanelEvidence": True,
-        "fallbackOrder": list(REGION_IDS),
-        "finalOrder": list(REGION_IDS),
-        "regionDirections": {region_id: "h" for region_id in REGION_IDS},
-        "regionIntegrity": {
-            "countPreserved": True,
-            "objectIdentitySetPreserved": True,
-            "contentConfidenceGeometryPreserved": True,
-        },
-    }
-
-
-def _diagnostics() -> dict[ArmId, dict[str, dict[str, object]]]:
-    return {arm: {"Q901": _default_diag(arm)} for arm in ArmId}
-
-
-def _set_uncertain_success(
-    diagnostic: dict[str, object],
-    arm: ArmId,
-    *,
-    edges: list[dict[str, str]] | None = None,
-    ambiguous: bool = False,
-) -> None:
-    diagnostic["assignments"] = (
-        _ambiguous_r1_assignments(arm)
-        if ambiguous
-        else _uncertain_r1_assignments(arm)
-    )
-    diagnostic["relationEdges"] = [] if edges is None else edges
-    diagnostic["nodeOrder"] = ["g000", "u000", "g001"]
-
-
-def _set_c3_rejection(diagnostic: dict[str, object]) -> None:
-    diagnostic.update(
-        {
-            "preSegmentation": {
-                "reliable": False,
-                "reason": "fewer-than-two-groups",
-                "boxCount": 1,
-                "boxes": [dict(MERGED_BOX)],
-            },
-            "segmentation": {
-                "reliable": False,
-                "reason": "fewer-than-two-groups",
-                "boxes": [dict(MERGED_BOX)],
-            },
-            "recoveryReason": "rejected-ambiguous-overlap",
-            "assignments": [],
-            "relationEdges": [],
-            "nodeOrder": [],
-            "fallbackReason": "fewer-than-two-groups",
-            "usedPanelEvidence": False,
-            "finalOrder": list(REGION_IDS),
-            "fallbackOrder": list(REGION_IDS),
-        }
-    )
-
-
-def _set_c3_positive(diagnostic: dict[str, object], arm: ArmId) -> None:
-    diagnostic.update(
-        {
-            "preSegmentation": {
-                "reliable": False,
-                "reason": "fewer-than-two-groups",
-                "boxCount": 1,
-                "boxes": [dict(MERGED_BOX)],
-            },
-            "segmentation": {
-                "reliable": True,
-                "reason": "recovered-merged-frame",
-                "boxes": [dict(box) for box in BASE_BOXES],
-            },
-            "recoveryReason": "accepted-strong-anchor-plus-occlusion-supported-frame",
-            "assignments": _baseline_assignments(arm),
-            "relationEdges": [],
-            "nodeOrder": ["g000", "g001"],
-            "fallbackReason": None,
-            "usedPanelEvidence": True,
-        }
-    )
-
-
-def _set_b1_directions(
-    diagnostics: dict[ArmId, dict[str, dict[str, object]]],
-    directions: dict[str, str],
-) -> None:
-    for arm in (ArmId.B1_ONLY, ArmId.C1_C2_C3_B1):
-        diagnostics[arm]["Q901"]["regionDirections"] = dict(directions)
-
-
-def _case(metric: str) -> tuple[str, dict[ArmId, dict[str, dict[str, object]]]]:
-    diagnostics = _diagnostics()
-    if metric == "c1_guarded_pairs":
-        slice_name = "c1-boundary-positive"
-        _set_uncertain_success(
-            diagnostics[ArmId.C1_ONLY]["Q901"],
-            ArmId.C1_ONLY,
-        )
-    elif metric in {"c2_gutter_pairs", "c2_overlap_pairs", "c2_pair_precedence_pairs"}:
-        details = {
-            "c2_gutter_pairs": (
-                "c2-gutter-bridge",
-                "unique-gutter-between-hard-panels",
-            ),
-            "c2_overlap_pairs": (
-                "c2-ambiguous-overlap-bridge",
-                "validated-overlap-bridge-right-before-left",
-            ),
-            "c2_pair_precedence_pairs": (
-                "c2-pair-precedence-slot",
-                "uncertain-aligned-top-before-bottom",
-            ),
-        }
-        slice_name, rule = details[metric]
-        _set_uncertain_success(
-            diagnostics[ArmId.C2_ONLY]["Q901"],
-            ArmId.C2_ONLY,
-            edges=[
-                {"sourceNode": "g000", "targetNode": "u000", "rule": rule},
-                {"sourceNode": "u000", "targetNode": "g001", "rule": rule},
-            ],
-            ambiguous=metric == "c2_overlap_pairs",
-        )
-    elif metric == "c2_fail_closed_no_relation_pairs":
-        slice_name = "c2-one-sided-non-unique-fail-closed"
-        _set_uncertain_success(
-            diagnostics[ArmId.C2_ONLY]["Q901"],
-            ArmId.C2_ONLY,
-        )
-    elif metric == "c2_conflict_cycle_fallback_pairs":
-        slice_name = "c2-conflict-cycle-safety"
-        target = diagnostics[ArmId.C2_ONLY]["Q901"]
-        target.update(
-            {
-                "assignments": _uncertain_r1_assignments(ArmId.C2_ONLY),
-                "relationEdges": [],
-                "nodeOrder": [],
-                "fallbackReason": "uncertain-relation-conflict",
-                "usedPanelEvidence": False,
-                "finalOrder": list(REGION_IDS),
-                "fallbackOrder": list(REGION_IDS),
-            }
-        )
-    elif metric == "c3_positive_pairs":
-        slice_name = "c3-positive-recovery"
-        for arm in (ArmId.C3_ONLY, ArmId.C1_C2_C3, ArmId.C1_C2_C3_B1):
-            _set_c3_positive(diagnostics[arm]["Q901"], arm)
-    elif metric == "c3_rejection_pages":
-        slice_name = "c3-invalid-topology-negative"
-        for arm in (ArmId.C3_ONLY, ArmId.C1_C2_C3, ArmId.C1_C2_C3_B1):
-            _set_c3_rejection(diagnostics[arm]["Q901"])
-    elif metric in {"b1_horizontal_pairs", "b1_vertical_pairs", "b1_mixed_pairs"}:
-        details = {
-            "b1_horizontal_pairs": ("b1-horizontal", {"r1": "h", "r2": "h", "r3": "h"}),
-            "b1_vertical_pairs": ("b1-vertical", {"r1": "v", "r2": "v", "r3": "h"}),
-            "b1_mixed_pairs": (
-                "b1-mixed-orientation",
-                {"r1": "h", "r2": "v", "r3": "h"},
-            ),
-        }
-        slice_name, directions = details[metric]
-        _set_b1_directions(diagnostics, directions)
-    else:
-        raise AssertionError(f"unknown metric: {metric}")
-    return slice_name, diagnostics
-
-
-def _break_case(metric: str, diagnostics: dict[ArmId, dict[str, dict[str, object]]]) -> None:
-    if metric == "c1_guarded_pairs":
-        diagnostics[ArmId.C1_ONLY]["Q901"] = _default_diag(ArmId.C1_ONLY)
-    elif metric in {"c2_gutter_pairs", "c2_overlap_pairs", "c2_pair_precedence_pairs"}:
-        diagnostics[ArmId.C2_ONLY]["Q901"]["relationEdges"] = []
-    elif metric in {
-        "c2_fail_closed_no_relation_pairs",
-        "c2_conflict_cycle_fallback_pairs",
-    }:
-        diagnostics[ArmId.C2_ONLY]["Q901"] = _default_diag(ArmId.C2_ONLY)
-    elif metric in {"c3_positive_pairs", "c3_rejection_pages"}:
-        for arm in (ArmId.C3_ONLY, ArmId.C1_C2_C3, ArmId.C1_C2_C3_B1):
-            diagnostics[arm]["Q901"] = _default_diag(arm)
-    elif metric in {"b1_horizontal_pairs", "b1_vertical_pairs"}:
-        _set_b1_directions(
-            diagnostics,
-            {"r1": "h", "r2": "v", "r3": "h"},
-        )
-    elif metric == "b1_mixed_pairs":
-        _set_b1_directions(
-            diagnostics,
-            {"r1": "h", "r2": "h", "r3": "h"},
-        )
-    else:
-        raise AssertionError(f"unknown metric: {metric}")
+    return page, diagnostics, {"Q901": _trusted_input(root, "Q901")}
 
 
 def _assert_invalid(
     *,
     page: PageGroundTruth,
     diagnostics: Any,
+    trusted: dict[str, V3TrustedPageInput],
     expected_fragment: str,
-) -> None:
+) -> V3DiagnosticValidationError:
     with pytest.raises(V3DiagnosticValidationError) as caught:
-        build_exercise_report_v3(annotations=(page,), diagnostics=diagnostics)
+        build_exercise_report_v3(
+            annotations=(page,),
+            diagnostics=diagnostics,
+            trusted_page_inputs=trusted,
+        )
     assert caught.value.classification == V3_INVALID_EXPERIMENT_CLASSIFICATION
     assert caught.value.harness_status == V3_INVALID_DIAGNOSTIC_HARNESS_STATUS
     assert expected_fragment in str(caught.value)
+    return caught.value
+
+
+def _group_regions(diagnostic: dict[str, object]) -> dict[str, list[str]]:
+    raw = diagnostic["assignments"]
+    assert isinstance(raw, list)
+    groups: dict[str, list[str]] = {}
+    for item in raw:
+        assert isinstance(item, dict)
+        region_id = item["regionId"]
+        assigned = item["assignedGroupIndex"]
+        if isinstance(region_id, str) and type(assigned) is int:
+            groups.setdefault(f"g{assigned:03d}", []).append(region_id)
+    return groups
+
+
+def _uncertain_regions(diagnostic: dict[str, object]) -> dict[str, str]:
+    raw = diagnostic["assignments"]
+    assert isinstance(raw, list)
+    result: dict[str, str] = {}
+    for item in raw:
+        assert isinstance(item, dict)
+        region_id = item["regionId"]
+        label = item["uncertainNodeLabel"]
+        if isinstance(region_id, str) and isinstance(label, str):
+            result[label] = region_id
+    return result
+
+
+def _materialized_blocks(diagnostic: dict[str, object]) -> list[list[str]]:
+    node_order = diagnostic["nodeOrder"]
+    assert isinstance(node_order, list)
+    groups = _group_regions(diagnostic)
+    uncertain = _uncertain_regions(diagnostic)
+    return [
+        groups.get(node, [uncertain[node]] if node in uncertain else [])
+        for node in node_order
+        if groups.get(node) or node in uncertain
+    ]
 
 
 def test_v3_methodology_is_frozen_but_not_currently_dispatchable() -> None:
@@ -406,6 +258,7 @@ def test_v3_methodology_is_frozen_but_not_currently_dispatchable() -> None:
     assert base["sha256"] == _sha256(V2_SPEC_PATH)
     assert base["gitBlobSha"] == _git_blob(base["path"])
     candidate = methodology["candidateBinding"]
+    assert candidate["commitSha"] == EXECUTION_SHA
     assert candidate["gitBlobSha"] == _git_blob(candidate["path"])
     runtime = methodology["runtimeReachability"]
     assert runtime["evaluatorGitBlobSha"] == _git_blob(runtime["evaluatorPath"])
@@ -421,12 +274,28 @@ def test_v3_methodology_is_frozen_but_not_currently_dispatchable() -> None:
     assert invalid["classification"] == V3_INVALID_EXPERIMENT_CLASSIFICATION
     assert invalid["harnessStatus"] == V3_INVALID_DIAGNOSTIC_HARNESS_STATUS
     assert invalid["countsForbidden"] is True
+
+    authenticity = runtime["evidenceAuthenticityLayers"]
+    assert authenticity["envelopeStructuralValidity"]["category"] == "CATEGORY_A"
+    assert authenticity["trustedInputBinding"]["category"] == "CATEGORY_B"
+    assert authenticity["producerSemanticAuthentication"]["category"] == "CATEGORY_B"
+    assert authenticity["producerSemanticAuthentication"]["usesFrozenCandidateDirectly"] is True
+    producer_auth = authenticity["producerSemanticAuthentication"]
+    assert producer_auth["manualEquivalentAlgorithmForbidden"] is True
+    assert producer_auth["arbitraryDiagnosticClaimsAccepted"] is False
+
     production = runtime["productionDiagnosticContract"]
     assert production["serializationReference"].endswith("/run_arm.py")
-    assert production["preSegmentation"]["boxCountEqualsSerializedBoxesLength"] is True
-    assert production["regionSet"]["allSerializedRegionViewsUseFullPageSet"] is True
-    assert production["regionIntegrity"]["allFlagsMustBeTrue"] is True
-    assert production["nodeGraph"]["relationEndpointsMustBelongToNodeVocabulary"] is True
+    assert production["nodeGraph"]["relationPanelEndpointsMustBeActiveGroups"] is True
+    assert production["nodeGraph"]["overlapEndpointsEqualCandidateGroups"] is True
+    assert production["nodeGraph"]["genericRelationExactDerivability"] == (
+        "frozen-producer-recomputation"
+    )
+    assert production["finalOrder"]["panelBlocksFollowNodeOrder"] is True
+    assert production["finalOrder"]["panelInternalOrderValidated"] is False
+    assert production["assignments"]["regionIdSourceIndexBoundToTrustedArmPageInput"] is True
+    assert production["producerDerivedFacts"]["trustedPixelsRequired"] is True
+
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
     assert V3_EXPERIMENT_ID not in workflow
     assert "methodology-v3.json" not in workflow
@@ -445,193 +314,471 @@ def test_v3_methodology_separates_authoring_coverage_from_runtime_reachability()
     assert runtime["positiveGateIndependence"]["dedicatedMechanismPagesRequired"] is True
 
 
-@pytest.mark.parametrize("metric", tuple(EXERCISE_MINIMA_V3))
-def test_v3_evaluator_counts_true_state_and_rejects_nearby_mismatch(metric: str) -> None:
-    slice_name, diagnostics = _case(metric)
-    page = _page(slice_name)
-    report = build_exercise_report_v3(annotations=(page,), diagnostics=diagnostics)
-    assert report.counts[metric].count == 1
-
-    _break_case(metric, diagnostics)
-    report = build_exercise_report_v3(annotations=(page,), diagnostics=diagnostics)
-    assert report.counts[metric].count == 0
-
-
-def test_v3_c3_rejection_counts_unique_page_witness_not_pairs() -> None:
-    _, diagnostics = _case("c3_rejection_pages")
-    page = PageGroundTruth(
-        page_id="Q901",
-        reading_order=REGION_IDS,
-        unscored_region_ids=(),
-        qualification_pairs=(
-            QualificationPair("p1", "r1", "r2", ("c3-zero-multiple-anchor-negative",)),
-            QualificationPair("p2", "r2", "r3", ("c3-invalid-topology-negative",)),
+def test_v3_final_order_accepts_any_internal_order_within_panel_block(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    page, diagnostics, trusted = _producer_case(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slice_name="b1-horizontal",
+        arms=(ArmId.B1_ONLY, ArmId.C1_C2_C3_B1),
+        panels=(PanelBox(0, 0, 120, 120), PanelBox(200, 0, 320, 120)),
+        regions=(
+            (20, 20, 40, 40),
+            (60, 50, 80, 70),
+            (220, 20, 240, 40),
+            (260, 50, 280, 70),
         ),
-        layout_tags=(),
+        pair=("r1", "r2"),
     )
-    report = build_exercise_report_v3(annotations=(page,), diagnostics=diagnostics)
-    count = report.counts["c3_rejection_pages"]
-    assert count.count == 1
-    assert count.page_ids == ("Q901",)
-    assert count.pair_ids == ()
+    target = diagnostics[ArmId.B1_ONLY]["Q901"]
+    groups = _group_regions(target)
+    multi = next(regions for regions in groups.values() if len(regions) >= 2)
+    final_order = target["finalOrder"]
+    assert isinstance(final_order, list)
+    positions = [final_order.index(region_id) for region_id in multi[:2]]
+    final_order[positions[0]], final_order[positions[1]] = (
+        final_order[positions[1]],
+        final_order[positions[0]],
+    )
+
+    report = build_exercise_report_v3(
+        annotations=(page,),
+        diagnostics=diagnostics,
+        trusted_page_inputs=trusted,
+    )
+    assert report.counts["b1_horizontal_pairs"].count == 1
 
 
 @pytest.mark.parametrize(
     ("mutation", "expected_fragment"),
     [
-        ("missing-final-order", "field set mismatch"),
-        ("wrong-relation-type", "relationEdges: array required"),
-        ("missing-arm", "required arm mapping missing/malformed"),
-        ("missing-page", "required page missing"),
-        ("wrong-arm-identity", "experimentArm: does not match arm key"),
-        ("wrong-page-identity", "pageId: does not match annotation page"),
-        ("inconsistent-orders", "exact permutation of full page region set"),
-        ("box-count-mismatch", "boxCount must equal len(boxes)"),
-        ("missing-pre-boxes", "field set mismatch"),
-        ("missing-segmentation-boxes", "field set mismatch"),
-        ("malformed-box", "integer x1/y1/x2/y2 required"),
-        ("missing-node-order", "field set mismatch"),
-        ("invalid-node-order", "success nodeOrder must cover exact materialized node vocabulary"),
-        ("relation-endpoint-outside-vocabulary", "relation endpoint outside node vocabulary"),
-        ("relation-one-sided", "two-sided evidence"),
-        ("overlap-with-non-ambiguous-assignment", "two-candidate ambiguous assignment"),
-        ("assignment-impossible", "confident assignment requires exactly one candidate"),
-        ("assignment-index-outside-groups", "index outside segmentation boxes"),
-        ("invalid-direction", "production fixture direction must be h or v"),
-        ("inconsistent-region-set", "exact permutation of full page region set"),
-        ("missing-region-integrity", "field set mismatch"),
-        ("invalid-region-integrity", "production serializer requires true"),
-        ("invalid-recovery-reason", "unsupported eligible C3 recovery reason"),
+        ("uncertain-wrong-slot", "uncertain region must occupy its nodeOrder slot"),
+        ("interleaved-groups", "panel node as one contiguous block"),
+        ("inverted-group-blocks", "panel node as one contiguous block"),
+        ("region-moved-to-other-block", "panel node as one contiguous block"),
     ],
 )
-def test_v3_production_impossible_diagnostic_is_classified_fail_closed(
-    mutation: str, expected_fragment: str
+def test_v3_final_order_must_follow_node_order_blocks(
+    mutation: str,
+    expected_fragment: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    if mutation in {
-        "relation-endpoint-outside-vocabulary",
-        "relation-one-sided",
-    }:
-        page = _page("c2-pair-precedence-slot")
-        _, diagnostics = _case("c2_pair_precedence_pairs")
+    if mutation == "uncertain-wrong-slot":
+        page, diagnostics, trusted = _producer_case(
+            tmp_path=tmp_path,
+            monkeypatch=monkeypatch,
+            slice_name="c2-one-sided-non-unique-fail-closed",
+            arms=(ArmId.C2_ONLY,),
+            panels=(PanelBox(0, 0, 120, 120), PanelBox(0, 220, 120, 340)),
+            regions=(
+                (20, 20, 40, 40),
+                (60, 50, 80, 70),
+                (20, 240, 40, 260),
+                (180, 150, 220, 190),
+            ),
+            pair=("r1", "r4"),
+        )
         target = diagnostics[ArmId.C2_ONLY]["Q901"]
-    elif mutation == "overlap-with-non-ambiguous-assignment":
-        page = _page("c2-ambiguous-overlap-bridge")
-        _, diagnostics = _case("c2_overlap_pairs")
-        target = diagnostics[ArmId.C2_ONLY]["Q901"]
-    elif mutation == "invalid-recovery-reason":
-        page = _page("c3-invalid-topology-negative")
-        _, diagnostics = _case("c3_rejection_pages")
-        target = diagnostics[ArmId.C3_ONLY]["Q901"]
+        uncertain = _uncertain_regions(target)
+        assert uncertain
+        uncertain_region = next(iter(uncertain.values()))
+        final_order = target["finalOrder"]
+        assert isinstance(final_order, list)
+        current = final_order.index(uncertain_region)
+        other = 0 if current != 0 else len(final_order) - 1
+        final_order[current], final_order[other] = final_order[other], final_order[current]
     else:
-        page = _page("c2-one-sided-non-unique-fail-closed")
-        _, diagnostics = _case("c2_fail_closed_no_relation_pairs")
-        target = diagnostics[ArmId.C2_ONLY]["Q901"]
-
-    if mutation == "missing-final-order":
-        del target["finalOrder"]
-    elif mutation == "wrong-relation-type":
-        target["relationEdges"] = {}
-    elif mutation == "missing-arm":
-        del diagnostics[ArmId.C2_ONLY]
-    elif mutation == "missing-page":
-        del diagnostics[ArmId.C2_ONLY]["Q901"]
-    elif mutation == "wrong-arm-identity":
-        target["experimentArm"] = ArmId.CONTROL.value
-    elif mutation == "wrong-page-identity":
-        target["pageId"] = "Q902"
-    elif mutation == "inconsistent-orders":
-        target["fallbackOrder"] = ["r3", "r2"]
-    elif mutation == "box-count-mismatch":
-        pre = target["preSegmentation"]
-        assert isinstance(pre, dict)
-        pre["boxCount"] = 1
-    elif mutation == "missing-pre-boxes":
-        pre = target["preSegmentation"]
-        assert isinstance(pre, dict)
-        del pre["boxes"]
-    elif mutation == "missing-segmentation-boxes":
-        segmentation = target["segmentation"]
-        assert isinstance(segmentation, dict)
-        del segmentation["boxes"]
-    elif mutation == "malformed-box":
-        pre = target["preSegmentation"]
-        assert isinstance(pre, dict)
-        boxes = pre["boxes"]
-        assert isinstance(boxes, list)
-        boxes[0] = {"x1": "0", "y1": 0, "x2": 120, "y2": 120}
-    elif mutation == "missing-node-order":
-        del target["nodeOrder"]
-    elif mutation == "invalid-node-order":
-        target["nodeOrder"] = ["g000"]
-    elif mutation == "relation-endpoint-outside-vocabulary":
-        edges = target["relationEdges"]
-        assert isinstance(edges, list)
-        edge = edges[0]
-        assert isinstance(edge, dict)
-        edge["sourceNode"] = "bogus"
-    elif mutation == "relation-one-sided":
-        edges = target["relationEdges"]
-        assert isinstance(edges, list)
-        target["relationEdges"] = edges[:1]
-    elif mutation == "overlap-with-non-ambiguous-assignment":
-        target["assignments"] = _uncertain_r1_assignments(ArmId.C2_ONLY)
-    elif mutation == "assignment-impossible":
-        assignments = target["assignments"]
-        assert isinstance(assignments, list)
-        assignment = assignments[0]
-        assert isinstance(assignment, dict)
-        assignment["status"] = "confident"
-        assignment["reason"] = "unique-center-containment"
-        assignment["candidateGroupIndices"] = [0, 1]
-        assignment["assignedGroupIndex"] = 0
-        assignment["uncertainNodeLabel"] = None
-    elif mutation == "assignment-index-outside-groups":
-        assignments = target["assignments"]
-        assert isinstance(assignments, list)
-        assignment = assignments[0]
-        assert isinstance(assignment, dict)
-        assignment["candidateGroupIndices"] = [2]
-    elif mutation == "invalid-direction":
-        directions = target["regionDirections"]
-        assert isinstance(directions, dict)
-        directions["r1"] = "auto"
-    elif mutation == "inconsistent-region-set":
-        target["finalOrder"] = ["r1", "r2"]
-    elif mutation == "missing-region-integrity":
-        del target["regionIntegrity"]
-    elif mutation == "invalid-region-integrity":
-        integrity = target["regionIntegrity"]
-        assert isinstance(integrity, dict)
-        integrity["countPreserved"] = False
-    elif mutation == "invalid-recovery-reason":
-        target["recoveryReason"] = "rejected-not-a-production-reason"
-    else:
-        raise AssertionError(mutation)
+        page, diagnostics, trusted = _producer_case(
+            tmp_path=tmp_path,
+            monkeypatch=monkeypatch,
+            slice_name="b1-horizontal",
+            arms=(ArmId.B1_ONLY, ArmId.C1_C2_C3_B1),
+            panels=(PanelBox(0, 0, 120, 120), PanelBox(200, 0, 320, 120)),
+            regions=(
+                (20, 20, 40, 40),
+                (60, 50, 80, 70),
+                (220, 20, 240, 40),
+                (260, 50, 280, 70),
+            ),
+            pair=("r1", "r2"),
+        )
+        target = diagnostics[ArmId.B1_ONLY]["Q901"]
+        blocks = _materialized_blocks(target)
+        assert len(blocks) == 2
+        first, second = blocks
+        assert len(first) == len(second) == 2
+        if mutation == "interleaved-groups":
+            target["finalOrder"] = [first[0], second[0], first[1], second[1]]
+        elif mutation == "inverted-group-blocks":
+            target["finalOrder"] = second + first
+        else:
+            target["finalOrder"] = [first[0], second[0], second[1], first[1]]
 
     _assert_invalid(
         page=page,
         diagnostics=diagnostics,
+        trusted=trusted,
+        expected_fragment=expected_fragment,
+    )
+
+
+def test_v3_relation_panel_endpoint_cannot_reference_empty_group(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    page, diagnostics, trusted = _producer_case(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slice_name="c2-gutter-bridge",
+        arms=(ArmId.C2_ONLY, ArmId.C1_C2, ArmId.C1_C2_C3, ArmId.C1_C2_C3_B1),
+        panels=(
+            PanelBox(0, 0, 100, 100),
+            PanelBox(200, 0, 300, 100),
+            PanelBox(600, 0, 700, 100),
+        ),
+        regions=((20, 20, 40, 40), (220, 20, 240, 40), (140, 40, 160, 60)),
+        pair=("r2", "r3"),
+    )
+    target = diagnostics[ArmId.C2_ONLY]["Q901"]
+    edges = target["relationEdges"]
+    assert isinstance(edges, list) and edges
+    edge = edges[0]
+    assert isinstance(edge, dict)
+    if str(edge["sourceNode"]).startswith("g"):
+        edge["sourceNode"] = "g002"
+    else:
+        edge["targetNode"] = "g002"
+
+    _assert_invalid(
+        page=page,
+        diagnostics=diagnostics,
+        trusted=trusted,
+        expected_fragment="relation panel endpoint must reference an active occupied group",
+    )
+
+
+def test_v3_overlap_bracket_endpoints_equal_assignment_candidate_groups(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    page, diagnostics, trusted = _producer_case(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slice_name="c2-ambiguous-overlap-bridge",
+        arms=(ArmId.C2_ONLY, ArmId.C1_C2, ArmId.C1_C2_C3, ArmId.C1_C2_C3_B1),
+        panels=(
+            PanelBox(0, 0, 120, 100),
+            PanelBox(100, 0, 220, 100),
+            PanelBox(0, 300, 120, 400),
+        ),
+        regions=(
+            (20, 20, 40, 40),
+            (180, 20, 200, 40),
+            (105, 40, 115, 60),
+            (20, 320, 40, 340),
+        ),
+        pair=("r2", "r3"),
+    )
+    target = diagnostics[ArmId.C2_ONLY]["Q901"]
+    edges = target["relationEdges"]
+    assert isinstance(edges, list) and len(edges) == 2
+    edge = edges[1]
+    assert isinstance(edge, dict)
+    if str(edge["sourceNode"]).startswith("g"):
+        edge["sourceNode"] = "g002"
+    else:
+        edge["targetNode"] = "g002"
+
+    _assert_invalid(
+        page=page,
+        diagnostics=diagnostics,
+        trusted=trusted,
+        expected_fragment="overlap bridge panel endpoints must equal assignment candidate groups",
+    )
+
+
+def test_v3_generic_non_unique_slot_claim_fails_producer_authentication(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    page, diagnostics, trusted = _producer_case(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slice_name="c2-one-sided-non-unique-fail-closed",
+        arms=(ArmId.C2_ONLY,),
+        panels=(
+            PanelBox(0, 0, 100, 100),
+            PanelBox(0, 200, 100, 300),
+            PanelBox(0, 400, 100, 500),
+        ),
+        regions=(
+            (20, 20, 40, 40),
+            (20, 220, 40, 240),
+            (20, 420, 40, 440),
+            (150, 120, 250, 380),
+        ),
+        pair=("r1", "r4"),
+    )
+    target = diagnostics[ArmId.C2_ONLY]["Q901"]
+    assignments = target["assignments"]
+    assert isinstance(assignments, list)
+    uncertain = next(
+        item
+        for item in assignments
+        if isinstance(item, dict) and isinstance(item.get("uncertainNodeLabel"), str)
+    )
+    label = str(uncertain["uncertainNodeLabel"])
+    target["relationEdges"] = [
+        {
+            "sourceNode": "g000",
+            "targetNode": label,
+            "rule": "uncertain-aligned-top-before-bottom",
+        },
+        {
+            "sourceNode": label,
+            "targetNode": "g002",
+            "rule": "uncertain-aligned-top-before-bottom",
+        },
+    ]
+
+    _assert_invalid(
+        page=page,
+        diagnostics=diagnostics,
+        trusted=trusted,
+        expected_fragment="relationEdges: does not match frozen producer recomputation",
+    )
+
+
+def test_v3_uncertain_relation_conflict_requires_uncertain_assignment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    page, diagnostics, trusted = _producer_case(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slice_name="c2-conflict-cycle-safety",
+        arms=(ArmId.CONTROL, ArmId.C2_ONLY),
+        panels=(PanelBox(0, 0, 100, 100), PanelBox(200, 0, 300, 100)),
+        regions=((20, 20, 40, 40), (220, 20, 240, 40)),
+        pair=("r1", "r2"),
+    )
+    target = diagnostics[ArmId.C2_ONLY]["Q901"]
+    target["fallbackReason"] = "uncertain-relation-conflict"
+    target["usedPanelEvidence"] = False
+    target["nodeOrder"] = []
+    target["relationEdges"] = []
+    target["finalOrder"] = list(target["fallbackOrder"])
+
+    _assert_invalid(
+        page=page,
+        diagnostics=diagnostics,
+        trusted=trusted,
+        expected_fragment="uncertain relation conflict requires an uncertain assignment",
+    )
+
+
+def test_v3_region_id_source_index_is_bound_to_trusted_arm_page_input(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    page, diagnostics, trusted = _producer_case(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slice_name="c2-one-sided-non-unique-fail-closed",
+        arms=(ArmId.C2_ONLY,),
+        panels=(PanelBox(0, 0, 100, 100), PanelBox(0, 200, 100, 300)),
+        regions=((20, 20, 40, 40), (20, 220, 40, 240), (150, 350, 250, 450)),
+        pair=("r1", "r3"),
+    )
+    target = diagnostics[ArmId.C2_ONLY]["Q901"]
+    assignments = target["assignments"]
+    assert isinstance(assignments, list)
+    first, second = assignments[0], assignments[1]
+    assert isinstance(first, dict) and isinstance(second, dict)
+    first["regionId"], second["regionId"] = second["regionId"], first["regionId"]
+
+    _assert_invalid(
+        page=page,
+        diagnostics=diagnostics,
+        trusted=trusted,
+        expected_fragment="regionId/sourceIndex must match trusted ArmPageInput position",
+    )
+
+
+def test_v3_geometry_dependent_relation_claim_uses_frozen_producer_recomputation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    page, diagnostics, trusted = _producer_case(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slice_name="c2-one-sided-non-unique-fail-closed",
+        arms=(ArmId.C2_ONLY,),
+        panels=(PanelBox(0, 0, 100, 100), PanelBox(0, 200, 100, 300)),
+        regions=((20, 20, 40, 40), (20, 220, 40, 240), (150, 350, 250, 450)),
+        pair=("r1", "r3"),
+    )
+    target = diagnostics[ArmId.C2_ONLY]["Q901"]
+    assignments = target["assignments"]
+    assert isinstance(assignments, list)
+    uncertain = next(
+        item
+        for item in assignments
+        if isinstance(item, dict) and isinstance(item.get("uncertainNodeLabel"), str)
+    )
+    label = str(uncertain["uncertainNodeLabel"])
+    node_order = target["nodeOrder"]
+    assert isinstance(node_order, list)
+    group_nodes = [node for node in node_order if str(node).startswith("g")]
+    assert len(group_nodes) >= 2
+    target["relationEdges"] = [
+        {
+            "sourceNode": str(group_nodes[0]),
+            "targetNode": label,
+            "rule": "uncertain-aligned-top-before-bottom",
+        },
+        {
+            "sourceNode": label,
+            "targetNode": str(group_nodes[-1]),
+            "rule": "uncertain-aligned-top-before-bottom",
+        },
+    ]
+
+    _assert_invalid(
+        page=page,
+        diagnostics=diagnostics,
+        trusted=trusted,
+        expected_fragment="relationEdges: does not match frozen producer recomputation",
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_fragment"),
+    [
+        ("box-count-mismatch", "boxCount must equal len(boxes)"),
+        ("missing-node-order", "field set mismatch"),
+        ("invalid-region-integrity", "production serializer requires true"),
+        ("relation-endpoint-outside-vocabulary", "relation endpoint outside node vocabulary"),
+    ],
+)
+def test_v3_prior_production_shape_regressions_remain_fail_closed(
+    mutation: str,
+    expected_fragment: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    page, diagnostics, trusted = _producer_case(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slice_name="c2-one-sided-non-unique-fail-closed",
+        arms=(ArmId.C2_ONLY,),
+        panels=(PanelBox(0, 0, 100, 100), PanelBox(0, 200, 100, 300)),
+        regions=((20, 20, 40, 40), (20, 220, 40, 240), (150, 350, 250, 450)),
+        pair=("r1", "r3"),
+    )
+    target = diagnostics[ArmId.C2_ONLY]["Q901"]
+    if mutation == "box-count-mismatch":
+        pre = target["preSegmentation"]
+        assert isinstance(pre, dict)
+        pre["boxCount"] = 1
+    elif mutation == "missing-node-order":
+        del target["nodeOrder"]
+    elif mutation == "invalid-region-integrity":
+        integrity = target["regionIntegrity"]
+        assert isinstance(integrity, dict)
+        integrity["countPreserved"] = False
+    else:
+        assignments = target["assignments"]
+        assert isinstance(assignments, list)
+        uncertain = next(
+            item
+            for item in assignments
+            if isinstance(item, dict) and isinstance(item.get("uncertainNodeLabel"), str)
+        )
+        target["relationEdges"] = [
+            {
+                "sourceNode": "bogus",
+                "targetNode": str(uncertain["uncertainNodeLabel"]),
+                "rule": "uncertain-aligned-top-before-bottom",
+            }
+        ]
+
+    _assert_invalid(
+        page=page,
+        diagnostics=diagnostics,
+        trusted=trusted,
         expected_fragment=expected_fragment,
     )
 
 
 @pytest.mark.parametrize("malformed", [None, [], "diagnostics", 7])
-def test_v3_malformed_top_level_container_is_classified_fail_closed(malformed: object) -> None:
+def test_v3_malformed_top_level_container_is_classified_fail_closed(
+    malformed: object,
+) -> None:
+    page = PageGroundTruth(
+        page_id="Q901",
+        reading_order=("r1", "r2"),
+        unscored_region_ids=(),
+        qualification_pairs=(
+            QualificationPair(
+                "p1", "r1", "r2", ("c2-one-sided-non-unique-fail-closed",)
+            ),
+        ),
+        layout_tags=(),
+    )
     _assert_invalid(
-        page=_page("c2-one-sided-non-unique-fail-closed"),
+        page=page,
         diagnostics=malformed,
+        trusted={},
         expected_fragment="top-level arm mapping object required",
     )
 
 
-def test_v3_missing_c3_orders_cannot_satisfy_none_equals_none() -> None:
-    page = _page("c3-invalid-topology-negative")
-    _, diagnostics = _case("c3_rejection_pages")
-    for arm in (ArmId.C3_ONLY, ArmId.C1_C2_C3, ArmId.C1_C2_C3_B1):
-        diagnostics[arm]["Q901"].pop("finalOrder", None)
-        diagnostics[arm]["Q901"].pop("fallbackOrder", None)
-    _assert_invalid(
+def test_v3_problem_order_for_multiple_uncertain_nodes_is_deterministic(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    page, diagnostics, trusted = _producer_case(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        slice_name="c2-one-sided-non-unique-fail-closed",
+        arms=(ArmId.C2_ONLY,),
+        panels=(PanelBox(0, 0, 100, 100), PanelBox(0, 300, 100, 400)),
+        regions=(
+            (20, 20, 40, 40),
+            (20, 320, 40, 340),
+            (150, 120, 180, 150),
+            (150, 220, 180, 250),
+        ),
+        pair=("r1", "r3"),
+    )
+    target = diagnostics[ArmId.C2_ONLY]["Q901"]
+    assignments = target["assignments"]
+    assert isinstance(assignments, list)
+    labels = sorted(
+        str(item["uncertainNodeLabel"])
+        for item in assignments
+        if isinstance(item, dict) and isinstance(item.get("uncertainNodeLabel"), str)
+    )
+    assert len(labels) >= 2
+    target["relationEdges"] = [
+        {
+            "sourceNode": "g000",
+            "targetNode": label,
+            "rule": "uncertain-aligned-top-before-bottom",
+        }
+        for label in reversed(labels)
+    ]
+    error = _assert_invalid(
         page=page,
         diagnostics=diagnostics,
-        expected_fragment="field set mismatch",
+        trusted=trusted,
+        expected_fragment="two-sided evidence",
     )
+    two_sided = [
+        problem for problem in error.problems if "two-sided evidence" in problem
+    ]
+    assert len(two_sided) == len(labels)

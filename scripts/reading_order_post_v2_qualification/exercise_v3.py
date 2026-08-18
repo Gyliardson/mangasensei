@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import TypeGuard
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from typing import Any, TypeGuard
+
+import mangasensei.ocr.diagnostics.reading_order_post_v2_calibration as candidate_module
 
 from . import DIAGNOSTIC_SCHEMA_VERSION
-from .contracts import ArmId, PageGroundTruth
+from .contracts import ArmId, ArmPageInput, PageGroundTruth
 from .exercise import ExerciseCount, ExerciseReport, build_exercise_report
+from .fixtures import build_textblock_regions
 
 C3_NEGATIVE_SLICES = frozenset(
     {
@@ -142,6 +146,27 @@ _RELATION_RULES = frozenset(
         "uncertain-nonoverlap-top-before-bottom",
     }
 )
+_PRODUCER_AUTH_FIELDS = (
+    "preSegmentation",
+    "segmentation",
+    "recoveryReason",
+    "assignments",
+    "relationEdges",
+    "nodeOrder",
+    "fallbackReason",
+    "usedPanelEvidence",
+    "fallbackOrder",
+    "regionDirections",
+    "regionIntegrity",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class V3TrustedPageInput:
+    """Candidate-independent runtime inputs needed to authenticate v3 evidence."""
+
+    page: ArmPageInput
+    pixels: Any
 
 
 class V3DiagnosticValidationError(ValueError):
@@ -311,7 +336,7 @@ def _assignments(
     value: object,
     *,
     arm: ArmId,
-    expected_regions: set[str],
+    trusted_page: ArmPageInput,
     segmentation: tuple[bool, str, tuple[tuple[int, int, int, int], ...]] | None,
     where: str,
     problems: list[str],
@@ -328,6 +353,8 @@ def _assignments(
             return None
         return []
 
+    trusted_regions = trusted_page.regions
+    expected_regions = {region.region_id for region in trusted_regions}
     parsed: list[dict[str, object]] = []
     valid = True
     for position, item in enumerate(value):
@@ -339,6 +366,7 @@ def _assignments(
         if not _exact_fields(item, _ASSIGNMENT_FIELDS, item_where, problems):
             valid = False
             continue
+
         region_id = item["regionId"]
         source_index = item["sourceIndex"]
         candidates = item["candidateGroupIndices"]
@@ -346,14 +374,28 @@ def _assignments(
         reason = item["reason"]
         assigned = item["assignedGroupIndex"]
         uncertain = item["uncertainNodeLabel"]
+
+        if position >= len(trusted_regions):
+            problems.append(f"{item_where}: assignment exceeds trusted region inventory")
+            valid = False
+            trusted_region = None
+        else:
+            trusted_region = trusted_regions[position]
         if not isinstance(region_id, str) or not region_id:
             problems.append(f"{item_where}.regionId: nonempty string required")
             valid = False
-        if type(source_index) is not int or source_index != position:
+        if type(source_index) is not int:
+            problems.append(f"{item_where}.sourceIndex: integer required")
+            valid = False
+        if trusted_region is not None and (
+            region_id != trusted_region.region_id
+            or source_index != trusted_region.source_index
+        ):
             problems.append(
-                f"{item_where}.sourceIndex: must equal serializer assignment position"
+                f"{item_where}: regionId/sourceIndex must match trusted ArmPageInput position"
             )
             valid = False
+
         if not isinstance(candidates, list) or not all(
             type(index) is int for index in candidates
         ):
@@ -370,6 +412,7 @@ def _assignments(
                 f"{item_where}.candidateGroupIndices: index outside segmentation boxes"
             )
             valid = False
+
         if not isinstance(status, str) or status not in {
             "confident",
             "unassigned",
@@ -391,7 +434,12 @@ def _assignments(
         if uncertain is not None and not isinstance(uncertain, str):
             problems.append(f"{item_where}.uncertainNodeLabel: string or null required")
             valid = False
-        expected_uncertain = f"u{position:03d}"
+
+        expected_uncertain = (
+            f"u{trusted_region.source_index:03d}"
+            if trusted_region is not None
+            else f"u{position:03d}"
+        )
         if status == "confident":
             if len(candidates) != 1:
                 problems.append(
@@ -425,17 +473,18 @@ def _assignments(
             )
             valid = False
         parsed.append(item)
+
     region_ids = [
         item["regionId"] for item in parsed if isinstance(item.get("regionId"), str)
     ]
-    if len(value) != len(expected_regions):
+    if len(value) != len(trusted_regions):
         problems.append(f"{where}: reliable segmentation requires one assignment per region")
         valid = False
     if len(set(region_ids)) != len(region_ids):
         problems.append(f"{where}: duplicate regionId")
         valid = False
     if len(parsed) == len(value) and set(region_ids) != expected_regions:
-        problems.append(f"{where}: assignment region set must equal full page region set")
+        problems.append(f"{where}: assignment region set must equal trusted page region set")
         valid = False
     return parsed if valid else None
 
@@ -450,7 +499,7 @@ def _region_order(
         problems.append(f"{where}: duplicate region ID")
         return None
     if set(value) != expected:
-        problems.append(f"{where}: must be exact permutation of full page region set")
+        problems.append(f"{where}: must be exact permutation of trusted page region set")
         return None
     return tuple(value)
 
@@ -458,16 +507,21 @@ def _region_order(
 def _node_sets(
     segmentation: tuple[bool, str, tuple[tuple[int, int, int, int], ...]] | None,
     assignments: list[dict[str, object]] | None,
-) -> tuple[set[str], set[str], set[str]] | None:
+) -> tuple[set[str], set[str], set[str], set[str]] | None:
     if segmentation is None or assignments is None or not segmentation[0]:
         return None
-    groups = {f"g{index:03d}" for index in range(len(segmentation[2]))}
+    all_groups = {f"g{index:03d}" for index in range(len(segmentation[2]))}
+    active_groups = {
+        f"g{int(item['assignedGroupIndex']):03d}"
+        for item in assignments
+        if type(item.get("assignedGroupIndex")) is int
+    }
     uncertain = {
         str(item["uncertainNodeLabel"])
         for item in assignments
         if isinstance(item.get("uncertainNodeLabel"), str)
     }
-    return groups, uncertain, groups | uncertain
+    return all_groups, active_groups, uncertain, all_groups | uncertain
 
 
 def _node_order(
@@ -493,12 +547,58 @@ def _node_order(
     return tuple(value)
 
 
+def _validate_final_order_blocks(
+    *,
+    node_order: tuple[str, ...] | None,
+    assignments: list[dict[str, object]] | None,
+    final_order: tuple[str, ...] | None,
+    used: bool | None,
+    where: str,
+    problems: list[str],
+) -> None:
+    if used is not True or node_order is None or assignments is None or final_order is None:
+        return
+
+    regions_by_node: dict[str, list[str]] = {}
+    for assignment in assignments:
+        region_id = assignment.get("regionId")
+        if not isinstance(region_id, str):
+            continue
+        assigned = assignment.get("assignedGroupIndex")
+        uncertain = assignment.get("uncertainNodeLabel")
+        if type(assigned) is int:
+            regions_by_node.setdefault(f"g{assigned:03d}", []).append(region_id)
+        elif isinstance(uncertain, str):
+            regions_by_node[uncertain] = [region_id]
+
+    cursor = 0
+    for node in node_order:
+        expected = regions_by_node.get(node, [])
+        if not expected:
+            continue
+        actual = final_order[cursor : cursor + len(expected)]
+        if node.startswith("g"):
+            if len(actual) != len(expected) or set(actual) != set(expected):
+                problems.append(
+                    f"{where}: finalOrder must materialize each panel node as one contiguous block"
+                )
+        elif tuple(actual) != tuple(expected):
+            problems.append(
+                f"{where}: finalOrder uncertain region must occupy its nodeOrder slot"
+            )
+        cursor += len(expected)
+    if cursor != len(final_order):
+        problems.append(
+            f"{where}: finalOrder contains regions outside nodeOrder materialized blocks"
+        )
+
+
 def _relation_edges(
     value: object,
     *,
     arm: ArmId,
     assignments: list[dict[str, object]] | None,
-    node_sets: tuple[set[str], set[str], set[str]] | None,
+    node_sets: tuple[set[str], set[str], set[str], set[str]] | None,
     node_order: tuple[str, ...] | None,
     used: bool | None,
     where: str,
@@ -507,13 +607,16 @@ def _relation_edges(
     if not isinstance(value, list):
         problems.append(f"{where}: array required")
         return None
+
     parsed: list[tuple[str, str, str]] = []
     valid = True
-    groups: set[str] = set()
+    all_groups: set[str] = set()
+    active_groups: set[str] = set()
     uncertain: set[str] = set()
     vocabulary: set[str] = set()
     if node_sets is not None:
-        groups, uncertain, vocabulary = node_sets
+        all_groups, active_groups, uncertain, vocabulary = node_sets
+
     for index, item in enumerate(value):
         item_where = f"{where}[{index}]"
         if not isinstance(item, dict):
@@ -523,11 +626,7 @@ def _relation_edges(
         if not _exact_fields(item, _EDGE_FIELDS, item_where, problems):
             valid = False
             continue
-        source, target, rule = (
-            item["sourceNode"],
-            item["targetNode"],
-            item["rule"],
-        )
+        source, target, rule = item["sourceNode"], item["targetNode"], item["rule"]
         if not all(isinstance(part, str) and part for part in (source, target, rule)):
             problems.append(
                 f"{item_where}: nonempty sourceNode/targetNode/rule strings required"
@@ -544,9 +643,15 @@ def _relation_edges(
             if source not in vocabulary or target not in vocabulary:
                 problems.append(f"{item_where}: relation endpoint outside node vocabulary")
                 valid = False
+            panel = source if source in all_groups else target if target in all_groups else None
+            if panel is not None and panel not in active_groups:
+                problems.append(
+                    f"{item_where}: relation panel endpoint must reference an active occupied group"
+                )
+                valid = False
             if not (
-                (source in groups and target in uncertain)
-                or (source in uncertain and target in groups)
+                (source in all_groups and target in uncertain)
+                or (source in uncertain and target in all_groups)
             ):
                 problems.append(
                     f"{item_where}: relation diagnostic must connect panel and uncertain nodes"
@@ -556,6 +661,7 @@ def _relation_edges(
             problems.append(f"{item_where}: self relation impossible")
             valid = False
         parsed.append((source, target, rule))
+
     if parsed and not arm.c2:
         problems.append(f"{where}: relation diagnostics require a C2-enabled arm")
         valid = False
@@ -565,11 +671,11 @@ def _relation_edges(
 
     if node_sets is not None and assignments is not None:
         assignment_by_node = {
-            item["uncertainNodeLabel"]: item
+            str(item["uncertainNodeLabel"]): item
             for item in assignments
             if isinstance(item.get("uncertainNodeLabel"), str)
         }
-        for uncertain_node in uncertain:
+        for uncertain_node in sorted(uncertain):
             node_edges = [
                 edge
                 for edge in parsed
@@ -586,7 +692,7 @@ def _relation_edges(
             }
             if special:
                 panel_nodes = {
-                    source if source in groups else target
+                    source if source in all_groups else target
                     for source, target, _rule in node_edges
                 }
                 if (
@@ -603,13 +709,31 @@ def _relation_edges(
                     valid = False
                 if "validated-overlap-bridge-right-before-left" in rules:
                     assignment = assignment_by_node.get(uncertain_node)
+                    candidates = (
+                        assignment.get("candidateGroupIndices")
+                        if assignment is not None
+                        else None
+                    )
+                    expected_panels = (
+                        {f"g{index:03d}" for index in candidates}
+                        if isinstance(candidates, list)
+                        and len(candidates) == 2
+                        and all(type(index) is int for index in candidates)
+                        else set()
+                    )
                     if assignment is None or not (
                         assignment.get("status") == "ambiguous"
-                        and isinstance(assignment.get("candidateGroupIndices"), list)
-                        and len(assignment["candidateGroupIndices"]) == 2
+                        and isinstance(candidates, list)
+                        and len(candidates) == 2
                     ):
                         problems.append(
                             f"{where}: overlap bridge requires a two-candidate ambiguous assignment"
+                        )
+                        valid = False
+                    elif panel_nodes != expected_panels:
+                        problems.append(
+                            f"{where}: overlap bridge panel endpoints must equal "
+                            "assignment candidate groups"
                         )
                         valid = False
             elif not incoming or not outgoing:
@@ -671,7 +795,11 @@ def _recovery_state(
         if not same:
             problems.append(f"{where}: not-eligible recovery must preserve segmentation")
     elif reason == _C3_ACCEPT:
-        if not (final[0] and final[1] == "recovered-merged-frame" and len(final[2]) == 2):
+        if not (
+            final[0]
+            and final[1] == "recovered-merged-frame"
+            and len(final[2]) == 2
+        ):
             problems.append(f"{where}: accepted C3 recovery requires recovered two-box state")
     elif reason in _C3_REJECTIONS:
         if not same:
@@ -702,6 +830,7 @@ def _execution_state(
         return
     if segmentation is None:
         return
+
     reliable, segmentation_reason, _boxes_value = segmentation
     if not reliable:
         if used:
@@ -717,19 +846,27 @@ def _execution_state(
         if fallback_order is not None and final_order != fallback_order:
             problems.append(f"{where}: fallback finalOrder must equal fallbackOrder")
         return
+
     if assignments is None:
         return
     confident_groups = {
         item["assignedGroupIndex"]
         for item in assignments
-        if isinstance(item.get("assignedGroupIndex"), int)
+        if type(item.get("assignedGroupIndex")) is int
     }
+    uncertain_assignments = [
+        item
+        for item in assignments
+        if isinstance(item.get("uncertainNodeLabel"), str)
+    ]
+
     if used:
         if fallback_reason is not None:
             problems.append(f"{where}: successful diagnostic must have null fallbackReason")
         if len(confident_groups) < 2:
             problems.append(f"{where}: panel-evidence success requires two confident groups")
         return
+
     if fallback_reason not in _POST_SEGMENTATION_FALLBACKS:
         problems.append(f"{where}.fallbackReason: unsupported reliable-segmentation fallback")
     if node_order not in ((), None):
@@ -748,6 +885,133 @@ def _execution_state(
             problems.append(f"{where}: uncertain relation conflict requires C2-enabled arm")
         if len(confident_groups) < 2:
             problems.append(f"{where}: uncertain relation conflict requires two confident groups")
+        if not uncertain_assignments:
+            problems.append(
+                f"{where}: uncertain relation conflict requires an uncertain assignment"
+            )
+
+
+def _box_dict(box: object) -> dict[str, int]:
+    return {
+        "x1": int(getattr(box, "x1")),
+        "y1": int(getattr(box, "y1")),
+        "x2": int(getattr(box, "x2")),
+        "y2": int(getattr(box, "y2")),
+    }
+
+
+def _trusted_pixels_shape(
+    trusted: V3TrustedPageInput, where: str, problems: list[str]
+) -> bool:
+    shape = getattr(trusted.pixels, "shape", None)
+    if (
+        not isinstance(shape, tuple)
+        or len(shape) < 2
+        or shape[0] != trusted.page.height
+        or shape[1] != trusted.page.width
+    ):
+        problems.append(
+            f"{where}: trusted pixels must match ArmPageInput width/height"
+        )
+        return False
+    return True
+
+
+def _producer_semantics(
+    trusted: V3TrustedPageInput,
+    arm: ArmId,
+) -> dict[str, object]:
+    regions = build_textblock_regions(trusted.page)
+    pre = candidate_module.segment_panel_groups(trusted.pixels)
+    result = candidate_module.run_post_v2_calibration_candidate(
+        trusted.pixels,
+        regions,
+        page_height=trusted.page.height,
+        config=candidate_module.CalibrationConfig(
+            c1_boundary_guard=arm.c1,
+            c2_uncertain_relations=arm.c2,
+            c3_merged_frame_recovery=arm.c3,
+            b1_local_order=arm.b1,
+        ),
+    )
+
+    assignments: list[dict[str, object]] = []
+    for region_index, assignment in enumerate(result.diagnostic.assignments):
+        ref = regions[region_index]
+        assignments.append(
+            {
+                "regionId": assignment.region_id,
+                "sourceIndex": ref.source_index,
+                "candidateGroupIndices": list(assignment.candidate_group_indices),
+                "status": assignment.status,
+                "reason": assignment.reason,
+                "assignedGroupIndex": assignment.assigned_group_index,
+                "uncertainNodeLabel": (
+                    f"u{region_index:03d}"
+                    if assignment.assigned_group_index is None
+                    else None
+                ),
+            }
+        )
+
+    return {
+        "preSegmentation": {
+            "reliable": pre.reliable,
+            "reason": pre.reason,
+            "boxCount": len(pre.boxes),
+            "boxes": [_box_dict(box) for box in pre.boxes],
+        },
+        "segmentation": {
+            "reliable": result.diagnostic.segmentation_reliable,
+            "reason": result.diagnostic.segmentation_reason,
+            "boxes": [_box_dict(box) for box in result.diagnostic.segmentation_boxes],
+        },
+        "recoveryReason": result.diagnostic.recovery_reason,
+        "assignments": assignments,
+        "relationEdges": [
+            {
+                "sourceNode": edge.source_node,
+                "targetNode": edge.target_node,
+                "rule": edge.rule,
+            }
+            for edge in result.diagnostic.relation_edges
+        ],
+        "nodeOrder": list(result.diagnostic.node_order),
+        "fallbackReason": result.diagnostic.fallback_reason,
+        "usedPanelEvidence": result.diagnostic.used_panel_evidence,
+        "fallbackOrder": list(result.diagnostic.fallback_order),
+        "regionDirections": {
+            ref.region_id: str(getattr(ref.region, "direction", ""))
+            for ref in regions
+        },
+        "regionIntegrity": {
+            "countPreserved": True,
+            "objectIdentitySetPreserved": True,
+            "contentConfidenceGeometryPreserved": True,
+        },
+    }
+
+
+def _producer_authenticity(
+    diagnostic: dict[str, object],
+    *,
+    arm: ArmId,
+    trusted: V3TrustedPageInput,
+    where: str,
+    problems: list[str],
+) -> None:
+    try:
+        expected = _producer_semantics(trusted, arm)
+    except Exception as exc:  # noqa: BLE001
+        problems.append(
+            f"{where}: frozen producer recomputation failed: {type(exc).__name__}: {exc}"
+        )
+        return
+    for field in _PRODUCER_AUTH_FIELDS:
+        if diagnostic.get(field) != expected[field]:
+            problems.append(
+                f"{where}.{field}: does not match frozen producer recomputation"
+            )
 
 
 def _diagnostic(
@@ -755,6 +1019,7 @@ def _diagnostic(
     *,
     arm: ArmId,
     page: PageGroundTruth,
+    trusted: V3TrustedPageInput,
     problems: list[str],
 ) -> str | None:
     where = f"diagnostics[{arm.value}][{page.page_id}]"
@@ -769,6 +1034,7 @@ def _diagnostic(
         problems.append(f"{where}.experimentArm: does not match arm key")
     if diagnostic["pageId"] != page.page_id:
         problems.append(f"{where}.pageId: does not match annotation page")
+
     execution_sha = diagnostic["executionSha"]
     if not isinstance(execution_sha, str) or len(execution_sha) != 40 or any(
         char not in "0123456789abcdef" for char in execution_sha
@@ -776,7 +1042,16 @@ def _diagnostic(
         problems.append(f"{where}.executionSha: lowercase 40-hex SHA required")
         execution_sha = None
 
-    expected_regions = set(page.reading_order) | set(page.unscored_region_ids)
+    trusted_regions = {region.region_id for region in trusted.page.regions}
+    annotation_regions = set(page.reading_order) | set(page.unscored_region_ids)
+    if trusted.page.page_id != page.page_id:
+        problems.append(f"{where}: trusted ArmPageInput pageId mismatch")
+    if trusted_regions != annotation_regions:
+        problems.append(
+            f"{where}: trusted ArmPageInput region inventory must match annotation inventory"
+        )
+    pixels_valid = _trusted_pixels_shape(trusted, where, problems)
+
     pre = _segmentation(
         diagnostic["preSegmentation"], f"{where}.preSegmentation", problems, pre=True
     )
@@ -794,7 +1069,7 @@ def _diagnostic(
     assignments = _assignments(
         diagnostic["assignments"],
         arm=arm,
-        expected_regions=expected_regions,
+        trusted_page=trusted.page,
         segmentation=final_segmentation,
         where=f"{where}.assignments",
         problems=problems,
@@ -805,7 +1080,7 @@ def _diagnostic(
     node_order = _node_order(
         diagnostic["nodeOrder"],
         used=used,
-        vocabulary=node_sets[2] if node_sets is not None else None,
+        vocabulary=node_sets[3] if node_sets is not None else None,
         where=f"{where}.nodeOrder",
         problems=problems,
     )
@@ -822,19 +1097,30 @@ def _diagnostic(
     fallback_order = _region_order(
         diagnostic["fallbackOrder"],
         f"{where}.fallbackOrder",
-        expected_regions,
+        trusted_regions,
         problems,
     )
     final_order = _region_order(
-        diagnostic["finalOrder"], f"{where}.finalOrder", expected_regions, problems
+        diagnostic["finalOrder"],
+        f"{where}.finalOrder",
+        trusted_regions,
+        problems,
+    )
+    _validate_final_order_blocks(
+        node_order=node_order,
+        assignments=assignments,
+        final_order=final_order,
+        used=used,
+        where=where,
+        problems=problems,
     )
 
     directions = diagnostic["regionDirections"]
     if not isinstance(directions, dict):
         problems.append(f"{where}.regionDirections: object required")
     else:
-        if set(directions) != expected_regions:
-            problems.append(f"{where}.regionDirections: keys must equal full page region set")
+        if set(directions) != trusted_regions:
+            problems.append(f"{where}.regionDirections: keys must equal trusted page region set")
         for region_id, direction in directions.items():
             if (
                 not isinstance(region_id, str)
@@ -849,7 +1135,9 @@ def _diagnostic(
     integrity = diagnostic["regionIntegrity"]
     if not isinstance(integrity, dict):
         problems.append(f"{where}.regionIntegrity: object required")
-    elif _exact_fields(integrity, _INTEGRITY_FIELDS, f"{where}.regionIntegrity", problems):
+    elif _exact_fields(
+        integrity, _INTEGRITY_FIELDS, f"{where}.regionIntegrity", problems
+    ):
         for field in sorted(_INTEGRITY_FIELDS):
             if integrity[field] is not True:
                 problems.append(
@@ -869,6 +1157,15 @@ def _diagnostic(
         where=where,
         problems=problems,
     )
+
+    if pixels_valid and trusted.page.page_id == page.page_id:
+        _producer_authenticity(
+            diagnostic,
+            arm=arm,
+            trusted=trusted,
+            where=where,
+            problems=problems,
+        )
     return execution_sha if isinstance(execution_sha, str) else None
 
 
@@ -893,19 +1190,33 @@ def validate_diagnostics_v3(
     *,
     annotations: tuple[PageGroundTruth, ...],
     diagnostics: object,
+    trusted_page_inputs: Mapping[str, V3TrustedPageInput],
 ) -> None:
-    """Validate the v3 evaluator boundary before any v2 predicate delegation."""
+    """Validate producer-authentic v3 evidence before any frozen-v2 delegation."""
 
     if not isinstance(diagnostics, dict):
         raise V3DiagnosticValidationError(
             ("diagnostics: top-level arm mapping object required",)
         )
+    if not isinstance(trusted_page_inputs, Mapping):
+        raise V3DiagnosticValidationError(
+            ("trusted_page_inputs: page mapping required",)
+        )
+
     problems: list[str] = []
     required = _required_arms_by_page(annotations)
     page_by_id = {page.page_id: page for page in annotations}
     execution_shas: set[str] = set()
+
     for page_id, arms in required.items():
         page = page_by_id[page_id]
+        trusted = trusted_page_inputs.get(page_id)
+        if not isinstance(trusted, V3TrustedPageInput):
+            problems.append(
+                f"trusted_page_inputs[{page_id}]: V3TrustedPageInput required"
+            )
+            continue
+
         pre_states: list[tuple[ArmId, object]] = []
         fallback_orders: list[tuple[ArmId, object]] = []
         directions: list[tuple[ArmId, object]] = []
@@ -922,7 +1233,11 @@ def validate_diagnostics_v3(
                 continue
             diagnostic = arm_pages[page_id]
             execution_sha = _diagnostic(
-                diagnostic, arm=arm, page=page, problems=problems
+                diagnostic,
+                arm=arm,
+                page=page,
+                trusted=trusted,
+                problems=problems,
             )
             if execution_sha is not None:
                 execution_shas.add(execution_sha)
@@ -940,10 +1255,12 @@ def validate_diagnostics_v3(
                             ),
                         )
                     )
+
         _cross_arm_equal(pre_states, page_id, "preSegmentation", problems)
         _cross_arm_equal(fallback_orders, page_id, "fallbackOrder", problems)
         _cross_arm_equal(directions, page_id, "regionDirections", problems)
         _cross_arm_equal(c3_states, page_id, "C3 segmentation/recoveryReason", problems)
+
     if len(execution_shas) > 1:
         problems.append("diagnostics: required pages/arms use inconsistent executionSha values")
     if problems:
@@ -992,10 +1309,15 @@ def build_exercise_report_v3(
     *,
     annotations: tuple[PageGroundTruth, ...],
     diagnostics: dict[ArmId, dict[str, dict[str, object]]],
+    trusted_page_inputs: Mapping[str, V3TrustedPageInput],
 ) -> ExerciseReport:
-    """Build the frozen v3 reachability report through a strict diagnostic boundary."""
+    """Build v3 reachability only after structural, input, and producer authentication."""
 
-    validate_diagnostics_v3(annotations=annotations, diagnostics=diagnostics)
+    validate_diagnostics_v3(
+        annotations=annotations,
+        diagnostics=diagnostics,
+        trusted_page_inputs=trusted_page_inputs,
+    )
     v2 = build_exercise_report(annotations=annotations, diagnostics=diagnostics)
     counts = {
         name: v2.counts[name]

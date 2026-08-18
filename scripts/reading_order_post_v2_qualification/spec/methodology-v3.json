@@ -62,7 +62,7 @@
   },
   "runtimeReachability": {
     "evaluatorPath": "scripts/reading_order_post_v2_qualification/exercise_v3.py",
-    "evaluatorGitBlobSha": "63804c6edc933b2ab1001e7a145e4abe0efe5d97",
+    "evaluatorGitBlobSha": "a97954a977e5bfb359bd95716d1ffef791c506f0",
     "positivePredicatesDelegatedToFrozenV2Evaluator": true,
     "invalidDiagnosticSemantics": {
       "classification": "INVALID_EXPERIMENT",
@@ -71,6 +71,62 @@
       "missingMalformedOrInconsistentDiagnosticsAreInvalid": true,
       "countsForbidden": true,
       "futureExecutableRunnerMustTranslateValidationFailure": true
+    },
+    "evidenceAuthenticityLayers": {
+      "envelopeStructuralValidity": {
+        "category": "CATEGORY_A",
+        "derivation": "serialized diagnostic only",
+        "provesProducerAuthenticityAlone": false,
+        "validatedFacts": [
+          "field and container shape",
+          "box shape/count/order self-consistency",
+          "assignment serializer cross-field invariants",
+          "active-group relation membership",
+          "overlap panel endpoints equal serialized assignment candidate groups",
+          "nodeOrder vocabulary",
+          "nodeOrder-to-finalOrder block materialization",
+          "fallback necessary conditions"
+        ]
+      },
+      "trustedInputBinding": {
+        "category": "CATEGORY_B",
+        "runtimeCarrier": "V3TrustedPageInput",
+        "canonicalInputContract": "ArmPageInput",
+        "trustedPixelsRequired": true,
+        "candidateIndependentCorpusInput": true,
+        "groundTruthOrderNotUsedForProducerRecomputation": true,
+        "binds": [
+          "pageId",
+          "region inventory",
+          "regionId to sourceIndex",
+          "raw OCR region geometry via ArmPageInput fixtures",
+          "page width/height",
+          "producer pixels"
+        ]
+      },
+      "producerSemanticAuthentication": {
+        "category": "CATEGORY_B",
+        "usesFrozenCandidateDirectly": true,
+        "candidatePath": "backend/src/mangasensei/ocr/diagnostics/reading_order_post_v2_calibration.py",
+        "candidateGitBlobSha": "ed1be14f4ad47c317ad755b94f1b3e23e84064da",
+        "manualEquivalentAlgorithmForbidden": true,
+        "arbitraryDiagnosticClaimsAccepted": false,
+        "recomputedBeforeV2Delegation": true,
+        "recomputedFields": [
+          "preSegmentation",
+          "segmentation",
+          "recoveryReason",
+          "assignments",
+          "relationEdges",
+          "nodeOrder",
+          "fallbackReason",
+          "usedPanelEvidence",
+          "fallbackOrder",
+          "regionDirections",
+          "regionIntegrity"
+        ],
+        "finalOrderPolicy": "validated structurally against nodeOrder blocks; panel-local B0/B1 order is intentionally not reimplemented or exact-compared"
+      }
     },
     "productionDiagnosticContract": {
       "serializationReference": "scripts/reading_order_post_v2_qualification/run_arm.py",
@@ -107,15 +163,17 @@
           "group-too-short",
           "nested-or-inset-evidence",
           "ambiguous-overlap"
-        ]
+        ],
+        "producerAuthenticity": "frozen-producer-recomputation from trusted pixels"
       },
       "segmentation": {
         "boxesRequired": true,
         "sameBoxShapeAndOrderAsPreSegmentation": true,
-        "recoveredState": "recovered-merged-frame requires reliable=true and exactly two boxes"
+        "recoveredState": "recovered-merged-frame requires reliable=true and exactly two boxes",
+        "producerAuthenticity": "frozen-producer-recomputation from trusted pixels"
       },
       "regionSet": {
-        "expectedSet": "annotation.reading_order union annotation.unscored_region_ids; corpus validation binds that union to the arm-visible input region IDs",
+        "expectedSet": "trusted ArmPageInput region IDs; annotation reading_order union unscored_region_ids must match that inventory as a set",
         "allSerializedRegionViewsUseFullPageSet": true,
         "views": [
           "fallbackOrder",
@@ -128,9 +186,11 @@
         "requiredForEveryRegionWhenSegmentationReliable": true,
         "forbiddenWhenSegmentationUnreliable": true,
         "sourceIndexEqualsSerializerPosition": true,
+        "regionIdSourceIndexBoundToTrustedArmPageInput": true,
         "candidateGroupIndicesUniqueIncreasingAndWithinSegmentation": true,
         "statusReasonCandidateAssignedIndexAndUncertainLabelCrossChecked": true,
-        "uncertainNodeLabelFormat": "u{sourceIndex:03d}"
+        "uncertainNodeLabelFormat": "u{sourceIndex:03d}",
+        "candidateDerivationAuthenticatedByFrozenProducerRecomputation": true
       },
       "nodeGraph": {
         "nodeOrderRequired": true,
@@ -138,6 +198,7 @@
         "fallbackNodeOrderEmpty": true,
         "panelNodeFormat": "g{segmentationBoxIndex:03d}",
         "relationEndpointsMustBelongToNodeVocabulary": true,
+        "relationPanelEndpointsMustBeActiveGroups": true,
         "relationMustConnectPanelAndUncertainNode": true,
         "relationRules": [
           "unique-gutter-between-hard-panels",
@@ -148,8 +209,22 @@
         ],
         "gutterAndOverlapAreExactTwoEdgeBrackets": true,
         "overlapRequiresTwoCandidateAmbiguousAssignment": true,
+        "overlapEndpointsEqualCandidateGroups": true,
         "genericUncertainRelationsRequirePredecessorAndSuccessor": true,
-        "successEdgesMustRespectNodeOrder": true
+        "successEdgesMustRespectNodeOrder": true,
+        "gutterGeometricDerivability": "frozen-producer-recomputation",
+        "overlapGeometricDerivability": "frozen-producer-recomputation",
+        "genericRelationExactDerivability": "frozen-producer-recomputation",
+        "genericUniqueSlotAndConflictDerivability": "frozen-producer-recomputation"
+      },
+      "finalOrder": {
+        "successMaterializationReference": "frozen candidate node_order loop",
+        "panelBlocksFollowNodeOrder": true,
+        "emptyPanelNodesMaterializeEmptyBlocks": true,
+        "uncertainNodeMaterializesExactlyOneRegion": true,
+        "panelBlockMustBeContiguousAndContainExactlyAssignedRegions": true,
+        "panelInternalOrderValidated": false,
+        "panelInternalOrderRationale": "B0/B1 local order is candidate behavior and is not reimplemented inside the validator"
       },
       "recoveryAndFallback": {
         "nonC3RecoveryReason": "disabled",
@@ -173,18 +248,30 @@
           "uncertain-relation-conflict"
         ],
         "fallbackRequiresUsedPanelEvidenceFalseNodeOrderEmptyAndFinalEqualsFallback": true,
-        "successRequiresUsedPanelEvidenceTrueFallbackReasonNullAndTwoConfidentGroups": true
+        "successRequiresUsedPanelEvidenceTrueFallbackReasonNullAndTwoConfidentGroups": true,
+        "uncertainRelationConflictRequiresUncertainAssignment": true,
+        "fullConflictDerivability": "frozen-producer-recomputation"
       },
       "regionDirections": {
         "vocabulary": [
           "h",
           "v"
         ],
-        "derivation": "build_textblock_regions fixes direction=auto with nonempty input lines; TextBlock.direction therefore materializes h or v before the frozen candidate and run_arm asserts it is unchanged"
+        "derivation": "build_textblock_regions fixes direction=auto with nonempty input lines; producer recomputation authenticates the materialized direction"
       },
       "regionIntegrity": {
         "required": true,
         "allFlagsMustBeTrue": true
+      },
+      "producerDerivedFacts": {
+        "trustedPixelsRequired": true,
+        "trustedArmPageInputRequired": true,
+        "segmentationAndRecoveryRecomputed": true,
+        "assignmentGeometryRecomputed": true,
+        "relationGeometryAndUniqueSlotRecomputed": true,
+        "nodeOrderAndFallbackStateRecomputed": true,
+        "arbitrarySemanticClaimsRejected": true,
+        "futureExecutableRunnerMustSupplyTrustedRuntimeInput": true
       },
       "crossArmInvariants": {
         "preSegmentationEqualForSamePage": true,
@@ -234,11 +321,13 @@
       "deterministicRepeatRequired": true,
       "deterministicRepeatComparison": "complete-production-shape-diagnostic",
       "candidateToProductionDiagnosticToEvaluatorRequired": true,
+      "trustedRuntimeInputPassedToV3Boundary": true,
+      "producerSemanticRecomputationRequired": true,
       "productionDiagnosticSerializationReference": "scripts/reading_order_post_v2_qualification/run_arm.py",
       "candidateReachabilityTestPath": "tests/reading_order_post_v2_calibration/test_reachability_v3.py",
-      "candidateReachabilityTestGitBlobSha": "51fa0a292890a1632f9e2cf2f99fc9ecd5e7b62b",
+      "candidateReachabilityTestGitBlobSha": "c1fa63cffd6a0e1e49702b0f8030e52e3cec740a",
       "evaluatorContractTestPath": "tests/reading_order_post_v2_qualification/test_exercise_v3.py",
-      "evaluatorContractTestGitBlobSha": "8d2c2d75a44431113df089e0a8fa925e8fd8a2ed",
+      "evaluatorContractTestGitBlobSha": "79eb00d0c8f2bcee06b457206948a891fc846fa6",
       "requiredCases": {
         "c1_guarded_pairs": "synthetic-boundary-guard-transition",
         "c2_gutter_pairs": "synthetic-unique-gutter-relation",
@@ -261,6 +350,8 @@
     "separateExplicitExecutionAuthorizationRequired": true,
     "workflowMustRemainManualOnly": true,
     "v2IdentityRemainsConsumed": true,
-    "productionActivationAuthorized": false
+    "productionActivationAuthorized": false,
+    "futureRunnerMustSupplyTrustedArmPageInputAndPixels": true,
+    "futureRunnerMustAuthenticateProducerDerivedFactsBeforeExercise": true
   }
 }
