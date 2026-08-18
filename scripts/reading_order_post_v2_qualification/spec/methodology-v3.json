@@ -62,10 +62,236 @@
   },
   "runtimeReachability": {
     "evaluatorPath": "scripts/reading_order_post_v2_qualification/exercise_v3.py",
-    "evaluatorGitBlobSha": "10579cb368093503aaf23c7b751e2c8fd6e3dc9d",
+    "evaluatorGitBlobSha": "0f74b52e3484cdef7b4f8215e009d04e595ac7de",
     "positivePredicatesDelegatedToFrozenV2Evaluator": true,
-    "c3NegativeSemantics": "generic-rejection-only",
-    "c3NegativeRationale": "The frozen candidate exposes generic rejection reasons that cannot reliably distinguish the four prior category labels at qualification time. V3 therefore makes only a generic fail-closed C3 rejection exercise claim and preserves the prior total minimum burden as eight runtime pairs.",
+    "invalidDiagnosticSemantics": {
+      "classification": "INVALID_EXPERIMENT",
+      "harnessStatus": "harness-invalid",
+      "validationOccursBeforeV2Delegation": true,
+      "missingMalformedOrInconsistentDiagnosticsAreInvalid": true,
+      "countsForbidden": true,
+      "futureExecutableRunnerMustTranslateValidationFailure": true
+    },
+    "evidenceAuthenticityLayers": {
+      "envelopeStructuralValidity": {
+        "category": "CATEGORY_A",
+        "derivation": "serialized diagnostic only",
+        "provesProducerAuthenticityAlone": false,
+        "validatedFacts": [
+          "field and container shape",
+          "box shape/count/order self-consistency",
+          "assignment serializer cross-field invariants",
+          "active-group relation membership",
+          "overlap panel endpoints equal serialized assignment candidate groups",
+          "nodeOrder vocabulary",
+          "nodeOrder-to-finalOrder block materialization",
+          "fallback necessary conditions"
+        ]
+      },
+      "trustedInputBinding": {
+        "category": "CATEGORY_B",
+        "runtimeCarrier": "V3TrustedPageInput",
+        "canonicalInputContract": "ArmPageInput",
+        "trustedPixelsRequired": true,
+        "candidateIndependentCorpusInput": true,
+        "groundTruthOrderNotUsedForProducerRecomputation": true,
+        "binds": [
+          "pageId",
+          "region inventory",
+          "regionId to sourceIndex",
+          "raw OCR region geometry via ArmPageInput fixtures",
+          "page width/height",
+          "producer pixels"
+        ]
+      },
+      "producerSemanticAuthentication": {
+        "category": "CATEGORY_B",
+        "usesFrozenCandidateDirectly": true,
+        "candidatePath": "backend/src/mangasensei/ocr/diagnostics/reading_order_post_v2_calibration.py",
+        "candidateGitBlobSha": "ed1be14f4ad47c317ad755b94f1b3e23e84064da",
+        "manualEquivalentAlgorithmForbidden": true,
+        "arbitraryDiagnosticClaimsAccepted": false,
+        "recomputedBeforeV2Delegation": true,
+        "recomputedFields": [
+          "preSegmentation",
+          "segmentation",
+          "recoveryReason",
+          "assignments",
+          "relationEdges",
+          "nodeOrder",
+          "fallbackReason",
+          "usedPanelEvidence",
+          "fallbackOrder",
+          "finalOrder",
+          "regionDirections",
+          "regionIntegrity"
+        ],
+        "finalOrderPolicy": "exact-frozen-producer-recomputation"
+      }
+    },
+    "productionDiagnosticContract": {
+      "serializationReference": "scripts/reading_order_post_v2_qualification/run_arm.py",
+      "topLevelFieldSetExact": true,
+      "topLevelFields": [
+        "schemaVersion",
+        "experimentArm",
+        "executionSha",
+        "pageId",
+        "preSegmentation",
+        "segmentation",
+        "recoveryReason",
+        "assignments",
+        "relationEdges",
+        "nodeOrder",
+        "fallbackReason",
+        "usedPanelEvidence",
+        "fallbackOrder",
+        "finalOrder",
+        "regionDirections",
+        "regionIntegrity"
+      ],
+      "preSegmentation": {
+        "boxesRequired": true,
+        "boxCountEqualsSerializedBoxesLength": true,
+        "boxShape": "integer x1/y1/x2/y2 with 0 <= x1 < x2 and 0 <= y1 < y2",
+        "boxOrder": "y1,x1,y2,x2",
+        "directReasonVocabulary": [
+          "reliable",
+          "fewer-than-two-groups",
+          "too-many-groups",
+          "group-too-small",
+          "group-too-narrow",
+          "group-too-short",
+          "nested-or-inset-evidence",
+          "ambiguous-overlap"
+        ],
+        "producerAuthenticity": "frozen-producer-recomputation from trusted pixels"
+      },
+      "segmentation": {
+        "boxesRequired": true,
+        "sameBoxShapeAndOrderAsPreSegmentation": true,
+        "recoveredState": "recovered-merged-frame requires reliable=true and exactly two boxes",
+        "producerAuthenticity": "frozen-producer-recomputation from trusted pixels"
+      },
+      "regionSet": {
+        "expectedSet": "trusted ArmPageInput region IDs; annotation reading_order union unscored_region_ids must match that inventory as a set",
+        "allSerializedRegionViewsUseFullPageSet": true,
+        "views": [
+          "fallbackOrder",
+          "finalOrder",
+          "regionDirections",
+          "assignments when segmentation is reliable"
+        ]
+      },
+      "assignments": {
+        "requiredForEveryRegionWhenSegmentationReliable": true,
+        "forbiddenWhenSegmentationUnreliable": true,
+        "sourceIndexEqualsSerializerPosition": true,
+        "regionIdSourceIndexBoundToTrustedArmPageInput": true,
+        "candidateGroupIndicesUniqueIncreasingAndWithinSegmentation": true,
+        "statusReasonCandidateAssignedIndexAndUncertainLabelCrossChecked": true,
+        "uncertainNodeLabelFormat": "u{sourceIndex:03d}",
+        "candidateDerivationAuthenticatedByFrozenProducerRecomputation": true
+      },
+      "nodeGraph": {
+        "nodeOrderRequired": true,
+        "successNodeOrderCoversAllPanelAndUncertainNodes": true,
+        "fallbackNodeOrderEmpty": true,
+        "panelNodeFormat": "g{segmentationBoxIndex:03d}",
+        "relationEndpointsMustBelongToNodeVocabulary": true,
+        "relationPanelEndpointsMustBeActiveGroups": true,
+        "relationMustConnectPanelAndUncertainNode": true,
+        "relationRules": [
+          "unique-gutter-between-hard-panels",
+          "validated-overlap-bridge-right-before-left",
+          "uncertain-same-level-right-before-left",
+          "uncertain-aligned-top-before-bottom",
+          "uncertain-nonoverlap-top-before-bottom"
+        ],
+        "gutterAndOverlapAreExactTwoEdgeBrackets": true,
+        "overlapRequiresTwoCandidateAmbiguousAssignment": true,
+        "overlapEndpointsEqualCandidateGroups": true,
+        "genericUncertainRelationsRequirePredecessorAndSuccessor": true,
+        "successEdgesMustRespectNodeOrder": true,
+        "gutterGeometricDerivability": "frozen-producer-recomputation",
+        "overlapGeometricDerivability": "frozen-producer-recomputation",
+        "genericRelationExactDerivability": "frozen-producer-recomputation",
+        "genericUniqueSlotAndConflictDerivability": "frozen-producer-recomputation"
+      },
+      "finalOrder": {
+        "successMaterializationReference": "frozen candidate node_order loop",
+        "panelBlocksFollowNodeOrder": true,
+        "emptyPanelNodesMaterializeEmptyBlocks": true,
+        "uncertainNodeMaterializesExactlyOneRegion": true,
+        "panelBlockMustBeContiguousAndContainExactlyAssignedRegions": true,
+        "categoryAStructuralBlockValidationRetained": true,
+        "panelInternalOrderProducerAuthenticated": true,
+        "producerAuthentication": "exact frozen-producer final_order recomputation",
+        "manualB0B1ReimplementationForbidden": true
+      },
+      "recoveryAndFallback": {
+        "nonC3RecoveryReason": "disabled",
+        "c3ReliablePreReason": "not-needed",
+        "c3IneligiblePreReason": "not-eligible",
+        "c3AcceptedReason": "accepted-strong-anchor-plus-occlusion-supported-frame",
+        "c3RejectedReasons": [
+          "rejected-insufficient-long-frame-sides",
+          "rejected-multiple-strong-frame-candidates",
+          "rejected-no-unique-strong-frame-anchor",
+          "rejected-ambiguous-or-missing-occlusion-supported-frame",
+          "rejected-group-too-small",
+          "rejected-group-too-narrow",
+          "rejected-group-too-short",
+          "rejected-nested-or-inset-evidence",
+          "rejected-ambiguous-overlap"
+        ],
+        "reliableSegmentationFallbackReasons": [
+          "insufficient-confident-panel-groups",
+          "precedence-cycle",
+          "uncertain-relation-conflict"
+        ],
+        "fallbackRequiresUsedPanelEvidenceFalseNodeOrderEmptyAndFinalEqualsFallback": true,
+        "successRequiresUsedPanelEvidenceTrueFallbackReasonNullAndTwoConfidentGroups": true,
+        "uncertainRelationConflictRequiresUncertainAssignment": true,
+        "fullConflictDerivability": "frozen-producer-recomputation"
+      },
+      "regionDirections": {
+        "vocabulary": [
+          "h",
+          "v"
+        ],
+        "derivation": "build_textblock_regions fixes direction=auto with nonempty input lines; producer recomputation authenticates the materialized direction"
+      },
+      "regionIntegrity": {
+        "required": true,
+        "allFlagsMustBeTrue": true
+      },
+      "producerDerivedFacts": {
+        "trustedPixelsRequired": true,
+        "trustedArmPageInputRequired": true,
+        "segmentationAndRecoveryRecomputed": true,
+        "assignmentGeometryRecomputed": true,
+        "relationGeometryAndUniqueSlotRecomputed": true,
+        "nodeOrderAndFallbackStateRecomputed": true,
+        "finalOrderRecomputed": true,
+        "arbitrarySemanticClaimsRejected": true,
+        "futureExecutableRunnerMustSupplyTrustedRuntimeInput": true
+      },
+      "crossArmInvariants": {
+        "preSegmentationEqualForSamePage": true,
+        "fallbackOrderEqualForSamePage": true,
+        "regionDirectionsEqualForSamePage": true,
+        "c3SegmentationAndRecoveryReasonEqualAcrossC3EnabledArms": true
+      }
+    },
+    "c3NegativeSemantics": "generic-page-rejection-only",
+    "c3NegativeWitnessUnit": "unique-page",
+    "c3NegativeRationale": "The frozen candidate exposes only a page-level generic rejection diagnostic and no pair-local causal witness. V3 therefore counts each qualifying page at most once, regardless of how many C3-negative qualification pairs it contains, and makes no pair-local rejection claim.",
+    "c3NegativeBurden": {
+      "priorGenericPairMinimum": 8,
+      "v3UniquePageMinimum": 8,
+      "burdenReduced": false
+    },
     "exerciseMinima": {
       "c1_guarded_pairs": 4,
       "c2_gutter_pairs": 3,
@@ -74,7 +300,7 @@
       "c2_fail_closed_no_relation_pairs": 2,
       "c2_conflict_cycle_fallback_pairs": 2,
       "c3_positive_pairs": 4,
-      "c3_rejection_pairs": 8,
+      "c3_rejection_pages": 8,
       "b1_horizontal_pairs": 4,
       "b1_vertical_pairs": 4,
       "b1_mixed_pairs": 4
@@ -97,10 +323,15 @@
       ],
       "mechanismFunctionsMayBePatched": false,
       "deterministicRepeatRequired": true,
+      "deterministicRepeatComparison": "complete-production-shape-diagnostic",
+      "candidateToProductionDiagnosticToEvaluatorRequired": true,
+      "trustedRuntimeInputPassedToV3Boundary": true,
+      "producerSemanticRecomputationRequired": true,
+      "productionDiagnosticSerializationReference": "scripts/reading_order_post_v2_qualification/run_arm.py",
       "candidateReachabilityTestPath": "tests/reading_order_post_v2_calibration/test_reachability_v3.py",
-      "candidateReachabilityTestGitBlobSha": "6cb5747f224ea88c1c5c3e0e1a89ba3f7043fe09",
+      "candidateReachabilityTestGitBlobSha": "c1fa63cffd6a0e1e49702b0f8030e52e3cec740a",
       "evaluatorContractTestPath": "tests/reading_order_post_v2_qualification/test_exercise_v3.py",
-      "evaluatorContractTestGitBlobSha": "561039267aebf904322732a8e5e358c96aeb7ff0",
+      "evaluatorContractTestGitBlobSha": "c414a9ae1980f83009a6980e76e57220d33eb250",
       "requiredCases": {
         "c1_guarded_pairs": "synthetic-boundary-guard-transition",
         "c2_gutter_pairs": "synthetic-unique-gutter-relation",
@@ -109,7 +340,7 @@
         "c2_fail_closed_no_relation_pairs": "synthetic-unrelated-uncertain-node",
         "c2_conflict_cycle_fallback_pairs": "synthetic-relation-conflict-fallback",
         "c3_positive_pairs": "synthetic-merged-frame-positive-recovery",
-        "c3_rejection_pairs": "synthetic-generic-c3-rejection",
+        "c3_rejection_pages": "synthetic-generic-c3-page-rejection",
         "b1_horizontal_pairs": "synthetic-same-panel-horizontal",
         "b1_vertical_pairs": "synthetic-same-panel-vertical",
         "b1_mixed_pairs": "synthetic-same-panel-mixed"
@@ -123,6 +354,84 @@
     "separateExplicitExecutionAuthorizationRequired": true,
     "workflowMustRemainManualOnly": true,
     "v2IdentityRemainsConsumed": true,
-    "productionActivationAuthorized": false
+    "productionActivationAuthorized": false,
+    "futureRunnerMustSupplyTrustedArmPageInputAndPixels": true,
+    "futureRunnerMustAuthenticateProducerDerivedFactsBeforeExercise": true,
+    "runnerContract": {
+      "contractFreezeOnly": true,
+      "executableRunnerImplementedHere": false,
+      "inheritedFailClosedPreflight": {
+        "requiredBeforePrimaryCandidateEvaluation": true,
+        "requiredBeforeProducerAuthenticationRecomputation": true,
+        "secondPreflightImplementationForbidden": true,
+        "exactExecutionShaRequired": true,
+        "exactExecutionTreeRequired": true,
+        "cleanCheckoutAndWorktreeRequired": true,
+        "frozenCandidateCommitTreeBindingRequired": true,
+        "frozenCandidateCommitPathBlobBindingRequired": true,
+        "headCandidatePathBlobBindingRequired": true,
+        "headCandidateBlobMustEqualFrozenCandidateGitBlobSha": true,
+        "allApplicableInheritedFrozenSourceBindingsRequired": true
+      },
+      "sealedCorpusIntegrity": {
+        "sealedCorpusOnly": true,
+        "manifestIntegrityRequired": true,
+        "designIntegrityRequired": true,
+        "inventoryIntegrityRequired": true,
+        "inputIntegrityRequired": true,
+        "imageIntegrityRequired": true
+      },
+      "trustedPageInputDerivation": {
+        "pageDerivedInternallyOnly": true,
+        "pageSource": "already-validated sealed corpus input file",
+        "pageLoader": "load_arm_input",
+        "pixelsDerivedInternallyOnly": true,
+        "pixelsSource": "corresponding already-validated sealed PNG",
+        "callerSuppliedArmPageInputForbidden": true,
+        "callerSuppliedPixelBufferForbidden": true,
+        "bindingChain": [
+          "sealed manifest inventory",
+          "exact input bytes",
+          "exact image bytes",
+          "pageId",
+          "ArmPageInput",
+          "decoded pixels"
+        ]
+      },
+      "canonicalPixels": {
+        "decodedFromVerifiedSealedPng": true,
+        "colorMode": "RGB",
+        "dtype": "uint8",
+        "shape": "H x W x 3",
+        "privateStableSnapshot": true,
+        "replacementOrMutationBetweenPrimaryAndAuthenticationForbidden": true
+      },
+      "candidateRuntimeAuthenticity": {
+        "producerAuthenticationValidOnlyAfterSourceBindingPreflight": true,
+        "monkeypatchAndTestSeamsForbidden": true,
+        "moduleSubstitutionForbidden": true,
+        "cleanAuthenticatedSourceStateRequired": true,
+        "sameFrozenCalibrationConfigSemanticsPerArm": true,
+        "syntheticCalibrationMonkeypatchModelIsQualificationEvidence": false
+      },
+      "diagnosticExecutionShaBinding": {
+        "everyDiagnosticMustEqualAuthorizedExecutionSha": true,
+        "authorizedExecutionShaSource": "qualification identity plus inherited fail-closed preflight",
+        "sharedSyntacticallyValidShaAloneIsInsufficient": true
+      },
+      "producerAuthenticationRecomputation": {
+        "intraHarnessVerificationWithinSameQualification": true,
+        "secondWorkflowDispatch": false,
+        "secondQualification": false,
+        "replay": false,
+        "newQualificationIdentity": false,
+        "additionalStandaloneAuthorization": false,
+        "oneQualificationRuleAppliesToWorkflowExecutionIdentity": true,
+        "sameFrozenInputRequired": true,
+        "sameAuthenticatedSourceRequired": true,
+        "sameArmConfigRequired": true,
+        "sameQualificationExecutionContextRequired": true
+      }
+    }
   }
 }
