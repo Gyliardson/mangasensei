@@ -15,9 +15,9 @@ from scripts.reading_order_post_v2_qualification.contracts import (
 )
 from scripts.reading_order_post_v2_qualification.exercise_v3 import (
     EXERCISE_MINIMA_V3,
-    V3DiagnosticValidationError,
     V3_INVALID_DIAGNOSTIC_HARNESS_STATUS,
     V3_INVALID_EXPERIMENT_CLASSIFICATION,
+    V3DiagnosticValidationError,
     build_exercise_report_v3,
 )
 
