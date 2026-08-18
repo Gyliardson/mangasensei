@@ -115,7 +115,7 @@
       "candidateToProductionDiagnosticToEvaluatorRequired": true,
       "productionDiagnosticSerializationReference": "scripts/reading_order_post_v2_qualification/run_arm.py",
       "candidateReachabilityTestPath": "tests/reading_order_post_v2_calibration/test_reachability_v3.py",
-      "candidateReachabilityTestGitBlobSha": "71e6dc37831201bdcb15f3eae48585d2179ecbb9",
+      "candidateReachabilityTestGitBlobSha": "9af47b2392685e1a5ec8a852a2545a31f4ca081b",
       "evaluatorContractTestPath": "tests/reading_order_post_v2_qualification/test_exercise_v3.py",
       "evaluatorContractTestGitBlobSha": "3d5f1a60229a6f2eb824bea619d4d5452ebaae1e",
       "requiredCases": {
