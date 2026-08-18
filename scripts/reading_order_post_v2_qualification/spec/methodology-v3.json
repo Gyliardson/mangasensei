@@ -62,7 +62,7 @@
   },
   "runtimeReachability": {
     "evaluatorPath": "scripts/reading_order_post_v2_qualification/exercise_v3.py",
-    "evaluatorGitBlobSha": "a97954a977e5bfb359bd95716d1ffef791c506f0",
+    "evaluatorGitBlobSha": "1fdbb4692015eb74fb93cc7b42d9a3f9a69e259a",
     "positivePredicatesDelegatedToFrozenV2Evaluator": true,
     "invalidDiagnosticSemantics": {
       "classification": "INVALID_EXPERIMENT",
@@ -327,7 +327,7 @@
       "candidateReachabilityTestPath": "tests/reading_order_post_v2_calibration/test_reachability_v3.py",
       "candidateReachabilityTestGitBlobSha": "c1fa63cffd6a0e1e49702b0f8030e52e3cec740a",
       "evaluatorContractTestPath": "tests/reading_order_post_v2_qualification/test_exercise_v3.py",
-      "evaluatorContractTestGitBlobSha": "79eb00d0c8f2bcee06b457206948a891fc846fa6",
+      "evaluatorContractTestGitBlobSha": "691a80e034f1c6590e778397df2eed913cf59997",
       "requiredCases": {
         "c1_guarded_pairs": "synthetic-boundary-guard-transition",
         "c2_gutter_pairs": "synthetic-unique-gutter-relation",

@@ -891,12 +891,12 @@ def _execution_state(
             )
 
 
-def _box_dict(box: object) -> dict[str, int]:
+def _box_dict(box: Any) -> dict[str, int]:
     return {
-        "x1": int(getattr(box, "x1")),
-        "y1": int(getattr(box, "y1")),
-        "x2": int(getattr(box, "x2")),
-        "y2": int(getattr(box, "y2")),
+        "x1": int(box.x1),
+        "y1": int(box.y1),
+        "x2": int(box.x2),
+        "y2": int(box.y2),
     }
 
 

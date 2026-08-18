@@ -444,7 +444,8 @@ def test_v3_relation_panel_endpoint_cannot_reference_empty_group(
     )
     target = diagnostics[ArmId.C2_ONLY]["Q901"]
     edges = target["relationEdges"]
-    assert isinstance(edges, list) and edges
+    assert isinstance(edges, list)
+    assert edges
     edge = edges[0]
     assert isinstance(edge, dict)
     if str(edge["sourceNode"]).startswith("g"):
@@ -484,7 +485,8 @@ def test_v3_overlap_bracket_endpoints_equal_assignment_candidate_groups(
     )
     target = diagnostics[ArmId.C2_ONLY]["Q901"]
     edges = target["relationEdges"]
-    assert isinstance(edges, list) and len(edges) == 2
+    assert isinstance(edges, list)
+    assert len(edges) == 2
     edge = edges[1]
     assert isinstance(edge, dict)
     if str(edge["sourceNode"]).startswith("g"):
@@ -597,7 +599,8 @@ def test_v3_region_id_source_index_is_bound_to_trusted_arm_page_input(
     assignments = target["assignments"]
     assert isinstance(assignments, list)
     first, second = assignments[0], assignments[1]
-    assert isinstance(first, dict) and isinstance(second, dict)
+    assert isinstance(first, dict)
+    assert isinstance(second, dict)
     first["regionId"], second["regionId"] = second["regionId"], first["regionId"]
 
     _assert_invalid(
