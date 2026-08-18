@@ -62,10 +62,18 @@
   },
   "runtimeReachability": {
     "evaluatorPath": "scripts/reading_order_post_v2_qualification/exercise_v3.py",
-    "evaluatorGitBlobSha": "10579cb368093503aaf23c7b751e2c8fd6e3dc9d",
+    "evaluatorGitBlobSha": "65eaa26f4b36c88231e8512998548aa1896db4f2",
     "positivePredicatesDelegatedToFrozenV2Evaluator": true,
-    "c3NegativeSemantics": "generic-rejection-only",
-    "c3NegativeRationale": "The frozen candidate exposes generic rejection reasons that cannot reliably distinguish the four prior category labels at qualification time. V3 therefore makes only a generic fail-closed C3 rejection exercise claim and preserves the prior total minimum burden as eight runtime pairs.",
+    "invalidDiagnosticSemantics": {
+      "validationBoundary": "before-v2-evaluator-delegation",
+      "missingMalformedOrInconsistentMayCount": false,
+      "evaluatorBehavior": "raise-before-v2-delegation",
+      "futureRunnerStatus": "INVALID_EXPERIMENT",
+      "classification": "harness-invalid"
+    },
+    "c3NegativeSemantics": "generic-rejection-page-witness",
+    "c3NegativeEvidenceUnit": "unique-page",
+    "c3NegativeRationale": "The frozen candidate exposes only a page-level generic rejection witness and no pair-local causal witness. V3 therefore counts each eligible rejected page at most once, regardless of the number of negative qualification pairs on that page. The minimum remains eight unique page witnesses, preserving the prior aggregate evidence burden while removing pair multiplication.",
     "exerciseMinima": {
       "c1_guarded_pairs": 4,
       "c2_gutter_pairs": 3,
@@ -74,7 +82,7 @@
       "c2_fail_closed_no_relation_pairs": 2,
       "c2_conflict_cycle_fallback_pairs": 2,
       "c3_positive_pairs": 4,
-      "c3_rejection_pairs": 8,
+      "c3_rejection_pages": 8,
       "b1_horizontal_pairs": 4,
       "b1_vertical_pairs": 4,
       "b1_mixed_pairs": 4
@@ -98,9 +106,9 @@
       "mechanismFunctionsMayBePatched": false,
       "deterministicRepeatRequired": true,
       "candidateReachabilityTestPath": "tests/reading_order_post_v2_calibration/test_reachability_v3.py",
-      "candidateReachabilityTestGitBlobSha": "6cb5747f224ea88c1c5c3e0e1a89ba3f7043fe09",
+      "candidateReachabilityTestGitBlobSha": "ab614832e0983239e320a20b33c9e29b6ce398d8",
       "evaluatorContractTestPath": "tests/reading_order_post_v2_qualification/test_exercise_v3.py",
-      "evaluatorContractTestGitBlobSha": "561039267aebf904322732a8e5e358c96aeb7ff0",
+      "evaluatorContractTestGitBlobSha": "ceacea617c6d4aa277583b9bca4daa6b0dc7efc1",
       "requiredCases": {
         "c1_guarded_pairs": "synthetic-boundary-guard-transition",
         "c2_gutter_pairs": "synthetic-unique-gutter-relation",
@@ -109,7 +117,7 @@
         "c2_fail_closed_no_relation_pairs": "synthetic-unrelated-uncertain-node",
         "c2_conflict_cycle_fallback_pairs": "synthetic-relation-conflict-fallback",
         "c3_positive_pairs": "synthetic-merged-frame-positive-recovery",
-        "c3_rejection_pairs": "synthetic-generic-c3-rejection",
+        "c3_rejection_pages": "synthetic-generic-c3-rejection-page-witness",
         "b1_horizontal_pairs": "synthetic-same-panel-horizontal",
         "b1_vertical_pairs": "synthetic-same-panel-vertical",
         "b1_mixed_pairs": "synthetic-same-panel-mixed"
