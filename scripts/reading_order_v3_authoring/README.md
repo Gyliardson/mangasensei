@@ -244,8 +244,14 @@ Schema version: `reading-order-v3-authoring-input-v1`.
 
 A qualification page requires at least two regions. Width/height are arbitrary positive
 integers; no historical image size is required. Region IDs and source indexes are unique,
-source indexes are contiguous from zero, every line is a four-point integer quadrilateral
-inside the page bounds, and `angle` is finite.
+source indexes are contiguous from zero, and every line is a four-point integer
+quadrilateral inside the page bounds.
+
+`angle` uses the finite binary64 runtime numeric contract. Finite JSON floating values are
+accepted as their parsed runtime float value. JSON integer values are accepted only when
+they can be converted to the runtime float exactly; integers whose conversion would overflow
+or lose precision are rejected before seal. Booleans, non-numeric values, NaN, and Infinity
+are invalid.
 
 The frozen clean-room serialization -> canonical runtime-input mapping is structural only:
 
@@ -255,7 +261,8 @@ The frozen clean-room serialization -> canonical runtime-input mapping is struct
 - each `regionId` -> identical `regionId`;
 - each `sourceIndex` -> identical `sourceIndex`;
 - `lines` -> identical integer point tuples;
-- `angle` -> identical finite numeric value;
+- `angle` -> identical finite binary64 runtime value; integer JSON input is admitted only
+  when that runtime value represents the authored integer exactly;
 - runtime region tuple order -> ascending `sourceIndex`.
 
 The compatibility step performs no renaming, geometry inference, threshold logic,
