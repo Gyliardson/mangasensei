@@ -130,11 +130,32 @@ The eight positive families are:
 - `b1-vertical`
 - `b1-mixed-orientation`
 
-Every family requires at least one dedicated page. A page is dedicated only when its
-`positiveFamilies` contains exactly one positive family and `primaryPositiveFamily` names
-that family. A page carrying the `combined-c1-c2-c3-b1` qualification slice is a combined
-page and cannot satisfy a dedicated positive-family requirement. Combined pages remain
-separately required by the frozen design minimum.
+`positiveFamilies` and `primaryPositiveFamily` are not independent labels that can be
+assigned separately from the authored qualification pairs. For each page, the validator
+derives the authored positive-slice set as:
+
+```text
+authored_positive_slices =
+    union(qualificationPairs[].slices) intersect POSITIVE_FAMILIES
+```
+
+The page's `positiveFamilies` must contain exactly that same set. A positive family declared
+in `positiveFamilies` without a same-page pair carrying that slice is invalid, and a positive
+slice present in a same-page qualification pair but omitted from `positiveFamilies` is also
+invalid. When `primaryPositiveFamily` is non-null, it can only name one of those same-page
+authored positive slices.
+
+Every family requires at least one dedicated page. A page is dedicated to `FAMILY` only
+when all of the following are true:
+
+- the page's authored positive-slice set is exactly `{FAMILY}`;
+- `positiveFamilies` contains exactly `FAMILY`;
+- `primaryPositiveFamily == FAMILY`;
+- the page does not carry the `combined-c1-c2-c3-b1` qualification slice.
+
+Combined pages therefore cannot satisfy a dedicated positive-family requirement, even when
+they carry positive slices. Combined pages remain separately required by the frozen design
+minimum.
 
 ## Author-facing qualification slice vocabulary
 

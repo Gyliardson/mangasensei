@@ -441,6 +441,9 @@ def validate_authoring_coverage(
     if set(annotations) != design_ids:
         raise ContractError("authoring coverage: annotation page inventory must equal design")
 
+    design_by_id = {page.page_id: page for page in design.pages}
+    positive_set = set(POSITIVE_FAMILIES)
+    authored_positive_by_page: dict[str, frozenset[str]] = {}
     pair_counts = {name: 0 for name in AUTHORING_SLICES}
     page_sets = {name: set() for name in AUTHORING_SLICES}
     total_pairs = 0
@@ -448,6 +451,20 @@ def validate_authoring_coverage(
     for page_id, annotation in annotations.items():
         if annotation.page_id != page_id:
             raise ContractError(f"{page_id}: annotation identity mismatch")
+        authored_positive_slices = frozenset(
+            slice_name
+            for pair in annotation.qualification_pairs
+            for slice_name in pair.slices
+            if slice_name in positive_set
+        )
+        declared_positive_families = set(design_by_id[page_id].positive_families)
+        if authored_positive_slices != declared_positive_families:
+            raise ContractError(
+                f"{page_id}: positiveFamilies must exactly match qualification-pair positive "
+                f"slices: declared={sorted(declared_positive_families)}, "
+                f"authored={sorted(authored_positive_slices)}"
+            )
+        authored_positive_by_page[page_id] = authored_positive_slices
         total_pairs += len(annotation.qualification_pairs)
         total_scored_regions += len(annotation.reading_order)
         for pair in annotation.qualification_pairs:
@@ -493,12 +510,14 @@ def validate_authoring_coverage(
     dedicated = {family: [] for family in POSITIVE_FAMILIES}
     c3_pages: list[str] = []
     for page in design.pages:
-        if (
-            page.page_id not in combined_pages
-            and len(page.positive_families) == 1
-            and page.primary_positive_family == page.positive_families[0]
-        ):
-            dedicated[page.positive_families[0]].append(page.page_id)
+        authored_positive_slices = authored_positive_by_page[page.page_id]
+        if page.page_id not in combined_pages and len(authored_positive_slices) == 1:
+            family = next(iter(authored_positive_slices))
+            if (
+                page.positive_families == (family,)
+                and page.primary_positive_family == family
+            ):
+                dedicated[family].append(page.page_id)
         if page.c3_rejection:
             c3_pages.append(page.page_id)
     missing = [family for family in POSITIVE_FAMILIES if not dedicated[family]]

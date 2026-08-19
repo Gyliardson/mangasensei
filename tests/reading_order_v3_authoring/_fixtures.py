@@ -36,27 +36,39 @@ def _png(*, interlace: int = 0) -> bytes:
 
 def _slices(i: int) -> list[str]:
     s = {"clean-control"}
-    for lo, hi, names in (
-        (0, 3, ("c1-boundary-positive", "b1-horizontal")),
-        (4, 7, ("c1-near-boundary-negative", "b1-vertical")),
-        (8, 10, ("c2-gutter-bridge", "c2-ambiguous-overlap-bridge", "c2-pair-precedence-slot")),
-        (11, 13, ("c2-one-sided-non-unique-fail-closed",)),
-        (14, 15, ("c2-conflict-cycle-safety",)),
-        (16, 19, ("c3-positive-recovery",)),
-        (12, 15, ("b1-mixed-orientation",)),
-        (8, 11, ("combined-c1-c2-c3-b1",)),
-        (18, 20, ("intentional-fallback",)),
-    ):
-        if lo <= i <= hi:
-            s.update(names)
+    positive_pages = {
+        "c1-boundary-positive": {0, 8, 9, 10, 11},
+        "c2-gutter-bridge": {1, 8, 11},
+        "c2-ambiguous-overlap-bridge": {2, 9, 12},
+        "c2-pair-precedence-slot": {3, 10, 13},
+        "c3-positive-recovery": {4, 14, 15, 16},
+        "b1-horizontal": {5, 8, 14, 17},
+        "b1-vertical": {6, 9, 15, 18},
+        "b1-mixed-orientation": {7, 10, 16, 19},
+    }
+    for family, page_indexes in positive_pages.items():
+        if i in page_indexes:
+            s.add(family)
+    if 12 <= i <= 15:
+        s.add("c1-near-boundary-negative")
+    if 16 <= i <= 18:
+        s.add("c2-one-sided-non-unique-fail-closed")
+    if 19 <= i <= 20:
+        s.add("c2-conflict-cycle-safety")
+    if 8 <= i <= 11:
+        s.add("combined-c1-c2-c3-b1")
+    if 21 <= i <= 23:
+        s.add("intentional-fallback")
     return sorted(s)
 
 
 def _design(ids: tuple[str, ...] | None = None) -> dict[str, Any]:
     ids = ids or tuple(f"page-{i:02d}" for i in range(24))
     pages = []
+    positive_set = set(POSITIVE_FAMILIES)
     for i, page_id in enumerate(ids):
-        family = POSITIVE_FAMILIES[i] if i < 8 else None
+        positive_families = sorted(set(_slices(i)) & positive_set)
+        primary = POSITIVE_FAMILIES[i] if i < len(POSITIVE_FAMILIES) else None
         pages.append({
             "pageId": page_id,
             "source": f"source/{page_id}.bin",
@@ -64,8 +76,8 @@ def _design(ids: tuple[str, ...] | None = None) -> dict[str, Any]:
             "input": f"inputs/{page_id}.json",
             "annotation": f"annotations/{page_id}.json",
             "authoringCoverage": {
-                "positiveFamilies": [] if family is None else [family],
-                "primaryPositiveFamily": family,
+                "positiveFamilies": positive_families,
+                "primaryPositiveFamily": primary,
                 "c3Rejection": i >= 16,
             },
         })
