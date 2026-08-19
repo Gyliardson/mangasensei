@@ -4,7 +4,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from scripts.reading_order_v3_authoring import (
     POSITIVE_FAMILIES,
     SLICE_MINIMA,
