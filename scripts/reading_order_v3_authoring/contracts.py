@@ -186,6 +186,22 @@ def _string_array(value: object, where: str) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _runtime_angle(value: object, where: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ContractError(f"{where}: finite binary64 number required")
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ContractError(f"{where}: finite binary64 number required")
+        return value
+    try:
+        runtime_value = float(value)
+    except OverflowError as exc:
+        raise ContractError(f"{where}: finite binary64 number required") from exc
+    if not math.isfinite(runtime_value) or int(runtime_value) != value:
+        raise ContractError(f"{where}: integer must be exactly representable as finite binary64")
+    return runtime_value
+
+
 def load_design(path: Path) -> CorpusDesign:
     data = _load_object(path)
     _exact_keys(
@@ -350,14 +366,8 @@ def load_input(path: Path) -> PageInput:
                     raise ContractError(f"{where}: line point outside page")
                 points.append((x, y))
             lines.append(tuple(points))
-        angle = raw["angle"]
-        if (
-            isinstance(angle, bool)
-            or not isinstance(angle, int | float)
-            or not math.isfinite(angle)
-        ):
-            raise ContractError(f"{where}.angle: finite number required")
-        regions.append(RegionInput(region_id, source_index, tuple(lines), float(angle)))
+        angle = _runtime_angle(raw["angle"], f"{where}.angle")
+        regions.append(RegionInput(region_id, source_index, tuple(lines), angle))
     if sorted(seen_indexes) != list(range(len(seen_indexes))):
         raise ContractError(f"{path}: sourceIndex must be contiguous from zero")
     return PageInput(
