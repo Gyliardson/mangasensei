@@ -20,8 +20,11 @@ def main() -> None:
             coverage = validate_corpus(args.corpus_root)
             print(
                 "valid: "
-                f"dedicated-positive-families={len(coverage.dedicated_positive_pages)} "
-                f"c3-rejection-pages={len(coverage.c3_rejection_pages)}"
+                "pages-with-dedicated-positive="
+                f"{sum(bool(v) for v in coverage.dedicated_positive_pages.values())} "
+                f"c3-rejection-pages={len(coverage.c3_rejection_pages)} "
+                f"qualification-pairs={coverage.total_qualification_pairs} "
+                f"scored-regions={coverage.total_scored_regions}"
             )
     except ContractError as exc:
         parser.error(str(exc))

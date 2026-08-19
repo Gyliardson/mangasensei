@@ -58,11 +58,61 @@
         "b1-vertical",
         "b1-mixed-orientation"
       ]
+    },
+    "cleanRoomDeclassification": {
+      "normativeNotObservedEvidence": true,
+      "designMinima": {
+        "minimumPageCount": 24,
+        "minimumQualificationPairs": 120,
+        "minimumScoredRegions": 96,
+        "minimumCombinedMechanismPages": 4,
+        "minimumIntentionalFallbackPages": 3,
+        "minimumCleanControlPages": 6
+      },
+      "nonC3SliceMinima": {
+        "c1-boundary-positive": {"minPairs": 10, "minPages": 4},
+        "c1-near-boundary-negative": {"minPairs": 8, "minPages": 4},
+        "c2-gutter-bridge": {"minPairs": 8, "minPages": 3},
+        "c2-ambiguous-overlap-bridge": {"minPairs": 8, "minPages": 3},
+        "c2-pair-precedence-slot": {"minPairs": 8, "minPages": 3},
+        "c2-one-sided-non-unique-fail-closed": {"minPairs": 8, "minPages": 3},
+        "c2-conflict-cycle-safety": {"minPairs": 6, "minPages": 2},
+        "c3-positive-recovery": {"minPairs": 10, "minPages": 4},
+        "b1-horizontal": {"minPairs": 10, "minPages": 4},
+        "b1-vertical": {"minPairs": 10, "minPages": 4},
+        "b1-mixed-orientation": {"minPairs": 10, "minPages": 4},
+        "combined-c1-c2-c3-b1": {"minPairs": 12, "minPages": 4},
+        "clean-control": {"minPairs": 16, "minPages": 6},
+        "intentional-fallback": {"minPairs": 8, "minPages": 3}
+      },
+      "c3Negative": {
+        "semantics": "generic-page-rejection-only",
+        "witnessUnit": "unique-page",
+        "minimumPages": 8,
+        "pairLocalCategoryRequired": false,
+        "legacyCategoryFabricationForbidden": true
+      },
+      "observedHistoricalIdentityGeometryAssignmentsAndOutputsExcluded": true
     }
   },
   "runtimeReachability": {
-    "evaluatorPath": "scripts/reading_order_post_v2_qualification/exercise_v3.py",
-    "evaluatorGitBlobSha": "0f74b52e3484cdef7b4f8215e009d04e595ac7de",
+    "evaluatorPath": "scripts/reading_order_post_v2_qualification/v3_clean_room_compat.py",
+    "evaluatorGitBlobSha": "1e0f7cdcc2cda9f59d7631b25cf019be698d607f",
+    "cleanRoomCompatibility": {
+      "adapterPath": "scripts/reading_order_post_v2_qualification/v3_clean_room_compat.py",
+      "adapterGitBlobSha": "1e0f7cdcc2cda9f59d7631b25cf019be698d607f",
+      "frozenDiagnosticEvaluatorPath": "scripts/reading_order_post_v2_qualification/exercise_v3.py",
+      "frozenDiagnosticEvaluatorGitBlobSha": "0f74b52e3484cdef7b4f8215e009d04e595ac7de",
+      "delegatesFrozenDiagnosticAuthentication": true,
+      "delegatesFrozenV2NonC3Scoring": true,
+      "genericC3RejectionPageMetadataRequired": true,
+      "genericC3AddsRequiredC3Arms": true,
+      "genericC3CountUsesFrozenGenericPredicate": true,
+      "legacyC3CategoryFabricationForbidden": true,
+      "authorSuppliedLayoutTags": false,
+      "runtimeLayoutTags": "deterministic-empty-tuple",
+      "designRolesDerivedFromQualificationSliceMembership": true
+    },
     "positivePredicatesDelegatedToFrozenV2Evaluator": true,
     "invalidDiagnosticSemantics": {
       "classification": "INVALID_EXPERIMENT",
@@ -381,10 +431,40 @@
         "inputIntegrityRequired": true,
         "imageIntegrityRequired": true
       },
+      "cleanRoomSealedCorpusCompatibility": {
+        "authoringValidatorRequiredBeforeSeal": true,
+        "canonicalManifestBytesRequired": true,
+        "symlinkSafeRoleAndManifestPathsRequired": true,
+        "strictNonInterlaced8BitRgbPngRequired": true,
+        "qualificationPairsAndSlicesAuthoredBeforeSeal": true,
+        "sourceRoleOpaqueProvenanceBytesOnly": true,
+        "postSealHumanAuthorshipForbidden": true
+      },
       "trustedPageInputDerivation": {
         "pageDerivedInternallyOnly": true,
         "pageSource": "already-validated sealed corpus input file",
         "pageLoader": "load_arm_input",
+        "pageLoaderModule": "scripts/reading_order_post_v2_qualification/v3_clean_room_compat.py",
+        "pageLoaderGitBlobSha": "1e0f7cdcc2cda9f59d7631b25cf019be698d607f",
+        "cleanRoomInputSchemaVersion": "reading-order-v3-authoring-input-v1",
+        "cleanRoomSerializationMapping": {
+          "preservedFields": [
+            "pageId",
+            "width",
+            "height",
+            "regionId",
+            "sourceIndex",
+            "lines",
+            "angle"
+          ],
+          "regionOrdering": "ascending-sourceIndex",
+          "minimumRegions": 2,
+          "pageIdRenamingForbidden": true,
+          "geometryInferenceForbidden": true,
+          "annotationDependentTransformationForbidden": true,
+          "candidateAccessForbidden": true,
+          "thresholdLogicForbidden": true
+        },
         "pixelsDerivedInternallyOnly": true,
         "pixelsSource": "corresponding already-validated sealed PNG",
         "callerSuppliedArmPageInputForbidden": true,
@@ -397,6 +477,16 @@
           "ArmPageInput",
           "decoded pixels"
         ]
+      },
+      "groundTruthDerivation": {
+        "module": "scripts/reading_order_post_v2_qualification/v3_clean_room_compat.py",
+        "gitBlobSha": "1e0f7cdcc2cda9f59d7631b25cf019be698d607f",
+        "loader": "load_clean_room_annotations",
+        "qualificationPairsFromSealedAnnotationsExactly": true,
+        "layoutTags": "deterministic-empty-tuple",
+        "genericC3RejectionPageIdsFromSealedDesignMetadata": true,
+        "categorySpecificC3FabricationForbidden": true,
+        "postSealHumanJudgmentForbidden": true
       },
       "canonicalPixels": {
         "decodedFromVerifiedSealedPng": true,

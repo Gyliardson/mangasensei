@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 DESIGN_SCHEMA_VERSION = "reading-order-v3-authoring-design-v1"
@@ -25,6 +26,36 @@ POSITIVE_FAMILIES = (
 )
 C3_REJECTION_FAMILY = "c3_rejection_pages"
 
+DESIGN_MINIMA = {
+    "minimumPageCount": 24,
+    "minimumQualificationPairs": 120,
+    "minimumScoredRegions": 96,
+    "minimumCombinedMechanismPages": 4,
+    "minimumIntentionalFallbackPages": 3,
+    "minimumCleanControlPages": 6,
+}
+
+SLICE_MINIMA: dict[str, dict[str, int]] = {
+    "c1-boundary-positive": {"minPairs": 10, "minPages": 4},
+    "c1-near-boundary-negative": {"minPairs": 8, "minPages": 4},
+    "c2-gutter-bridge": {"minPairs": 8, "minPages": 3},
+    "c2-ambiguous-overlap-bridge": {"minPairs": 8, "minPages": 3},
+    "c2-pair-precedence-slot": {"minPairs": 8, "minPages": 3},
+    "c2-one-sided-non-unique-fail-closed": {"minPairs": 8, "minPages": 3},
+    "c2-conflict-cycle-safety": {"minPairs": 6, "minPages": 2},
+    "c3-positive-recovery": {"minPairs": 10, "minPages": 4},
+    "b1-horizontal": {"minPairs": 10, "minPages": 4},
+    "b1-vertical": {"minPairs": 10, "minPages": 4},
+    "b1-mixed-orientation": {"minPairs": 10, "minPages": 4},
+    "combined-c1-c2-c3-b1": {"minPairs": 12, "minPages": 4},
+    "clean-control": {"minPairs": 16, "minPages": 6},
+    "intentional-fallback": {"minPairs": 8, "minPages": 3},
+}
+AUTHORING_SLICES = tuple(SLICE_MINIMA)
+
+_COMBINED_SLICE = "combined-c1-c2-c3-b1"
+_CLEAN_CONTROL_SLICE = "clean-control"
+_INTENTIONAL_FALLBACK_SLICE = "intentional-fallback"
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$")
 _PAGE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
@@ -50,10 +81,19 @@ class PageInput:
 
 
 @dataclass(frozen=True, slots=True)
+class QualificationPair:
+    pair_id: str
+    earlier: str
+    later: str
+    slices: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class PageAnnotation:
     page_id: str
     reading_order: tuple[str, ...]
     unscored_region_ids: tuple[str, ...]
+    qualification_pairs: tuple[QualificationPair, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +119,11 @@ class CorpusDesign:
 class CoverageSummary:
     dedicated_positive_pages: dict[str, tuple[str, ...]]
     c3_rejection_pages: tuple[str, ...]
+    slice_pair_counts: dict[str, int]
+    slice_page_counts: dict[str, int]
+    design_role_pages: dict[str, tuple[str, ...]]
+    total_qualification_pairs: int
+    total_scored_regions: int
 
 
 def _load_object(path: Path) -> dict[str, Any]:
@@ -111,11 +156,24 @@ def _page_id(value: object, where: str) -> str:
     return value
 
 
-def _relative_path(value: object, where: str) -> str:
+def _region_id(value: object, where: str) -> str:
     if not isinstance(value, str) or not value:
-        raise ContractError(f"{where}: nonempty relative path required")
+        raise ContractError(f"{where}: nonempty string required")
+    return value
+
+
+def _relative_path(value: object, where: str) -> str:
+    if not isinstance(value, str) or not value or "\x00" in value or "\\" in value:
+        raise ContractError(f"{where}: safe normalized POSIX relative path required")
     pure = PurePosixPath(value)
-    if pure.is_absolute() or ".." in pure.parts or "." in pure.parts or pure.as_posix() != value:
+    windows = PureWindowsPath(value)
+    if (
+        pure.is_absolute()
+        or bool(windows.drive)
+        or ".." in pure.parts
+        or "." in pure.parts
+        or pure.as_posix() != value
+    ):
         raise ContractError(f"{where}: safe normalized POSIX relative path required")
     if value in {"manifest.json", "corpus-design.json"}:
         raise ContractError(f"{where}: reserved authoring path")
@@ -150,8 +208,6 @@ def load_design(path: Path) -> CorpusDesign:
         raise ContractError("corpus-design: wrong authorship boundary")
 
     provenance = data["provenanceDeclaration"]
-    if not isinstance(provenance, dict):
-        raise ContractError("corpus-design.provenanceDeclaration: object required")
     expected_provenance = {
         "priorHeldoutEvidenceInspected": False,
         "calibrationOutputsInspected": False,
@@ -164,8 +220,13 @@ def load_design(path: Path) -> CorpusDesign:
         raise ContractError("corpus-design: clean-room provenance declaration is not satisfied")
 
     raw_pages = data["pages"]
-    if not isinstance(raw_pages, list) or not raw_pages:
-        raise ContractError("corpus-design.pages: nonempty array required")
+    if not isinstance(raw_pages, list):
+        raise ContractError("corpus-design.pages: array required")
+    if len(raw_pages) < DESIGN_MINIMA["minimumPageCount"]:
+        raise ContractError(
+            f"corpus-design.pages: at least {DESIGN_MINIMA['minimumPageCount']} pages required"
+        )
+
     pages: list[PageAuthoringRecord] = []
     seen_page_ids: set[str] = set()
     seen_paths: set[str] = set()
@@ -249,8 +310,8 @@ def load_input(path: Path) -> PageInput:
     ):
         raise ContractError(f"{path}: positive integer dimensions required")
     raw_regions = data["regions"]
-    if not isinstance(raw_regions, list) or not raw_regions:
-        raise ContractError(f"{path}.regions: nonempty array required")
+    if not isinstance(raw_regions, list) or len(raw_regions) < 2:
+        raise ContractError(f"{path}.regions: at least two regions required")
     regions: list[RegionInput] = []
     seen_ids: set[str] = set()
     seen_indexes: set[int] = set()
@@ -259,7 +320,7 @@ def load_input(path: Path) -> PageInput:
         if not isinstance(raw, dict):
             raise ContractError(f"{where}: object required")
         _exact_keys(raw, {"regionId", "sourceIndex", "lines", "angle"}, where)
-        region_id = _page_id(raw["regionId"], f"{where}.regionId")
+        region_id = _region_id(raw["regionId"], f"{where}.regionId")
         source_index = raw["sourceIndex"]
         if isinstance(source_index, bool) or not isinstance(source_index, int) or source_index < 0:
             raise ContractError(f"{where}.sourceIndex: nonnegative integer required")
@@ -311,7 +372,7 @@ def load_annotation(path: Path) -> PageAnnotation:
     data = _load_object(path)
     _exact_keys(
         data,
-        {"schemaVersion", "pageId", "readingOrder", "unscoredRegionIds"},
+        {"schemaVersion", "pageId", "readingOrder", "unscoredRegionIds", "qualificationPairs"},
         str(path),
     )
     if data["schemaVersion"] != ANNOTATION_SCHEMA_VERSION:
@@ -319,23 +380,122 @@ def load_annotation(path: Path) -> PageAnnotation:
     page_id = _page_id(data["pageId"], f"{path}.pageId")
     reading = _string_array(data["readingOrder"], f"{path}.readingOrder")
     unscored = _string_array(data["unscoredRegionIds"], f"{path}.unscoredRegionIds")
+    if not reading:
+        raise ContractError(f"{path}.readingOrder: nonempty string array required")
     for region_id in (*reading, *unscored):
-        _page_id(region_id, f"{path}: region ID")
+        _region_id(region_id, f"{path}: region ID")
     if len(set(reading)) != len(reading):
         raise ContractError(f"{path}.readingOrder: duplicate region ID")
     if len(set(unscored)) != len(unscored):
         raise ContractError(f"{path}.unscoredRegionIds: duplicate region ID")
     if set(reading) & set(unscored):
         raise ContractError(f"{path}: scored and unscored region IDs overlap")
-    return PageAnnotation(page_id, reading, unscored)
+
+    raw_pairs = data["qualificationPairs"]
+    if not isinstance(raw_pairs, list) or not raw_pairs:
+        raise ContractError(f"{path}.qualificationPairs: nonempty array required")
+    position = {region_id: index for index, region_id in enumerate(reading)}
+    pairs: list[QualificationPair] = []
+    seen_pair_ids: set[str] = set()
+    seen_endpoints: set[tuple[str, str]] = set()
+    allowed_slices = set(AUTHORING_SLICES)
+    for index, raw in enumerate(raw_pairs):
+        where = f"{path}.qualificationPairs[{index}]"
+        if not isinstance(raw, dict):
+            raise ContractError(f"{where}: object required")
+        _exact_keys(raw, {"id", "earlier", "later", "slices"}, where)
+        pair_id = raw["id"]
+        earlier = raw["earlier"]
+        later = raw["later"]
+        if not isinstance(pair_id, str) or not pair_id:
+            raise ContractError(f"{where}.id: nonempty string required")
+        earlier_id = _region_id(earlier, f"{where}.earlier")
+        later_id = _region_id(later, f"{where}.later")
+        if pair_id in seen_pair_ids or (earlier_id, later_id) in seen_endpoints:
+            raise ContractError(f"{path}: duplicate qualification pair")
+        if earlier_id not in position or later_id not in position:
+            raise ContractError(f"{where}: endpoints must both be scored regions")
+        if position[earlier_id] >= position[later_id]:
+            raise ContractError(f"{where}: must follow ground-truth precedence")
+        slices = _string_array(raw["slices"], f"{where}.slices")
+        if not slices:
+            raise ContractError(f"{where}.slices: nonempty array required")
+        if len(set(slices)) != len(slices):
+            raise ContractError(f"{where}.slices: duplicate slice")
+        if tuple(sorted(slices)) != slices:
+            raise ContractError(f"{where}.slices: canonical sorted order required")
+        unknown = sorted(set(slices) - allowed_slices)
+        if unknown:
+            raise ContractError(f"{where}: unknown or forbidden authoring slices {unknown}")
+        seen_pair_ids.add(pair_id)
+        seen_endpoints.add((earlier_id, later_id))
+        pairs.append(QualificationPair(pair_id, earlier_id, later_id, slices))
+    return PageAnnotation(page_id, reading, unscored, tuple(pairs))
 
 
-def validate_authoring_coverage(design: CorpusDesign) -> CoverageSummary:
+def validate_authoring_coverage(
+    design: CorpusDesign,
+    annotations: Mapping[str, PageAnnotation],
+) -> CoverageSummary:
+    design_ids = {page.page_id for page in design.pages}
+    if set(annotations) != design_ids:
+        raise ContractError("authoring coverage: annotation page inventory must equal design")
+
+    pair_counts = {name: 0 for name in AUTHORING_SLICES}
+    page_sets = {name: set() for name in AUTHORING_SLICES}
+    total_pairs = 0
+    total_scored_regions = 0
+    for page_id, annotation in annotations.items():
+        if annotation.page_id != page_id:
+            raise ContractError(f"{page_id}: annotation identity mismatch")
+        total_pairs += len(annotation.qualification_pairs)
+        total_scored_regions += len(annotation.reading_order)
+        for pair in annotation.qualification_pairs:
+            for slice_name in pair.slices:
+                pair_counts[slice_name] += 1
+                page_sets[slice_name].add(page_id)
+
+    if total_pairs < DESIGN_MINIMA["minimumQualificationPairs"]:
+        raise ContractError(
+            "authoring coverage: qualification pairs below frozen minimum: "
+            f"{total_pairs} < {DESIGN_MINIMA['minimumQualificationPairs']}"
+        )
+    if total_scored_regions < DESIGN_MINIMA["minimumScoredRegions"]:
+        raise ContractError(
+            "authoring coverage: scored regions below frozen minimum: "
+            f"{total_scored_regions} < {DESIGN_MINIMA['minimumScoredRegions']}"
+        )
+
+    design_role_pages = {
+        "combined-mechanism": tuple(sorted(page_sets[_COMBINED_SLICE])),
+        "intentional-fallback": tuple(sorted(page_sets[_INTENTIONAL_FALLBACK_SLICE])),
+        "clean-control": tuple(sorted(page_sets[_CLEAN_CONTROL_SLICE])),
+    }
+    role_requirements = {
+        "combined-mechanism": "minimumCombinedMechanismPages",
+        "intentional-fallback": "minimumIntentionalFallbackPages",
+        "clean-control": "minimumCleanControlPages",
+    }
+    for role, requirement_name in role_requirements.items():
+        if len(design_role_pages[role]) < DESIGN_MINIMA[requirement_name]:
+            raise ContractError(
+                f"authoring coverage: {role} pages below frozen design minimum"
+            )
+
+    for name, minima in SLICE_MINIMA.items():
+        if pair_counts[name] < minima["minPairs"] or len(page_sets[name]) < minima["minPages"]:
+            raise ContractError(
+                f"authoring coverage: slice {name} below frozen minima: "
+                f"pairs={pair_counts[name]}, pages={len(page_sets[name])}"
+            )
+
+    combined_pages = set(design_role_pages["combined-mechanism"])
     dedicated = {family: [] for family in POSITIVE_FAMILIES}
     c3_pages: list[str] = []
     for page in design.pages:
         if (
-            len(page.positive_families) == 1
+            page.page_id not in combined_pages
+            and len(page.positive_families) == 1
             and page.primary_positive_family == page.positive_families[0]
         ):
             dedicated[page.positive_families[0]].append(page.page_id)
@@ -344,13 +504,19 @@ def validate_authoring_coverage(design: CorpusDesign) -> CoverageSummary:
     missing = [family for family in POSITIVE_FAMILIES if not dedicated[family]]
     if missing:
         raise ContractError(f"authoring coverage: missing dedicated positive families {missing}")
-    if not c3_pages:
+    if len(c3_pages) < 8:
         raise ContractError(
-            f"authoring coverage: {C3_REJECTION_FAMILY} requires page-level coverage"
+            f"authoring coverage: {C3_REJECTION_FAMILY} requires at least 8 unique pages"
         )
+
     return CoverageSummary(
         dedicated_positive_pages={
             family: tuple(page_ids) for family, page_ids in dedicated.items()
         },
         c3_rejection_pages=tuple(c3_pages),
+        slice_pair_counts=dict(pair_counts),
+        slice_page_counts={name: len(page_sets[name]) for name in AUTHORING_SLICES},
+        design_role_pages=design_role_pages,
+        total_qualification_pairs=total_pairs,
+        total_scored_regions=total_scored_regions,
     )
