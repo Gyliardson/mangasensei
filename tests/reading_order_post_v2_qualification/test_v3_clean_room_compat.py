@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
-import subprocess
 from pathlib import Path
 
-from scripts.reading_order_post_v2_qualification.contracts import ArmId, PageGroundTruth
+from scripts.reading_order_post_v2_qualification.contracts import PageGroundTruth
 from scripts.reading_order_post_v2_qualification.v3_clean_room_compat import (
     C3_REJECTION_ARMS,
     _to_page_ground_truth,
@@ -16,7 +16,6 @@ from scripts.reading_order_v3_authoring import ANNOTATION_SCHEMA_VERSION, INPUT_
 from scripts.reading_order_v3_authoring.contracts import load_annotation
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-GIT = "/usr/bin/git"
 METHODOLOGY = (
     REPO_ROOT
     / "scripts"
@@ -29,13 +28,9 @@ FROZEN_DIAGNOSTIC_EVALUATOR = "scripts/reading_order_post_v2_qualification/exerc
 
 
 def _git_blob(path: str) -> str:
-    return subprocess.run(  # noqa: S603
-        [GIT, "rev-parse", f"HEAD:{path}"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    data = (REPO_ROOT / path).read_bytes()
+    header = f"blob {len(data)}\0".encode("ascii")
+    return hashlib.sha1(header + data, usedforsecurity=False).hexdigest()
 
 
 def test_clean_room_input_maps_exactly_to_canonical_arm_page_input(tmp_path: Path) -> None:
@@ -141,7 +136,10 @@ def test_generic_c3_rejection_is_counted_once_per_declared_page() -> None:
         "fallbackOrder": ["r1", "r2"],
         "usedPanelEvidence": False,
     }
-    diagnostics = {arm: {"page-alpha": dict(diagnostic)} for arm in C3_REJECTION_ARMS}
+    diagnostics = {
+        arm: {"page-alpha": dict(diagnostic)}
+        for arm in C3_REJECTION_ARMS
+    }
     pages = generic_c3_rejection_pages(
         c3_rejection_page_ids=frozenset({"page-alpha"}),
         diagnostics=diagnostics,
