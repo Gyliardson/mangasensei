@@ -1,0 +1,7 @@
+Isolated Reading Order v3 authored source artifact
+pageId=aurora-01-c1-boundary
+kind=dedicated-c1-boundary-positive
+candidate-independent=true
+authored reading sequence=aurora-01-c1-boundary:r1 -> aurora-01-c1-boundary:r2 -> aurora-01-c1-boundary:r3 -> aurora-01-c1-boundary:r4 -> aurora-01-c1-boundary:r5 -> aurora-01-c1-boundary:r6
+pair slices=c1-boundary-positive
+geometry intent=original synthetic layout composed without candidate execution or prior held-out evidence

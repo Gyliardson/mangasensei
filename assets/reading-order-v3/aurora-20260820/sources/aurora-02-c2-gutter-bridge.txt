@@ -1,0 +1,7 @@
+Isolated Reading Order v3 authored source artifact
+pageId=aurora-02-c2-gutter-bridge
+kind=dedicated-c2-gutter-bridge
+candidate-independent=true
+authored reading sequence=aurora-02-c2-gutter-bridge:r1 -> aurora-02-c2-gutter-bridge:r2 -> aurora-02-c2-gutter-bridge:r3 -> aurora-02-c2-gutter-bridge:r4 -> aurora-02-c2-gutter-bridge:r5 -> aurora-02-c2-gutter-bridge:r6
+pair slices=c2-gutter-bridge
+geometry intent=original synthetic layout composed without candidate execution or prior held-out evidence

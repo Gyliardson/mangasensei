@@ -1,0 +1,7 @@
+Isolated Reading Order v3 authored source artifact
+pageId=aurora-04-c2-pair-precedence-slot
+kind=dedicated-c2-pair-precedence-slot
+candidate-independent=true
+authored reading sequence=aurora-04-c2-pair-precedence-slot:r1 -> aurora-04-c2-pair-precedence-slot:r2 -> aurora-04-c2-pair-precedence-slot:r3 -> aurora-04-c2-pair-precedence-slot:r4 -> aurora-04-c2-pair-precedence-slot:r5 -> aurora-04-c2-pair-precedence-slot:r6
+pair slices=c2-pair-precedence-slot
+geometry intent=original synthetic layout composed without candidate execution or prior held-out evidence

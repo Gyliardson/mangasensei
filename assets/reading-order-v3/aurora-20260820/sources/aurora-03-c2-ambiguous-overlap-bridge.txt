@@ -1,0 +1,7 @@
+Isolated Reading Order v3 authored source artifact
+pageId=aurora-03-c2-ambiguous-overlap-bridge
+kind=dedicated-c2-ambiguous-overlap-bridge
+candidate-independent=true
+authored reading sequence=aurora-03-c2-ambiguous-overlap-bridge:r1 -> aurora-03-c2-ambiguous-overlap-bridge:r2 -> aurora-03-c2-ambiguous-overlap-bridge:r3 -> aurora-03-c2-ambiguous-overlap-bridge:r4 -> aurora-03-c2-ambiguous-overlap-bridge:r5 -> aurora-03-c2-ambiguous-overlap-bridge:r6
+pair slices=c2-ambiguous-overlap-bridge
+geometry intent=original synthetic layout composed without candidate execution or prior held-out evidence

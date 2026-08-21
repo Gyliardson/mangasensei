@@ -1,0 +1,7 @@
+Isolated Reading Order v3 authored source artifact
+pageId=aurora-21-conflict-cycle-safety
+kind=conflict-cycle-safety
+candidate-independent=true
+authored reading sequence=aurora-21-conflict-cycle-safety:r1 -> aurora-21-conflict-cycle-safety:r2 -> aurora-21-conflict-cycle-safety:r3 -> aurora-21-conflict-cycle-safety:r4 -> aurora-21-conflict-cycle-safety:r5 -> aurora-21-conflict-cycle-safety:r6
+pair slices=c2-conflict-cycle-safety
+geometry intent=original synthetic layout composed without candidate execution or prior held-out evidence

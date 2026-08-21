@@ -1,0 +1,7 @@
+Isolated Reading Order v3 authored source artifact
+pageId=aurora-17-one-sided-fail-closed
+kind=one-sided-fail-closed
+candidate-independent=true
+authored reading sequence=aurora-17-one-sided-fail-closed:r1 -> aurora-17-one-sided-fail-closed:r2 -> aurora-17-one-sided-fail-closed:r3 -> aurora-17-one-sided-fail-closed:r4 -> aurora-17-one-sided-fail-closed:r5 -> aurora-17-one-sided-fail-closed:r6
+pair slices=c2-one-sided-non-unique-fail-closed
+geometry intent=original synthetic layout composed without candidate execution or prior held-out evidence

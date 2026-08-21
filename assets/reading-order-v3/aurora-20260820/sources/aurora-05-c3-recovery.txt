@@ -1,0 +1,7 @@
+Isolated Reading Order v3 authored source artifact
+pageId=aurora-05-c3-recovery
+kind=dedicated-c3-positive-recovery
+candidate-independent=true
+authored reading sequence=aurora-05-c3-recovery:r1 -> aurora-05-c3-recovery:r2 -> aurora-05-c3-recovery:r3 -> aurora-05-c3-recovery:r4 -> aurora-05-c3-recovery:r5 -> aurora-05-c3-recovery:r6
+pair slices=c3-positive-recovery
+geometry intent=original synthetic layout composed without candidate execution or prior held-out evidence

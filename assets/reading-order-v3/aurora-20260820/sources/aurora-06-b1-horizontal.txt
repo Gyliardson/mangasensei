@@ -1,0 +1,7 @@
+Isolated Reading Order v3 authored source artifact
+pageId=aurora-06-b1-horizontal
+kind=dedicated-b1-horizontal
+candidate-independent=true
+authored reading sequence=aurora-06-b1-horizontal:r1 -> aurora-06-b1-horizontal:r2 -> aurora-06-b1-horizontal:r3 -> aurora-06-b1-horizontal:r4 -> aurora-06-b1-horizontal:r5 -> aurora-06-b1-horizontal:r6
+pair slices=b1-horizontal
+geometry intent=original synthetic layout composed without candidate execution or prior held-out evidence
