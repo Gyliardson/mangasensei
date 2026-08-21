@@ -1,0 +1,7 @@
+Isolated Reading Order v3 authored source artifact
+pageId=aurora-27-clean-control
+kind=clean-control
+candidate-independent=true
+authored reading sequence=aurora-27-clean-control:r1 -> aurora-27-clean-control:r2 -> aurora-27-clean-control:r3 -> aurora-27-clean-control:r4 -> aurora-27-clean-control:r5 -> aurora-27-clean-control:r6
+pair slices=clean-control
+geometry intent=original synthetic layout composed without candidate execution or prior held-out evidence

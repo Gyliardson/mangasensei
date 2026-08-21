@@ -1,0 +1,7 @@
+Isolated Reading Order v3 authored source artifact
+pageId=aurora-29-intentional-fallback
+kind=intentional-fallback
+candidate-independent=true
+authored reading sequence=aurora-29-intentional-fallback:r1 -> aurora-29-intentional-fallback:r2 -> aurora-29-intentional-fallback:r3 -> aurora-29-intentional-fallback:r4 -> aurora-29-intentional-fallback:r5 -> aurora-29-intentional-fallback:r6
+pair slices=intentional-fallback
+geometry intent=original synthetic layout composed without candidate execution or prior held-out evidence

@@ -1,0 +1,7 @@
+Isolated Reading Order v3 authored source artifact
+pageId=aurora-15-near-boundary-negative
+kind=near-boundary-negative
+candidate-independent=true
+authored reading sequence=aurora-15-near-boundary-negative:r1 -> aurora-15-near-boundary-negative:r2 -> aurora-15-near-boundary-negative:r3 -> aurora-15-near-boundary-negative:r4 -> aurora-15-near-boundary-negative:r5 -> aurora-15-near-boundary-negative:r6
+pair slices=c1-near-boundary-negative
+geometry intent=original synthetic layout composed without candidate execution or prior held-out evidence

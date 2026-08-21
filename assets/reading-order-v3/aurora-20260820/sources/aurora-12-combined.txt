@@ -1,0 +1,7 @@
+Isolated Reading Order v3 authored source artifact
+pageId=aurora-12-combined
+kind=combined
+candidate-independent=true
+authored reading sequence=aurora-12-combined:r1 -> aurora-12-combined:r2 -> aurora-12-combined:r3 -> aurora-12-combined:r4 -> aurora-12-combined:r5 -> aurora-12-combined:r6
+pair slices=b1-horizontal, b1-mixed-orientation, b1-vertical, c1-boundary-positive, c2-ambiguous-overlap-bridge, c2-gutter-bridge, c2-pair-precedence-slot, c3-positive-recovery, combined-c1-c2-c3-b1
+geometry intent=original synthetic layout composed without candidate execution or prior held-out evidence

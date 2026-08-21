@@ -1,0 +1,7 @@
+Isolated Reading Order v3 authored source artifact
+pageId=aurora-08-b1-mixed-orientation
+kind=dedicated-b1-mixed-orientation
+candidate-independent=true
+authored reading sequence=aurora-08-b1-mixed-orientation:r1 -> aurora-08-b1-mixed-orientation:r2 -> aurora-08-b1-mixed-orientation:r3 -> aurora-08-b1-mixed-orientation:r4 -> aurora-08-b1-mixed-orientation:r5 -> aurora-08-b1-mixed-orientation:r6
+pair slices=b1-mixed-orientation
+geometry intent=original synthetic layout composed without candidate execution or prior held-out evidence
