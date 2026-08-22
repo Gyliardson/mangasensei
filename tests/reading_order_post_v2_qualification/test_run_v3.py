@@ -270,6 +270,15 @@ def _execute(tmp_path: Path) -> Path:
 def _authenticated_execution_snapshot(
     tmp_path: Path,
 ) -> Iterator[tuple[Path, Path, str, str, str]]:
+    candidate_commit = spec_v3.CANDIDATE_BINDING["commitSha"]
+    candidate_available = subprocess.run(  # noqa: S603
+        [GIT, "cat-file", "-e", f"{candidate_commit}^{{commit}}"],
+        cwd=run_v3.REPO_ROOT,
+        check=False,
+        capture_output=True,
+    )
+    if candidate_available.returncode != 0:
+        pytest.skip("frozen candidate commit is unavailable in the shallow Git checkout")
     repository = tmp_path / "execution-repository"
     subprocess.run(  # noqa: S603
         [GIT, "clone", "--shared", str(run_v3.REPO_ROOT), str(repository)],
@@ -944,6 +953,11 @@ def test_real_fresh_process_is_authenticated_and_deterministic_across_repeats(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    if Path(sys.executable).resolve().is_relative_to(run_v3.REPO_ROOT):
+        pytest.skip("interpreter is installed inside the mutable checkout")
+    external_roots = bootstrap_v3._external_roots(run_v3.REPO_ROOT)
+    if not any((root / "numpy").is_dir() for root in external_roots):
+        pytest.skip("NumPy is unavailable outside the mutable checkout")
     corpus_root = tmp_path / "corpus"
     output_root = tmp_path / "output"
     _write(corpus_root)

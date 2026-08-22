@@ -144,6 +144,15 @@ def test_v3_source_ledger_uses_git_blob_hashes_of_reviewed_files() -> None:
 
 
 def test_v3_base_resolver_composes_against_real_execution_git_objects() -> None:
+    candidate_commit = spec_v3.CANDIDATE_BINDING["commitSha"]
+    candidate_available = subprocess.run(  # noqa: S603
+        [GIT, "cat-file", "-e", f"{candidate_commit}^{{commit}}"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+    )
+    if candidate_available.returncode != 0:
+        pytest.skip("frozen candidate commit is unavailable in the shallow Git checkout")
     execution_sha = subprocess.run(  # noqa: S603
         [GIT, "rev-parse", "HEAD"],
         cwd=REPO_ROOT,
