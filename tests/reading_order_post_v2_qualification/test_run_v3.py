@@ -786,3 +786,111 @@ def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
         for name, minimum in exercise["minima"].items()
     ):
         assert verdict["verdict"].endswith("_INCONCLUSIVE")
+
+
+def test_real_fresh_process_is_authenticated_and_deterministic_across_hash_seeds(
+    tmp_path: Path,
+) -> None:
+    corpus_root = tmp_path / "corpus"
+    output_root = tmp_path / "output"
+    _write(corpus_root)
+    manifest_sha256 = run_v3.sha256_bytes((corpus_root / "manifest.json").read_bytes())
+    design_sha256 = run_v3.sha256_bytes(
+        (corpus_root / "corpus-design.json").read_bytes()
+    )
+    arm = ArmId.CONTROL
+    assert run_v3.ARM_RUNNER_MODULE == (
+        "scripts.reading_order_post_v2_qualification.run_arm_v3"
+    )
+    assert run_v3.HASH_SEEDS == (101, 202, 303)
+    expected_python_path = os.pathsep.join(
+        (str(run_v3.REPO_ROOT), str(run_v3.REPO_ROOT / "backend" / "src"))
+    )
+
+    normalized_artifacts: list[dict[Path, bytes]] = []
+    with run_v3._stage_sealed_corpus(
+        corpus_root,
+        expected_manifest_sha256=manifest_sha256,
+        expected_design_sha256=design_sha256,
+    ) as staged_root:
+        design = run_v3.load_design(staged_root / "corpus-design.json")
+        annotations, _c3_rejection_page_ids = (
+            run_v3.compat.load_clean_room_annotations(staged_root)
+        )
+        page_id = design.pages[0].page_id
+        annotation = {page.page_id: page for page in annotations}[page_id]
+        trusted = run_v3._trusted_page_inputs(staged_root, design)[page_id]
+
+        with run_v3._stage_candidate_corpus(staged_root) as candidate_root:
+            candidate_files = {
+                path.relative_to(candidate_root).as_posix()
+                for path in candidate_root.rglob("*")
+                if path.is_file()
+            }
+            forbidden = {
+                page_record.source for page_record in design.pages
+            } | {page_record.annotation for page_record in design.pages}
+            assert not candidate_files & forbidden
+            assert all(not (candidate_root / relative).exists() for relative in forbidden)
+
+            for repeat, seed in enumerate(run_v3.HASH_SEEDS, start=1):
+                child_env = run_v3._child_environment(seed)
+                assert {
+                    key: value
+                    for key, value in child_env.items()
+                    if key.upper().startswith("PYTHON")
+                } == {
+                    "PYTHONPATH": expected_python_path,
+                    "PYTHONNOUSERSITE": "1",
+                    "PYTHONHASHSEED": str(seed),
+                }
+                error = run_v3._run_fresh_process(
+                    corpus_root=candidate_root,
+                    page_id=page_id,
+                    arm=arm,
+                    execution_sha=EXECUTION_SHA,
+                    repeat=repeat,
+                    output_root=output_root,
+                )
+                assert error is None
+
+                repeat_root = output_root / "raw" / arm.value / f"repeat-{repeat}"
+                paths = {
+                    kind: repeat_root / f"{page_id}.{kind}.json"
+                    for kind in ("diagnostic", "ordering")
+                }
+                parsed = {kind: run_v3._load_output(path) for kind, path in paths.items()}
+                diagnostic = parsed["diagnostic"]
+                ordering = parsed["ordering"]
+                for document in parsed.values():
+                    assert document["experimentArm"] == arm.value
+                    assert document["pageId"] == page_id
+                    assert document["executionSha"] == EXECUTION_SHA
+                assert diagnostic["finalOrder"] == ordering["finalOrder"]
+
+                problems: list[str] = []
+                authenticated_sha = run_v3.exercise_v3._diagnostic(
+                    diagnostic,
+                    arm=arm,
+                    page=annotation,
+                    trusted=trusted,
+                    problems=problems,
+                )
+                assert problems == []
+                assert authenticated_sha == EXECUTION_SHA
+
+                artifacts: dict[Path, bytes] = {}
+                for path in paths.values():
+                    payload = path.read_bytes()
+                    assert payload == canonical_json_bytes(run_v3._load_output(path))
+                    relative = path.relative_to(output_root)
+                    normalized = Path(
+                        *(
+                            "repeat-N" if part == f"repeat-{repeat}" else part
+                            for part in relative.parts
+                        )
+                    )
+                    artifacts[normalized] = payload
+                normalized_artifacts.append(artifacts)
+
+    assert normalized_artifacts[0] == normalized_artifacts[1] == normalized_artifacts[2]

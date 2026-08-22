@@ -85,6 +85,10 @@ REVIEWED_V3_SOURCE_ROLES = {
     ),
     "backend/src/mangasensei/ocr/vendor/manga_image_translator/"
     "manga_translator/utils/textblock.py": "production-textblock-fixture-dependency",
+    "backend/src/mangasensei/ocr/vendor/manga_image_translator/"
+    "manga_translator/utils/generic2.py": (
+        "production-textblock-character-and-color-helpers"
+    ),
     "scripts/reading_order_post_v2_qualification/__init__.py": (
         "qualification-schema-identities"
     ),
@@ -110,9 +114,6 @@ REVIEWED_V3_SOURCE_ROLES = {
     ),
     "scripts/reading_order_post_v2_qualification/retired_guard.py": (
         "retired-post-v2-v1-content-reuse-guard"
-    ),
-    "scripts/reading_order_post_v2_qualification/png_integrity.py": (
-        "inherited-strict-png-integrity"
     ),
     "scripts/reading_order_post_v2_qualification/run_arm.py": (
         "frozen-arm-config-and-serialization-reference"

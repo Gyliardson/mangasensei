@@ -111,6 +111,11 @@
       "gitBlobSha": "5384824742f930051c0bf7c2cb649ba920f2883a"
     },
     {
+      "path": "backend/src/mangasensei/ocr/vendor/manga_image_translator/manga_translator/utils/generic2.py",
+      "role": "production-textblock-character-and-color-helpers",
+      "gitBlobSha": "4e3df402f9cd3b4c1fed1b011c7cfb611d4e90b1"
+    },
+    {
       "path": "scripts/reading_order_post_v2_qualification/__init__.py",
       "role": "qualification-schema-identities",
       "gitBlobSha": "d163660ef313e4c5c116d5958ff60c5e10823303"
@@ -143,12 +148,12 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/spec_v3.py",
       "role": "v3-overlay-validator-and-identity",
-      "gitBlobSha": "df0a4fe7dd32b1cee9ea710f0b590160275ba3cd"
+      "gitBlobSha": "18eb67e99ba9c5355a599ed01f88556c04e80f0f"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/preflight_v3.py",
       "role": "v3-fail-closed-preflight",
-      "gitBlobSha": "a6b7ec57e10dc9b1e4dae859e77af3169c01817f"
+      "gitBlobSha": "c2966fbb75814c4a1abe66a650aa9eb0e12496eb"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/historical_guard.py",
@@ -159,11 +164,6 @@
       "path": "scripts/reading_order_post_v2_qualification/retired_guard.py",
       "role": "retired-post-v2-v1-content-reuse-guard",
       "gitBlobSha": "b7f1ab98561080805ec877838e1227a282094ea4"
-    },
-    {
-      "path": "scripts/reading_order_post_v2_qualification/png_integrity.py",
-      "role": "inherited-strict-png-integrity",
-      "gitBlobSha": "cd80fd966203cfc09eb5688eeb8501b0b97d6e1d"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/run_arm.py",

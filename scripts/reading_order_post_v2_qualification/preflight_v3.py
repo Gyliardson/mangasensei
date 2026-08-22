@@ -294,13 +294,6 @@ def _git_bytes(*args: str) -> bytes:
     return result.stdout
 
 
-def _load_manifest(path: Path) -> dict[str, Any]:
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError("sealed v3 manifest must be a JSON object")
-    return value
-
-
 def _validate_methodology_hash(expected_methodology_sha256: str) -> None:
     if sha256_path(METHODOLOGY_PATH) != expected_methodology_sha256:
         raise ValueError("frozen v3 methodology hash mismatch")
@@ -392,18 +385,12 @@ def validate_preflight_v3(
         raise ValueError("dispatch methodology hash does not match frozen v3 spec")
     _validate_runtime_candidate(spec)
 
-    manifest_path = corpus_root / "manifest.json"
-    design_path = corpus_root / "corpus-design.json"
-    if sha256_path(manifest_path) != expected_manifest_sha256:
-        raise ValueError("frozen v3 corpus manifest hash mismatch")
-    if sha256_path(design_path) != expected_design_sha256:
-        raise ValueError("frozen v3 corpus design hash mismatch")
-    manifest = _load_manifest(manifest_path)
-    if manifest.get("design") != {
-        "file": "corpus-design.json",
-        "sha256": expected_design_sha256,
-    }:
-        raise ValueError("sealed v3 manifest does not bind frozen design hash")
+    with _stage_sealed_corpus(
+        corpus_root,
+        expected_manifest_sha256=expected_manifest_sha256,
+        expected_design_sha256=expected_design_sha256,
+    ):
+        pass
 
     validate_qualification_identity_v3(
         qualification_identity,

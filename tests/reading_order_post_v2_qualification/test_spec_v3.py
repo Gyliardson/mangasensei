@@ -156,6 +156,32 @@ def test_v3_rejects_source_closure_path_or_role_drift(tmp_path: Path) -> None:
         _validate(raw, tmp_path)
 
 
+def test_v3_rejects_transitive_generic2_source_drift() -> None:
+    raw = copy.deepcopy(_raw_spec())
+    bindings = raw["reviewedV3SourceClosure"]
+    assert isinstance(bindings, list)
+    generic2_path = (
+        "backend/src/mangasensei/ocr/vendor/manga_image_translator/"
+        "manga_translator/utils/generic2.py"
+    )
+    by_revision = {
+        f'HEAD:{item["path"]}': item["gitBlobSha"]
+        for item in bindings
+        if isinstance(item, dict)
+    }
+    generic2 = next(
+        item for item in bindings if isinstance(item, dict) and item["path"] == generic2_path
+    )
+    generic2["gitBlobSha"] = "0" * 40
+    by_revision[f"HEAD:{generic2_path}"] = "4e3df402f9cd3b4c1fed1b011c7cfb611d4e90b1"
+
+    with (
+        patch.object(spec_v3, "_git", side_effect=lambda *_args: by_revision[_args[1]]),
+        pytest.raises(spec_v3.SpecV3Error, match="generic2.py"),
+    ):
+        spec_v3._validate_source_closure(bindings)
+
+
 def test_v3_rejects_spec_self_binding(tmp_path: Path) -> None:
     raw = copy.deepcopy(_raw_spec())
     bindings = raw["reviewedV3SourceClosure"]
