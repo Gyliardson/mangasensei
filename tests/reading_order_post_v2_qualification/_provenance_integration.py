@@ -74,11 +74,12 @@ class ExecutionRepository:
 def provenance_subprocess_environment(
     overrides: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
+    configured_uv_cache = os.environ.get("UV_CACHE_DIR")
     environment = {
         key: value
         for key, value in os.environ.items()
         if not key.upper().startswith(
-            ("GIT_", "PYTHON", "DYLD_", "LD_", "_RLD_")
+            ("GIT_", "PYTHON", "DYLD_", "LD_", "_RLD_", "UV_")
         )
         and key.upper() != "VIRTUAL_ENV"
     }
@@ -90,11 +91,24 @@ def provenance_subprocess_environment(
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_TERMINAL_PROMPT": "0",
             "PATH": os.pathsep.join((str(GIT.parent), existing_path)),
+            "UV_NO_CONFIG": "1",
+            "UV_PYTHON_DOWNLOADS": "never",
         }
     )
+    if configured_uv_cache is not None:
+        uv_cache = Path(configured_uv_cache).resolve(strict=True)
+        if uv_cache.is_relative_to(REPO_ROOT) or uv_cache.is_relative_to(
+            Path(sys.prefix).resolve(strict=True)
+        ):
+            raise AssertionError("uv cache cannot come from the mutable checkout runtime")
+        environment["UV_CACHE_DIR"] = str(uv_cache)
     if overrides is not None:
         if any(
             key.upper().startswith(("GIT_", "DYLD_", "LD_", "_RLD_"))
+            or (
+                key.upper().startswith("UV_")
+                and key.upper() not in {"UV_LINK_MODE", "UV_PROJECT_ENVIRONMENT"}
+            )
             for key in overrides
         ):
             raise AssertionError("provenance environment overrides cannot restore tool injection")
@@ -215,9 +229,19 @@ def _normalized_distribution_name(value: str) -> str:
     return re.sub(r"[-_.]+", "-", value).lower()
 
 
-def _locked_runtime_distributions() -> dict[str, tuple[str, tuple[str, ...]]]:
-    project = tomllib.loads(_git(REPO_ROOT, "show", "HEAD:pyproject.toml").decode("utf-8"))
-    lock = tomllib.loads(_git(REPO_ROOT, "show", "HEAD:uv.lock").decode("utf-8"))
+def _reviewed_project_files() -> tuple[bytes, bytes]:
+    reviewed_head = _git_text(REPO_ROOT, "rev-parse", "HEAD")
+    return (
+        _git(REPO_ROOT, "show", f"{reviewed_head}:pyproject.toml"),
+        _git(REPO_ROOT, "show", f"{reviewed_head}:uv.lock"),
+    )
+
+
+def _locked_runtime_distributions(
+    project_bytes: bytes, lock_bytes: bytes
+) -> dict[str, str]:
+    project = tomllib.loads(project_bytes.decode("utf-8"))
+    lock = tomllib.loads(lock_bytes.decode("utf-8"))
     dependencies = [
         *project["project"]["dependencies"],
         *project["project"]["optional-dependencies"]["ocr"],
@@ -233,7 +257,7 @@ def _locked_runtime_distributions() -> dict[str, tuple[str, tuple[str, ...]]]:
         for package in lock["package"]
         if isinstance(package, dict) and isinstance(package.get("name"), str)
     }
-    locked: dict[str, tuple[str, tuple[str, ...]]] = {}
+    locked: dict[str, str] = {}
     for name in RUNTIME_DISTRIBUTION_NAMES:
         version = exact_versions.get(_normalized_distribution_name(name))
         if version is None:
@@ -244,16 +268,19 @@ def _locked_runtime_distributions() -> dict[str, tuple[str, tuple[str, ...]]]:
         wheels = package.get("wheels")
         if not isinstance(wheels, list):
             raise AssertionError(f"runtime distribution has no locked wheels: {name}")
-        hashes = tuple(
-            wheel["hash"]
-            for wheel in wheels
-            if isinstance(wheel, dict)
-            and isinstance(wheel.get("hash"), str)
-            and re.fullmatch(r"sha256:[0-9a-f]{64}", wheel["hash"])
-        )
-        if not hashes or len(hashes) != len(wheels):
+        hashes: list[str] = []
+        for wheel in wheels:
+            if not (
+                isinstance(wheel, dict)
+                and isinstance(wheel.get("url"), str)
+                and isinstance(wheel.get("hash"), str)
+                and re.fullmatch(r"sha256:[0-9a-f]{64}", wheel["hash"])
+            ):
+                raise AssertionError(f"runtime distribution wheel lock is malformed: {name}")
+            hashes.append(wheel["hash"])
+        if not hashes:
             raise AssertionError(f"runtime distribution wheel hashes are incomplete: {name}")
-        locked[name] = (version, hashes)
+        locked[name] = version
     return locked
 
 
@@ -360,10 +387,10 @@ def _cached_distribution_root(name: str, version: str) -> Path:
 
 def _install_from_external_cache(
     *,
-    locked_distributions: dict[str, tuple[str, tuple[str, ...]]],
+    locked_distributions: dict[str, str],
     site_packages: Path,
 ) -> None:
-    for name, (version, _hashes) in locked_distributions.items():
+    for name, version in locked_distributions.items():
         _copy_distribution(
             name,
             version,
@@ -375,42 +402,48 @@ def _install_from_external_cache(
 def _install_with_uv(
     *,
     uv: Path,
-    runtime_python: Path,
     destination: Path,
-    locked_distributions: dict[str, tuple[str, tuple[str, ...]]],
+    project_bytes: bytes,
+    lock_bytes: bytes,
 ) -> None:
-    requirements = destination / "locked-runtime-requirements.txt"
-    requirements.write_text(
-        "\n".join(
-            f'{name}=={version} {" ".join(f"--hash={value}" for value in hashes)}'
-            for name, (version, hashes) in locked_distributions.items()
-        )
-        + "\n",
-        encoding="ascii",
-    )
+    project_root = destination.with_name(f"{destination.name}-project")
+    project_root.mkdir()
+    (project_root / "pyproject.toml").write_bytes(project_bytes)
+    (project_root / "uv.lock").write_bytes(lock_bytes)
     try:
-        subprocess.run(  # noqa: S603
+        result = subprocess.run(  # noqa: S603
             [
                 str(uv),
-                "pip",
-                "install",
+                "sync",
                 "--offline",
-                "--no-deps",
-                "--require-hashes",
-                "--python",
-                str(runtime_python),
-                "--requirements",
-                str(requirements),
+                "--frozen",
+                "--extra",
+                "ocr",
+                "--no-dev",
+                "--no-install-project",
+                "--project",
+                str(project_root),
             ],
-            check=True,
+            check=False,
             capture_output=True,
-            env=provenance_subprocess_environment(),
+            text=True,
+            env=provenance_subprocess_environment(
+                {
+                    "UV_LINK_MODE": "copy",
+                    "UV_PROJECT_ENVIRONMENT": str(destination),
+                }
+            ),
         )
+        if result.returncode != 0:
+            raise AssertionError(f"locked offline uv sync failed: {result.stderr.strip()}")
     finally:
-        requirements.unlink(missing_ok=True)
+        shutil.rmtree(project_root, ignore_errors=True)
 
 
 def build_external_runtime(destination: Path) -> Path:
+    project_bytes, lock_bytes = _reviewed_project_files()
+    locked_distributions = _locked_runtime_distributions(project_bytes, lock_bytes)
+    uv = _trusted_tool("uv")
     subprocess.run(  # noqa: S603
         [
             sys.executable,
@@ -426,6 +459,16 @@ def build_external_runtime(destination: Path) -> Path:
         capture_output=True,
         env=provenance_subprocess_environment(),
     )
+    if uv is not None:
+        _install_with_uv(
+            uv=uv,
+            destination=destination,
+            project_bytes=project_bytes,
+            lock_bytes=lock_bytes,
+        )
+    else:
+        if os.environ.get("CI"):
+            raise AssertionError("CI provenance integration requires the trusted uv executable")
     runtime_python = (
         destination / "Scripts" / "python.exe"
         if os.name == "nt"
@@ -445,18 +488,7 @@ def build_external_runtime(destination: Path) -> Path:
         / "site-packages"
     )
     site_packages.mkdir(parents=True, exist_ok=True)
-    locked_distributions = _locked_runtime_distributions()
-    uv = _trusted_tool("uv")
-    if uv is not None:
-        _install_with_uv(
-            uv=uv,
-            runtime_python=runtime_python,
-            destination=destination,
-            locked_distributions=locked_distributions,
-        )
-    else:
-        if os.environ.get("CI"):
-            raise AssertionError("CI provenance integration requires the trusted uv executable")
+    if uv is None:
         _install_from_external_cache(
             locked_distributions=locked_distributions,
             site_packages=site_packages,
@@ -470,7 +502,7 @@ def build_external_runtime(destination: Path) -> Path:
         f"root=Path({str(destination)!r}).resolve();"
         "mods=(cv2,numpy,PIL,py3langid,shapely);"
         "assert all(Path(m.__file__).resolve().is_relative_to(root) for m in mods);"
-        f"expected={dict((n,v[0]) for n,v in locked_distributions.items())!r};"
+        f"expected={locked_distributions!r};"
         "assert all(importlib.metadata.version(n)==v for n,v in expected.items())"
     )
     subprocess.run(  # noqa: S603
