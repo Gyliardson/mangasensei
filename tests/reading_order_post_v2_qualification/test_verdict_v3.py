@@ -13,11 +13,16 @@ from scripts.reading_order_post_v2_qualification.contracts import (
     ArmId,
 )
 from scripts.reading_order_post_v2_qualification.exercise import ExerciseCount, ExerciseReport
-from scripts.reading_order_post_v2_qualification.scoring import CorpusScore, PairMetrics
+from scripts.reading_order_post_v2_qualification.scoring import (
+    CorpusScore,
+    PageScore,
+    PairMetrics,
+)
 from scripts.reading_order_post_v2_qualification.verdict import (
     ComponentStatus,
     Verdict,
     VerdictResult,
+    _universal,
     evaluate_verdict,
 )
 from scripts.reading_order_post_v2_qualification.verdict_v3 import (
@@ -35,6 +40,13 @@ LEGACY_C3_METRICS = {
     "c3_invalid_topology_rejection_pairs",
     "c3_insufficient_visible_support_rejection_pairs",
 }
+LEGACY_C3_SLICES = {
+    "c3-zero-multiple-anchor-negative",
+    "c3-zero-multiple-companion-negative",
+    "c3-invalid-topology-negative",
+    "c3-insufficient-visible-support-negative",
+}
+V3_REQUIRED_SLICES = REQUIRED_SLICES - LEGACY_C3_SLICES
 EXERCISE_MINIMA_V3 = {
     name: minimum
     for name, minimum in EXERCISE_MINIMA.items()
@@ -89,7 +101,7 @@ def _score(arm: ArmId) -> CorpusScore:
     enabled = _ENABLED[arm]
     aggregate_wrong = tuple(_WRONG[name] for name in _WRONG if name not in enabled)
     slices: dict[str, PairMetrics] = {}
-    for name in REQUIRED_SLICES:
+    for name in V3_REQUIRED_SLICES:
         target = _TARGETS.get(name)
         if target == "ALL":
             wrong = aggregate_wrong
@@ -109,6 +121,24 @@ def _score(arm: ArmId) -> CorpusScore:
 
 def _scores() -> dict[ArmId, CorpusScore]:
     return {arm: _score(arm) for arm in ArmId}
+
+
+def _historical_v2_scores(
+    scores: dict[ArmId, CorpusScore],
+) -> dict[ArmId, CorpusScore]:
+    return {
+        arm: CorpusScore(
+            page_count=score.page_count,
+            exact_sequence_pages=score.exact_sequence_pages,
+            aggregate=score.aggregate,
+            slices={
+                **score.slices,
+                **{name: _metric(()) for name in LEGACY_C3_SLICES},
+            },
+            pages=score.pages,
+        )
+        for arm, score in scores.items()
+    }
 
 
 def _report(
@@ -178,6 +208,30 @@ def _with_aggregate(score: CorpusScore, metric: PairMetrics) -> CorpusScore:
     )
 
 
+def _with_pages(score: CorpusScore, pages: tuple[PageScore, ...]) -> CorpusScore:
+    return CorpusScore(
+        page_count=score.page_count,
+        exact_sequence_pages=score.exact_sequence_pages,
+        aggregate=score.aggregate,
+        slices=score.slices,
+        pages=pages,
+    )
+
+
+def _without_slice(score: CorpusScore, name: str) -> CorpusScore:
+    return CorpusScore(
+        page_count=score.page_count,
+        exact_sequence_pages=score.exact_sequence_pages,
+        aggregate=score.aggregate,
+        slices={key: value for key, value in score.slices.items() if key != name},
+        pages=score.pages,
+    )
+
+
+def _historical_v2_score(score: CorpusScore) -> CorpusScore:
+    return _historical_v2_scores({ArmId.CONTROL: score})[ArmId.CONTROL]
+
+
 def _git_blob_sha(path: Path) -> str:
     content = path.read_bytes()
     return hashlib.sha1(f"blob {len(content)}\0".encode() + content).hexdigest()  # noqa: S324
@@ -187,8 +241,8 @@ def test_v3_c3_binding_is_exactly_positive_pairs_and_rejection_pages() -> None:
     scores = _scores()
     with patch.object(
         verdict_v3_module,
-        "_component",
-        wraps=verdict_v3_module._component,
+        "_component_v3",
+        wraps=verdict_v3_module._component_v3,
     ) as component:
         _evaluate_v3(scores=scores)
     c3_call = next(call for call in component.call_args_list if call.kwargs["name"] == "C3")
@@ -229,7 +283,9 @@ def test_v3_c3_exercise_prerequisite_is_satisfied_at_both_minima() -> None:
 def test_v3_exercise_report_needs_no_legacy_c3_metric_names() -> None:
     report = _v3_report()
     assert LEGACY_C3_METRICS.isdisjoint(report.counts)
-    assert _evaluate_v3(exercise=report).c3_status is ComponentStatus.PASS
+    scores = _scores()
+    assert all(LEGACY_C3_SLICES.isdisjoint(score.slices) for score in scores.values())
+    assert _evaluate_v3(scores=scores, exercise=report).c3_status is ComponentStatus.PASS
 
 
 def test_legacy_c3_values_cannot_satisfy_or_override_rejection_pages() -> None:
@@ -251,7 +307,11 @@ def test_c3_safety_behavior_remains_equivalent_to_v2(arm: ArmId) -> None:
         arm,
         _with_aggregate(scores[arm], regressed),
     )
-    v2 = evaluate_verdict(harness_valid=True, scores=scores, exercise=_v2_report())
+    v2 = evaluate_verdict(
+        harness_valid=True,
+        scores=_historical_v2_scores(scores),
+        exercise=_v2_report(),
+    )
     v3 = _evaluate_v3(scores=scores)
     assert (v3.c3_status, v3.verdict, v3.reasons) == (
         v2.c3_status,
@@ -259,6 +319,86 @@ def test_c3_safety_behavior_remains_equivalent_to_v2(arm: ArmId) -> None:
         v2.reasons,
     )
     assert v3.verdict is Verdict.C3_FAIL
+
+
+def test_v3_page_no_new_inversion_remains_equivalent_to_v2() -> None:
+    baseline = _score(ArmId.CONTROL)
+    page = PageScore("Q901", 2, True, _metric(()), {}, ("a", "b"))
+    candidate_page = PageScore(
+        "Q901",
+        2,
+        False,
+        _metric((("Q901", "a", "b"),)),
+        {},
+        ("b", "a"),
+    )
+    baseline = _with_pages(baseline, (page,))
+    candidate = _with_pages(baseline, (candidate_page,))
+    v2 = _universal(
+        _historical_v2_score(baseline),
+        _historical_v2_score(candidate),
+        arm="C3_ONLY",
+    )
+    v3 = verdict_v3_module._universal_v3(baseline, candidate, arm="C3_ONLY")
+    assert v3 == v2
+    assert v3[1][0].gate == "page-no-new-inversion"
+
+
+@pytest.mark.parametrize("missing_from", ["baseline", "candidate"])
+def test_v3_required_slice_safety_remains_equivalent_to_v2(missing_from: str) -> None:
+    baseline = _score(ArmId.CONTROL)
+    candidate = _score(ArmId.CONTROL)
+    if missing_from == "baseline":
+        baseline = _without_slice(baseline, "clean-control")
+    else:
+        candidate = _without_slice(candidate, "clean-control")
+    v2 = _universal(
+        _historical_v2_score(baseline),
+        _historical_v2_score(candidate),
+        arm="C3_ONLY",
+    )
+    v3 = verdict_v3_module._universal_v3(baseline, candidate, arm="C3_ONLY")
+    assert v3 == v2
+    assert v3[1][0].gate == "required-slice"
+
+
+def test_v3_slice_accuracy_and_error_safety_remain_equivalent_to_v2() -> None:
+    baseline = _score(ArmId.CONTROL)
+    candidate = _with_slice(
+        baseline,
+        "clean-control",
+        _metric((("Q901", "a", "b"),)),
+    )
+    v2 = _universal(
+        _historical_v2_score(baseline),
+        _historical_v2_score(candidate),
+        arm="C3_ONLY",
+    )
+    v3 = verdict_v3_module._universal_v3(baseline, candidate, arm="C3_ONLY")
+    assert v3 == v2
+    assert [reason.gate for reason in v3[1]] == [
+        "slice-accuracy",
+        "slice-normalized-error",
+    ]
+
+
+def test_v3_exact_sequence_page_safety_remains_equivalent_to_v2() -> None:
+    baseline = _score(ArmId.CONTROL)
+    candidate = CorpusScore(
+        page_count=baseline.page_count,
+        exact_sequence_pages=baseline.exact_sequence_pages - 1,
+        aggregate=baseline.aggregate,
+        slices=baseline.slices,
+        pages=baseline.pages,
+    )
+    v2 = _universal(
+        _historical_v2_score(baseline),
+        _historical_v2_score(candidate),
+        arm="C3_ONLY",
+    )
+    v3 = verdict_v3_module._universal_v3(baseline, candidate, arm="C3_ONLY")
+    assert v3 == v2
+    assert v3[1][0].gate == "exact-sequence-pages"
 
 
 def test_c3_target_control_failure_behavior_remains_equivalent_to_v2() -> None:
@@ -269,7 +409,11 @@ def test_c3_target_control_failure_behavior_remains_equivalent_to_v2() -> None:
             arm,
             _with_slice(scores[arm], "c3-positive-recovery", _metric(())),
         )
-    v2 = evaluate_verdict(harness_valid=True, scores=scores, exercise=_v2_report())
+    v2 = evaluate_verdict(
+        harness_valid=True,
+        scores=_historical_v2_scores(scores),
+        exercise=_v2_report(),
+    )
     v3 = _evaluate_v3(scores=scores)
     assert (v3.c3_status, v3.verdict, v3.reasons) == (
         v2.c3_status,
@@ -293,7 +437,11 @@ def test_c3_strict_improvement_behavior_remains_equivalent_to_v2() -> None:
         ArmId.C1_C2_C3,
         _with_slice(scores[ArmId.C1_C2_C3], "c3-positive-recovery", unchanged),
     )
-    v2 = evaluate_verdict(harness_valid=True, scores=scores, exercise=_v2_report())
+    v2 = evaluate_verdict(
+        harness_valid=True,
+        scores=_historical_v2_scores(scores),
+        exercise=_v2_report(),
+    )
     v3 = _evaluate_v3(scores=scores)
     assert (v3.c3_status, v3.verdict, v3.reasons) == (
         v2.c3_status,
@@ -316,8 +464,13 @@ def test_non_c3_components_are_differentially_equivalent_to_v2(
 ) -> None:
     v2_report = _report(EXERCISE_MINIMA, overrides={exercise_name: 0})
     v3_report = _report(EXERCISE_MINIMA_V3, overrides={exercise_name: 0})
-    v2 = evaluate_verdict(harness_valid=True, scores=_scores(), exercise=v2_report)
-    v3 = _evaluate_v3(exercise=v3_report)
+    scores = _scores()
+    v2 = evaluate_verdict(
+        harness_valid=True,
+        scores=_historical_v2_scores(scores),
+        exercise=v2_report,
+    )
+    v3 = _evaluate_v3(scores=scores, exercise=v3_report)
     assert getattr(v3, f"{component}_status") is getattr(v2, f"{component}_status")
     assert v3.reasons == v2.reasons
 
@@ -338,7 +491,11 @@ def test_non_c3_failure_outcomes_are_differentially_equivalent_to_v2(
     scores = _scores()
     regressed = _metric((*scores[ArmId.CONTROL].aggregate.wrong_pairs, ("Q999", "x", "y")))
     scores = _replace_score(scores, arm, _with_aggregate(scores[arm], regressed))
-    v2 = evaluate_verdict(harness_valid=True, scores=scores, exercise=_v2_report())
+    v2 = evaluate_verdict(
+        harness_valid=True,
+        scores=_historical_v2_scores(scores),
+        exercise=_v2_report(),
+    )
     v3 = _evaluate_v3(scores=scores)
     assert getattr(v3, f"{component}_status") is ComponentStatus.FAIL
     assert (v3.verdict, v3.reasons) == (v2.verdict, v2.reasons)
@@ -361,7 +518,11 @@ def test_final_strict_improvement_gates_are_differentially_equivalent_to_v2(
             arm: _with_slice(score, "combined-c1-c2-c3-b1", control_metric)
             for arm, score in scores.items()
         }
-    v2 = evaluate_verdict(harness_valid=True, scores=scores, exercise=_v2_report())
+    v2 = evaluate_verdict(
+        harness_valid=True,
+        scores=_historical_v2_scores(scores),
+        exercise=_v2_report(),
+    )
     v3 = _evaluate_v3(scores=scores)
     assert (v3.final_status, v3.verdict, v3.reasons) == (
         v2.final_status,
@@ -376,7 +537,11 @@ def test_final_universal_safety_remains_differentially_equivalent_to_v2() -> Non
     final = scores[ArmId.C1_C2_C3_B1]
     regressed = _metric((*scores[ArmId.CONTROL].aggregate.wrong_pairs, ("Q999", "x", "y")))
     scores = _replace_score(scores, ArmId.C1_C2_C3_B1, _with_aggregate(final, regressed))
-    v2 = evaluate_verdict(harness_valid=True, scores=scores, exercise=_v2_report())
+    v2 = evaluate_verdict(
+        harness_valid=True,
+        scores=_historical_v2_scores(scores),
+        exercise=_v2_report(),
+    )
     v3 = _evaluate_v3(scores=scores)
     assert (v3.final_status, v3.verdict, v3.reasons) == (
         v2.final_status,
@@ -392,8 +557,8 @@ def test_invalid_v3_boundary_short_circuits_before_evidence_evaluation(
     harness_valid: object,
 ) -> None:
     with (
-        patch.object(verdict_v3_module, "_component") as component,
-        patch.object(verdict_v3_module, "_universal") as universal,
+        patch.object(verdict_v3_module, "_component_v3") as component,
+        patch.object(verdict_v3_module, "_universal_v3") as universal,
     ):
         result = evaluate_verdict_v3(
             harness_valid=harness_valid,  # type: ignore[arg-type]

@@ -1,16 +1,180 @@
 from __future__ import annotations
 
+from scripts.reading_order_v3_authoring.contracts import AUTHORING_SLICES
+
 from .contracts import ArmId
-from .exercise import ExerciseReport
-from .scoring import CorpusScore, strict_wrong_set_improvement
+from .exercise import ExerciseReport, exercise_minimum_met
+from .scoring import (
+    CorpusScore,
+    candidate_only_wrong_pairs,
+    strict_wrong_set_improvement,
+    wrong_set_is_subset,
+)
 from .verdict import (
     ComponentStatus,
     GateReason,
     Verdict,
     VerdictResult,
-    _component,
-    _universal,
+    _page_map,
+    _target_state,
 )
+
+V3_REQUIRED_SLICES = frozenset(AUTHORING_SLICES)
+
+
+def _universal_v3(
+    baseline: CorpusScore,
+    candidate: CorpusScore,
+    *,
+    arm: str,
+) -> tuple[bool, list[GateReason]]:
+    reasons: list[GateReason] = []
+    if not wrong_set_is_subset(baseline.aggregate, candidate.aggregate):
+        reasons.append(
+            GateReason(
+                "wrong-set-subset",
+                arm,
+                "fail",
+                "new wrong pairs: "
+                f"{candidate_only_wrong_pairs(baseline.aggregate, candidate.aggregate)}",
+            )
+        )
+    if candidate.aggregate.pairwise_accuracy < baseline.aggregate.pairwise_accuracy:
+        reasons.append(
+            GateReason("global-accuracy", arm, "fail", "global pairwise accuracy regressed")
+        )
+    if candidate.aggregate.normalized_error > baseline.aggregate.normalized_error:
+        reasons.append(
+            GateReason("global-normalized-error", arm, "fail", "normalized error increased")
+        )
+    if candidate.exact_sequence_pages < baseline.exact_sequence_pages:
+        reasons.append(
+            GateReason(
+                "exact-sequence-pages",
+                arm,
+                "fail",
+                "exact-sequence page count decreased",
+            )
+        )
+
+    baseline_pages = _page_map(baseline)
+    candidate_pages = _page_map(candidate)
+    for page_id in sorted(baseline_pages):
+        if not wrong_set_is_subset(baseline_pages[page_id], candidate_pages[page_id]):
+            reasons.append(
+                GateReason(
+                    "page-no-new-inversion",
+                    arm,
+                    "fail",
+                    f"{page_id} gained a new wrong pair",
+                )
+            )
+
+    for slice_name in sorted(V3_REQUIRED_SLICES):
+        base_slice = baseline.slices.get(slice_name)
+        candidate_slice = candidate.slices.get(slice_name)
+        if base_slice is None or base_slice.comparable_pairs <= 0:
+            reasons.append(
+                GateReason(
+                    "required-slice",
+                    arm,
+                    "fail",
+                    f"baseline slice {slice_name} missing/noncomparable",
+                )
+            )
+            continue
+        if candidate_slice is None or candidate_slice.comparable_pairs <= 0:
+            reasons.append(
+                GateReason(
+                    "required-slice",
+                    arm,
+                    "fail",
+                    f"candidate slice {slice_name} missing/noncomparable",
+                )
+            )
+            continue
+        if candidate_slice.pairwise_accuracy < base_slice.pairwise_accuracy:
+            reasons.append(
+                GateReason(
+                    "slice-accuracy",
+                    arm,
+                    "fail",
+                    f"{slice_name} accuracy regressed",
+                )
+            )
+        if candidate_slice.normalized_error > base_slice.normalized_error:
+            reasons.append(
+                GateReason(
+                    "slice-normalized-error",
+                    arm,
+                    "fail",
+                    f"{slice_name} normalized error increased",
+                )
+            )
+    return not reasons, reasons
+
+
+def _component_v3(
+    *,
+    name: str,
+    comparisons: tuple[tuple[CorpusScore, CorpusScore, str], ...],
+    exercise_names: tuple[str, ...],
+    target_slices: tuple[str, ...],
+    exercise: ExerciseReport,
+) -> tuple[ComponentStatus, list[GateReason]]:
+    reasons: list[GateReason] = []
+    safe = True
+    for baseline, candidate, arm_name in comparisons:
+        comparison_safe, comparison_reasons = _universal_v3(
+            baseline, candidate, arm=arm_name
+        )
+        safe = safe and comparison_safe
+        reasons.extend(comparison_reasons)
+    if not safe:
+        reasons.append(
+            GateReason(f"{name}-safety", name, "fail", "attributable arm introduced regression")
+        )
+        return ComponentStatus.FAIL, reasons
+
+    unmet = [
+        exercise_name
+        for exercise_name in exercise_names
+        if not exercise_minimum_met(exercise, exercise_name)
+    ]
+    if unmet:
+        reasons.append(
+            GateReason(
+                f"{name}-exercise",
+                name,
+                "inconclusive",
+                f"mechanism exercise minima not met: {unmet}",
+            )
+        )
+        return ComponentStatus.INCONCLUSIVE, reasons
+
+    target_pairs = tuple((baseline, candidate) for baseline, candidate, _ in comparisons)
+    has_failure, improved = _target_state(target_pairs, target_slices)
+    if not has_failure:
+        reasons.append(
+            GateReason(
+                f"{name}-target-control-failure",
+                name,
+                "inconclusive",
+                "predeclared target slices contain no baseline wrong pair to improve",
+            )
+        )
+        return ComponentStatus.INCONCLUSIVE, reasons
+    if not improved:
+        reasons.append(
+            GateReason(
+                f"{name}-strict-improvement",
+                name,
+                "fail",
+                "predeclared target wrong-pair set did not strictly improve",
+            )
+        )
+        return ComponentStatus.FAIL, reasons
+    return ComponentStatus.PASS, reasons
 
 
 def evaluate_verdict_v3(
@@ -37,7 +201,7 @@ def evaluate_verdict_v3(
     reasons: list[GateReason] = []
     control = scores[ArmId.CONTROL]
 
-    c1_status, component_reasons = _component(
+    c1_status, component_reasons = _component_v3(
         name="C1",
         comparisons=(
             (control, scores[ArmId.C1_ONLY], ArmId.C1_ONLY.value),
@@ -49,7 +213,7 @@ def evaluate_verdict_v3(
     )
     reasons.extend(component_reasons)
 
-    c2_status, component_reasons = _component(
+    c2_status, component_reasons = _component_v3(
         name="C2",
         comparisons=(
             (control, scores[ArmId.C2_ONLY], ArmId.C2_ONLY.value),
@@ -71,7 +235,7 @@ def evaluate_verdict_v3(
     )
     reasons.extend(component_reasons)
 
-    c3_status, component_reasons = _component(
+    c3_status, component_reasons = _component_v3(
         name="C3",
         comparisons=(
             (control, scores[ArmId.C3_ONLY], ArmId.C3_ONLY.value),
@@ -83,7 +247,7 @@ def evaluate_verdict_v3(
     )
     reasons.extend(component_reasons)
 
-    b1_status, component_reasons = _component(
+    b1_status, component_reasons = _component_v3(
         name="B1",
         comparisons=(
             (control, scores[ArmId.B1_ONLY], ArmId.B1_ONLY.value),
@@ -100,7 +264,9 @@ def evaluate_verdict_v3(
     reasons.extend(component_reasons)
 
     final = scores[ArmId.C1_C2_C3_B1]
-    final_safe, final_reasons = _universal(control, final, arm=ArmId.C1_C2_C3_B1.value)
+    final_safe, final_reasons = _universal_v3(
+        control, final, arm=ArmId.C1_C2_C3_B1.value
+    )
     reasons.extend(final_reasons)
     if not final_safe:
         final_status = ComponentStatus.FAIL
