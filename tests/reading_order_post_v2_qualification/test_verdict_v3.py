@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 from fractions import Fraction
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
+import scripts.reading_order_post_v2_qualification.verdict_v3 as verdict_v3_module
 from scripts.reading_order_post_v2_qualification.contracts import (
     EXERCISE_MINIMA,
     REQUIRED_SLICES,
@@ -12,10 +14,13 @@ from scripts.reading_order_post_v2_qualification.contracts import (
 )
 from scripts.reading_order_post_v2_qualification.exercise import ExerciseCount, ExerciseReport
 from scripts.reading_order_post_v2_qualification.scoring import CorpusScore, PairMetrics
-from scripts.reading_order_post_v2_qualification.verdict import evaluate_verdict
-from scripts.reading_order_post_v2_qualification.verdict_v3 import (
+from scripts.reading_order_post_v2_qualification.verdict import (
     ComponentStatus,
     Verdict,
+    VerdictResult,
+    evaluate_verdict,
+)
+from scripts.reading_order_post_v2_qualification.verdict_v3 import (
     evaluate_verdict_v3,
 )
 
@@ -139,7 +144,7 @@ def _v3_report(
 def _evaluate_v3(
     scores: dict[ArmId, CorpusScore] | None = None,
     exercise: ExerciseReport | None = None,
-):
+) -> VerdictResult:
     return evaluate_verdict_v3(
         harness_valid=True,
         scores=scores or _scores(),
@@ -244,7 +249,7 @@ def test_c3_safety_behavior_remains_equivalent_to_v2() -> None:
 
 def test_c3_target_control_failure_behavior_remains_equivalent_to_v2() -> None:
     scores = _scores()
-    for arm in (ArmId.CONTROL, ArmId.C1_C2):
+    for arm in ArmId:
         scores = _replace_score(
             scores,
             arm,
@@ -308,16 +313,17 @@ def test_final_strict_improvement_gates_are_differentially_equivalent_to_v2(
     gate: str,
 ) -> None:
     scores = _scores()
-    final = scores[ArmId.C1_C2_C3_B1]
     if gate == "global":
-        final = _with_aggregate(final, scores[ArmId.CONTROL].aggregate)
+        control_metric = scores[ArmId.CONTROL].aggregate
+        scores = {
+            arm: _with_aggregate(score, control_metric) for arm, score in scores.items()
+        }
     else:
-        final = _with_slice(
-            final,
-            "combined-c1-c2-c3-b1",
-            scores[ArmId.CONTROL].slices["combined-c1-c2-c3-b1"],
-        )
-    scores = _replace_score(scores, ArmId.C1_C2_C3_B1, final)
+        control_metric = scores[ArmId.CONTROL].slices["combined-c1-c2-c3-b1"]
+        scores = {
+            arm: _with_slice(score, "combined-c1-c2-c3-b1", control_metric)
+            for arm, score in scores.items()
+        }
     v2 = evaluate_verdict(harness_valid=True, scores=scores, exercise=_v2_report())
     v3 = _evaluate_v3(scores=scores)
     assert (v3.final_status, v3.verdict, v3.reasons) == (
@@ -329,11 +335,17 @@ def test_final_strict_improvement_gates_are_differentially_equivalent_to_v2(
 
 
 def test_invalid_v3_boundary_short_circuits_before_evidence_evaluation() -> None:
-    result = evaluate_verdict_v3(
-        harness_valid=False,
-        scores={},
-        exercise=_report({}, extras={}),
-    )
+    with (
+        patch.object(verdict_v3_module, "_component") as component,
+        patch.object(verdict_v3_module, "_universal") as universal,
+    ):
+        result = evaluate_verdict_v3(
+            harness_valid=False,
+            scores={},
+            exercise=_report({}, extras={}),
+        )
+    component.assert_not_called()
+    universal.assert_not_called()
     assert result.verdict is Verdict.INVALID_EXPERIMENT
     assert result.harness_status == "harness-invalid"
     assert (
