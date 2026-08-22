@@ -47,12 +47,7 @@ LEGACY_C3_SLICES = {
     "c3-insufficient-visible-support-negative",
 }
 V3_REQUIRED_SLICES = REQUIRED_SLICES - LEGACY_C3_SLICES
-EXERCISE_MINIMA_V3 = {
-    name: minimum
-    for name, minimum in EXERCISE_MINIMA.items()
-    if name not in LEGACY_C3_METRICS
-}
-EXERCISE_MINIMA_V3["c3_rejection_pages"] = 8
+EXERCISE_MINIMA_V3 = dict(verdict_v3_module.EXERCISE_MINIMA_V3)
 
 _WRONG = {
     "C1": ("Q001", "c1-a", "c1-b"),
@@ -182,6 +177,34 @@ def _evaluate_v3(
     )
 
 
+def _assert_invalid_v3(
+    *,
+    harness_valid: object,
+    exercise: ExerciseReport,
+) -> VerdictResult:
+    with (
+        patch.object(verdict_v3_module, "_component_v3") as component,
+        patch.object(verdict_v3_module, "_universal_v3") as universal,
+    ):
+        result = evaluate_verdict_v3(
+            harness_valid=harness_valid,  # type: ignore[arg-type]
+            scores={},
+            exercise=exercise,
+        )
+    component.assert_not_called()
+    universal.assert_not_called()
+    assert result.verdict is Verdict.INVALID_EXPERIMENT
+    assert result.harness_status == "harness-invalid"
+    assert (
+        result.c1_status,
+        result.c2_status,
+        result.c3_status,
+        result.b1_status,
+        result.final_status,
+    ) == (ComponentStatus.NOT_EVALUATED,) * 5
+    return result
+
+
 def _replace_score(
     scores: dict[ArmId, CorpusScore], arm: ArmId, score: CorpusScore
 ) -> dict[ArmId, CorpusScore]:
@@ -296,6 +319,65 @@ def test_legacy_c3_values_cannot_satisfy_or_override_rejection_pages() -> None:
         )
     )
     assert result.c3_status is ComponentStatus.INCONCLUSIVE
+
+
+@pytest.mark.parametrize(
+    "minima",
+    [
+        {
+            **EXERCISE_MINIMA_V3,
+            "c3_positive_pairs": 0,
+            "c3_rejection_pages": 0,
+        },
+        {**EXERCISE_MINIMA_V3, "c3_positive_pairs": 0},
+        {**EXERCISE_MINIMA_V3, "c3_rejection_pages": 9},
+        {
+            name: minimum
+            for name, minimum in EXERCISE_MINIMA_V3.items()
+            if name != "c3_positive_pairs"
+        },
+        {**EXERCISE_MINIMA_V3, "unexpected_minimum": 1},
+        {**EXERCISE_MINIMA_V3, "c3_positive_pairs": True},
+    ],
+    ids=[
+        "both-c3-minima-lowered",
+        "one-c3-minimum-lowered",
+        "c3-minimum-raised",
+        "required-minimum-missing",
+        "unexpected-minimum-extra",
+        "minimum-wrong-type",
+    ],
+)
+def test_v3_exercise_policy_mismatch_is_invalid(minima: dict[str, int]) -> None:
+    report = _v3_report(positive=0, rejection=0)
+    adulterated = ExerciseReport(counts=report.counts, minima=minima)
+    result = _assert_invalid_v3(harness_valid=True, exercise=adulterated)
+    assert result.reasons[0].gate == "exercise-policy-validity"
+
+
+def test_v3_missing_required_exercise_count_is_invalid() -> None:
+    report = _v3_report()
+    counts = {
+        name: count
+        for name, count in report.counts.items()
+        if name != "c3_rejection_pages"
+    }
+    malformed = ExerciseReport(counts=counts, minima=report.minima)
+    result = _assert_invalid_v3(harness_valid=True, exercise=malformed)
+    assert result.reasons[0].gate == "exercise-policy-validity"
+
+
+@pytest.mark.parametrize(
+    "count",
+    [None, ExerciseCount(True, (), ()), ExerciseCount(-1, (), ())],
+    ids=["wrong-entry-type", "boolean-count", "negative-count"],
+)
+def test_v3_malformed_required_exercise_count_is_invalid(count: object) -> None:
+    report = _v3_report()
+    counts = {**report.counts, "c3_rejection_pages": count}
+    malformed = ExerciseReport(counts=counts, minima=report.minima)  # type: ignore[arg-type]
+    result = _assert_invalid_v3(harness_valid=True, exercise=malformed)
+    assert result.reasons[0].gate == "exercise-policy-validity"
 
 
 @pytest.mark.parametrize("arm", [ArmId.C3_ONLY, ArmId.C1_C2_C3])
@@ -552,30 +634,14 @@ def test_final_universal_safety_remains_differentially_equivalent_to_v2() -> Non
     assert any(reason.arm == ArmId.C1_C2_C3_B1.value for reason in v3.reasons)
 
 
-@pytest.mark.parametrize("harness_valid", [False, None, 0, "false"])
+@pytest.mark.parametrize("harness_valid", [False, None, 0, 1, "false"])
 def test_invalid_v3_boundary_short_circuits_before_evidence_evaluation(
     harness_valid: object,
 ) -> None:
-    with (
-        patch.object(verdict_v3_module, "_component_v3") as component,
-        patch.object(verdict_v3_module, "_universal_v3") as universal,
-    ):
-        result = evaluate_verdict_v3(
-            harness_valid=harness_valid,  # type: ignore[arg-type]
-            scores={},
-            exercise=_report({}, extras={}),
-        )
-    component.assert_not_called()
-    universal.assert_not_called()
-    assert result.verdict is Verdict.INVALID_EXPERIMENT
-    assert result.harness_status == "harness-invalid"
-    assert (
-        result.c1_status,
-        result.c2_status,
-        result.c3_status,
-        result.b1_status,
-        result.final_status,
-    ) == (ComponentStatus.NOT_EVALUATED,) * 5
+    result = _assert_invalid_v3(
+        harness_valid=harness_valid,
+        exercise=_report({}, extras={}),
+    )
     assert result.reasons[0].gate == "harness-validity"
 
 

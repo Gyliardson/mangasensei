@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
+from typing import cast
+
 from scripts.reading_order_v3_authoring.contracts import AUTHORING_SLICES
 
 from .contracts import ArmId
-from .exercise import ExerciseReport, exercise_minimum_met
+from .exercise import ExerciseCount, ExerciseReport
+from .exercise_v3 import EXERCISE_MINIMA_V3
 from .scoring import (
     CorpusScore,
     candidate_only_wrong_pairs,
@@ -20,6 +25,55 @@ from .verdict import (
 )
 
 V3_REQUIRED_SLICES = frozenset(AUTHORING_SLICES)
+_CANONICAL_EXERCISE_MINIMA_V3: Mapping[str, int] = MappingProxyType(
+    dict(EXERCISE_MINIMA_V3)
+)
+
+
+def _invalid_result(gate: str, detail: str) -> VerdictResult:
+    reason = GateReason(gate, "all", "fail", detail)
+    return VerdictResult(
+        Verdict.INVALID_EXPERIMENT,
+        "harness-invalid",
+        ComponentStatus.NOT_EVALUATED,
+        ComponentStatus.NOT_EVALUATED,
+        ComponentStatus.NOT_EVALUATED,
+        ComponentStatus.NOT_EVALUATED,
+        ComponentStatus.NOT_EVALUATED,
+        (reason,),
+    )
+
+
+def _exercise_contract_valid(exercise: ExerciseReport) -> bool:
+    if type(exercise) is not ExerciseReport:
+        return False
+    if type(exercise.minima) is not dict or set(exercise.minima) != set(
+        _CANONICAL_EXERCISE_MINIMA_V3
+    ):
+        return False
+    if any(
+        type(exercise.minima[name]) is not int
+        or exercise.minima[name] != canonical_minimum
+        for name, canonical_minimum in _CANONICAL_EXERCISE_MINIMA_V3.items()
+    ):
+        return False
+    if type(exercise.counts) is not dict:
+        return False
+    for name in _CANONICAL_EXERCISE_MINIMA_V3:
+        count = exercise.counts.get(name)
+        if type(count) is not ExerciseCount:
+            return False
+        validated_count = cast(ExerciseCount, count)
+        count_value = cast(object, validated_count.count)
+        if type(count_value) is not int or count_value < 0:
+            return False
+    return True
+
+
+def _exercise_minimum_met(exercise: ExerciseReport, name: str) -> bool:
+    count = cast(ExerciseCount, exercise.counts[name])
+    count_value = cast(int, count.count)
+    return count_value >= _CANONICAL_EXERCISE_MINIMA_V3[name]
 
 
 def _universal_v3(
@@ -139,7 +193,7 @@ def _component_v3(
     unmet = [
         exercise_name
         for exercise_name in exercise_names
-        if not exercise_minimum_met(exercise, exercise_name)
+        if not _exercise_minimum_met(exercise, exercise_name)
     ]
     if unmet:
         reasons.append(
@@ -186,16 +240,11 @@ def evaluate_verdict_v3(
     """Evaluate the v3 verdict with generic C3 rejection-page reachability."""
 
     if harness_valid is not True:
-        reason = GateReason("harness-validity", "all", "fail", "experiment validity gate failed")
-        return VerdictResult(
-            Verdict.INVALID_EXPERIMENT,
-            "harness-invalid",
-            ComponentStatus.NOT_EVALUATED,
-            ComponentStatus.NOT_EVALUATED,
-            ComponentStatus.NOT_EVALUATED,
-            ComponentStatus.NOT_EVALUATED,
-            ComponentStatus.NOT_EVALUATED,
-            (reason,),
+        return _invalid_result("harness-validity", "experiment validity gate failed")
+    if not _exercise_contract_valid(exercise):
+        return _invalid_result(
+            "exercise-policy-validity",
+            "v3 exercise report policy or required count shape is invalid",
         )
 
     reasons: list[GateReason] = []
