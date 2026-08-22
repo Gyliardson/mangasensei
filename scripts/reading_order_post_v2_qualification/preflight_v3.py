@@ -182,7 +182,9 @@ def _actual_sealed_files(root: Path) -> set[str]:
         for filename in filenames:
             path = parent / filename
             relative = path.relative_to(root).as_posix()
-            if path.is_symlink() or not stat.S_ISREG(path.lstat().st_mode):
+            if path.is_symlink():
+                raise ValueError(f"sealed corpus contains a symlinked file: {relative}")
+            if not stat.S_ISREG(path.lstat().st_mode):
                 raise ValueError(f"sealed corpus contains unsafe inventory entry: {relative}")
             files.add(relative)
     return files

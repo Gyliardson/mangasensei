@@ -153,7 +153,7 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/preflight_v3.py",
       "role": "v3-fail-closed-preflight",
-      "gitBlobSha": "c2966fbb75814c4a1abe66a650aa9eb0e12496eb"
+      "gitBlobSha": "f5f82f1727a6ddf11e5b8430ae137ef036580ea8"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/historical_guard.py",
