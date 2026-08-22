@@ -4,6 +4,7 @@ import hashlib
 import json
 import subprocess
 from pathlib import Path
+from shutil import which
 from typing import Any
 
 import numpy as np
@@ -29,7 +30,8 @@ import mangasensei.ocr.diagnostics.reading_order_post_v2_calibration as candidat
 from mangasensei.ocr.reading_order import PanelBox, PanelSegmentation
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-GIT = "/usr/bin/git"
+GIT = which("git")
+assert GIT is not None
 METHODOLOGY_PATH = (
     REPO_ROOT
     / "scripts"
