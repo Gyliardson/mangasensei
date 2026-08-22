@@ -1,0 +1,194 @@
+{
+  "schemaVersion": "reading-order-post-v2-experiment-spec-v3",
+  "experimentId": "reading-order-post-v2-c1-c2-c3-b1-v3",
+  "repository": "Gyliardson/mangasensei",
+  "status": "FROZEN_NOT_AUTHORIZED_FOR_EXECUTION",
+  "baseV2Spec": {
+    "path": "scripts/reading_order_post_v2_qualification/spec/experiment-spec-v2.json",
+    "sha256": "83ce58ab24c74433fea4b0e8367ad8508368d1fb9114c76b37192c736502ec33",
+    "gitBlobSha": "b8b08da5fa30ddf370c663e540c5cdc30d5854c3"
+  },
+  "methodology": {
+    "path": "scripts/reading_order_post_v2_qualification/spec/methodology-v3.json",
+    "sha256": "7d415a2221fedc173eb28ae0d6939109b7a4b2c5ce3fab252707dde619864ea8",
+    "gitBlobSha": "a813784e641a68e047c7c70164aeb1129f75c221"
+  },
+  "workflowIntegration": {
+    "present": false,
+    "dispatchable": false,
+    "status": "PENDING_PR_B",
+    "inheritedV2WorkflowExecutableBinding": false
+  },
+  "authoringSlices": [
+    "c1-boundary-positive",
+    "c1-near-boundary-negative",
+    "c2-gutter-bridge",
+    "c2-ambiguous-overlap-bridge",
+    "c2-pair-precedence-slot",
+    "c2-one-sided-non-unique-fail-closed",
+    "c2-conflict-cycle-safety",
+    "c3-positive-recovery",
+    "b1-horizontal",
+    "b1-vertical",
+    "b1-mixed-orientation",
+    "combined-c1-c2-c3-b1",
+    "clean-control",
+    "intentional-fallback"
+  ],
+  "exerciseMinima": {
+    "c1_guarded_pairs": 4,
+    "c2_gutter_pairs": 3,
+    "c2_overlap_pairs": 3,
+    "c2_pair_precedence_pairs": 3,
+    "c2_fail_closed_no_relation_pairs": 2,
+    "c2_conflict_cycle_fallback_pairs": 2,
+    "c3_positive_pairs": 4,
+    "c3_rejection_pages": 8,
+    "b1_horizontal_pairs": 4,
+    "b1_vertical_pairs": 4,
+    "b1_mixed_pairs": 4
+  },
+  "candidateBinding": {
+    "commitSha": "f45facb2284d740df2f294800f705414e0ba465e",
+    "treeSha": "68418482b8ccf5d7a3cb1c9ef3834505bd20cd4c",
+    "path": "backend/src/mangasensei/ocr/diagnostics/reading_order_post_v2_calibration.py",
+    "gitBlobSha": "ed1be14f4ad47c317ad755b94f1b3e23e84064da"
+  },
+  "reviewedV3SourceClosure": [
+    {
+      "path": "backend/src/mangasensei/ocr/reading_order.py",
+      "role": "panel-segmentation-dependency",
+      "gitBlobSha": "12358a59deee7bd0ec0845963da1b98f031592f1"
+    },
+    {
+      "path": "backend/src/mangasensei/ocr/diagnostics/reading_order_v2.py",
+      "role": "frozen-local-order-dependency",
+      "gitBlobSha": "5c5b334a57a1be5c89a5db124b4be99a4750e137"
+    },
+    {
+      "path": "backend/src/mangasensei/ocr/diagnostics/reading_order_v2_contracts.py",
+      "role": "frozen-region-contract-dependency",
+      "gitBlobSha": "08eb80b85583e36cccbd920ac652c085beac9740"
+    },
+    {
+      "path": "backend/src/mangasensei/ocr/vendor/manga_image_translator/manga_translator/utils/textblock.py",
+      "role": "production-textblock-fixture-dependency",
+      "gitBlobSha": "5384824742f930051c0bf7c2cb649ba920f2883a"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/__init__.py",
+      "role": "qualification-schema-identities",
+      "gitBlobSha": "d163660ef313e4c5c116d5958ff60c5e10823303"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/canonical.py",
+      "role": "canonical-serialization",
+      "gitBlobSha": "286409e086b63f0239b7617e0a90b2ac0fb9bf91"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/contracts.py",
+      "role": "inherited-scientific-contracts",
+      "gitBlobSha": "81ddf32f2ac3938fc144bcb751da823d0c71c1bc"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/exercise.py",
+      "role": "inherited-non-c3-exercise-evaluator",
+      "gitBlobSha": "8cc44916c67fa3d0ad554bbf6aa83bf5be5b8b98"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/fixtures.py",
+      "role": "production-shaped-region-fixtures",
+      "gitBlobSha": "781817e7b522dfb1ed17fbd7f89211bafcd3b322"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/spec.py",
+      "role": "validated-v2-base-resolver",
+      "gitBlobSha": "efa5c74fbb0982275fbeafb3583b7fb7c323ba91"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/spec_v3.py",
+      "role": "v3-overlay-validator-and-identity",
+      "gitBlobSha": "06df4751d6a9c3464754517f0f47c392159740b8"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/preflight_v3.py",
+      "role": "v3-fail-closed-preflight",
+      "gitBlobSha": "b2e50f8aca0f2834e35a4b663570913e45e7a8b1"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/historical_guard.py",
+      "role": "historical-v2-content-reuse-guard",
+      "gitBlobSha": "255579039eb7780aa1efbc5c88aeddabd1bd62be"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/retired_guard.py",
+      "role": "retired-post-v2-v1-content-reuse-guard",
+      "gitBlobSha": "b7f1ab98561080805ec877838e1227a282094ea4"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/png_integrity.py",
+      "role": "inherited-strict-png-integrity",
+      "gitBlobSha": "cd80fd966203cfc09eb5688eeb8501b0b97d6e1d"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/run_arm.py",
+      "role": "frozen-arm-config-and-serialization-reference",
+      "gitBlobSha": "b4f420166e2c6afa84ee3e3f60471281185416cf"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/run_arm_v3.py",
+      "role": "v3-clean-room-one-page-arm-runner",
+      "gitBlobSha": "c27096357ed238f47dae805075b5c39b4b8a8c01"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/run_v3.py",
+      "role": "v3-top-level-qualification-runner",
+      "gitBlobSha": "b5e59131d3c9e11f397f73ee79f103d7e1461edb"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/scoring.py",
+      "role": "frozen-scoring-implementation",
+      "gitBlobSha": "b0b775995f946c0e6bb571bf5f83c52dc680c9df"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/exercise_v3.py",
+      "role": "v3-runtime-exercise-evaluator",
+      "gitBlobSha": "0f74b52e3484cdef7b4f8215e009d04e595ac7de"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/v3_clean_room_compat.py",
+      "role": "v3-clean-room-runtime-adapter",
+      "gitBlobSha": "1e0f7cdcc2cda9f59d7631b25cf019be698d607f"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/verdict.py",
+      "role": "historical-verdict-dependency",
+      "gitBlobSha": "08c036c37e329039898e7ad3cf5e4d854407e129"
+    },
+    {
+      "path": "scripts/reading_order_post_v2_qualification/verdict_v3.py",
+      "role": "v3-verdict-adapter",
+      "gitBlobSha": "66cc8585a37f976f62ed7d1eac9834e756b1f310"
+    },
+    {
+      "path": "scripts/reading_order_v3_authoring/__init__.py",
+      "role": "v3-clean-room-public-contract",
+      "gitBlobSha": "59c53d3cff204ef7edb251941a54d9ff04163ec5"
+    },
+    {
+      "path": "scripts/reading_order_v3_authoring/canonical.py",
+      "role": "v3-clean-room-canonicalization",
+      "gitBlobSha": "f5d4baed3a8a47279b638dde67ffa713d9da0363"
+    },
+    {
+      "path": "scripts/reading_order_v3_authoring/contracts.py",
+      "role": "v3-clean-room-corpus-contracts",
+      "gitBlobSha": "1f50d8a06f60e7db044b59d838759146896974a0"
+    },
+    {
+      "path": "scripts/reading_order_v3_authoring/validate.py",
+      "role": "v3-strict-clean-room-corpus-validator",
+      "gitBlobSha": "66f02ecdd572d8663e2fae8f0a8bbea7d3e06d4c"
+    }
+  ]
+}
