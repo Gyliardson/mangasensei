@@ -184,14 +184,24 @@ def _git_blob_sha(path: Path) -> str:
 
 
 def test_v3_c3_binding_is_exactly_positive_pairs_and_rejection_pages() -> None:
-    source = (
-        REPO_ROOT
-        / "scripts"
-        / "reading_order_post_v2_qualification"
-        / "verdict_v3.py"
-    ).read_text(encoding="utf-8")
-    assert 'exercise_names=("c3_positive_pairs", "c3_rejection_pages")' in source
-    assert all(name not in source for name in LEGACY_C3_METRICS)
+    scores = _scores()
+    with patch.object(
+        verdict_v3_module,
+        "_component",
+        wraps=verdict_v3_module._component,
+    ) as component:
+        _evaluate_v3(scores=scores)
+    c3_call = next(call for call in component.call_args_list if call.kwargs["name"] == "C3")
+    comparisons = c3_call.kwargs["comparisons"]
+    assert c3_call.kwargs["exercise_names"] == (
+        "c3_positive_pairs",
+        "c3_rejection_pages",
+    )
+    assert c3_call.kwargs["target_slices"] == ("c3-positive-recovery",)
+    assert comparisons == (
+        (scores[ArmId.CONTROL], scores[ArmId.C3_ONLY], ArmId.C3_ONLY.value),
+        (scores[ArmId.C1_C2], scores[ArmId.C1_C2_C3], ArmId.C1_C2_C3.value),
+    )
 
 
 @pytest.mark.parametrize(
@@ -210,6 +220,9 @@ def test_v3_c3_is_inconclusive_below_either_exercise_minimum(
 def test_v3_c3_exercise_prerequisite_is_satisfied_at_both_minima() -> None:
     result = _evaluate_v3(exercise=_v3_report(positive=4, rejection=8))
     assert result.c3_status is ComponentStatus.PASS
+    assert result.final_status is ComponentStatus.PASS
+    assert result.verdict is Verdict.READING_ORDER_POST_V2_HELDOUT_PASS
+    assert result.reasons == ()
     assert not any(reason.gate == "C3-exercise" for reason in result.reasons)
 
 
@@ -229,13 +242,14 @@ def test_legacy_c3_values_cannot_satisfy_or_override_rejection_pages() -> None:
     assert result.c3_status is ComponentStatus.INCONCLUSIVE
 
 
-def test_c3_safety_behavior_remains_equivalent_to_v2() -> None:
+@pytest.mark.parametrize("arm", [ArmId.C3_ONLY, ArmId.C1_C2_C3])
+def test_c3_safety_behavior_remains_equivalent_to_v2(arm: ArmId) -> None:
     scores = _scores()
     regressed = _metric((*scores[ArmId.CONTROL].aggregate.wrong_pairs, ("Q999", "x", "y")))
     scores = _replace_score(
         scores,
-        ArmId.C3_ONLY,
-        _with_aggregate(scores[ArmId.C3_ONLY], regressed),
+        arm,
+        _with_aggregate(scores[arm], regressed),
     )
     v2 = evaluate_verdict(harness_valid=True, scores=scores, exercise=_v2_report())
     v3 = _evaluate_v3(scores=scores)
@@ -308,6 +322,29 @@ def test_non_c3_components_are_differentially_equivalent_to_v2(
     assert v3.reasons == v2.reasons
 
 
+@pytest.mark.parametrize(
+    ("component", "arm", "expected_verdict"),
+    [
+        ("c1", ArmId.C1_ONLY, Verdict.C1_FAIL),
+        ("c2", ArmId.C2_ONLY, Verdict.C2_FAIL),
+        ("b1", ArmId.B1_ONLY, Verdict.B1_FAIL),
+    ],
+)
+def test_non_c3_failure_outcomes_are_differentially_equivalent_to_v2(
+    component: str,
+    arm: ArmId,
+    expected_verdict: Verdict,
+) -> None:
+    scores = _scores()
+    regressed = _metric((*scores[ArmId.CONTROL].aggregate.wrong_pairs, ("Q999", "x", "y")))
+    scores = _replace_score(scores, arm, _with_aggregate(scores[arm], regressed))
+    v2 = evaluate_verdict(harness_valid=True, scores=scores, exercise=_v2_report())
+    v3 = _evaluate_v3(scores=scores)
+    assert getattr(v3, f"{component}_status") is ComponentStatus.FAIL
+    assert (v3.verdict, v3.reasons) == (v2.verdict, v2.reasons)
+    assert v3.verdict is expected_verdict
+
+
 @pytest.mark.parametrize("gate", ["global", "combined"])
 def test_final_strict_improvement_gates_are_differentially_equivalent_to_v2(
     gate: str,
@@ -334,13 +371,32 @@ def test_final_strict_improvement_gates_are_differentially_equivalent_to_v2(
     assert v3.verdict is Verdict.FINAL_FAIL
 
 
-def test_invalid_v3_boundary_short_circuits_before_evidence_evaluation() -> None:
+def test_final_universal_safety_remains_differentially_equivalent_to_v2() -> None:
+    scores = _scores()
+    final = scores[ArmId.C1_C2_C3_B1]
+    regressed = _metric((*scores[ArmId.CONTROL].aggregate.wrong_pairs, ("Q999", "x", "y")))
+    scores = _replace_score(scores, ArmId.C1_C2_C3_B1, _with_aggregate(final, regressed))
+    v2 = evaluate_verdict(harness_valid=True, scores=scores, exercise=_v2_report())
+    v3 = _evaluate_v3(scores=scores)
+    assert (v3.final_status, v3.verdict, v3.reasons) == (
+        v2.final_status,
+        v2.verdict,
+        v2.reasons,
+    )
+    assert v3.final_status is ComponentStatus.FAIL
+    assert any(reason.arm == ArmId.C1_C2_C3_B1.value for reason in v3.reasons)
+
+
+@pytest.mark.parametrize("harness_valid", [False, None, 0, "false"])
+def test_invalid_v3_boundary_short_circuits_before_evidence_evaluation(
+    harness_valid: object,
+) -> None:
     with (
         patch.object(verdict_v3_module, "_component") as component,
         patch.object(verdict_v3_module, "_universal") as universal,
     ):
         result = evaluate_verdict_v3(
-            harness_valid=False,
+            harness_valid=harness_valid,  # type: ignore[arg-type]
             scores={},
             exercise=_report({}, extras={}),
         )

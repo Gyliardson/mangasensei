@@ -21,7 +21,7 @@ def evaluate_verdict_v3(
 ) -> VerdictResult:
     """Evaluate the v3 verdict with generic C3 rejection-page reachability."""
 
-    if not harness_valid:
+    if harness_valid is not True:
         reason = GateReason("harness-validity", "all", "fail", "experiment validity gate failed")
         return VerdictResult(
             Verdict.INVALID_EXPERIMENT,
