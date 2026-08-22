@@ -955,7 +955,12 @@ def test_real_fresh_process_is_authenticated_and_deterministic_across_repeats(
 ) -> None:
     if Path(sys.executable).resolve().is_relative_to(run_v3.REPO_ROOT):
         pytest.skip("interpreter is installed inside the mutable checkout")
-    external_roots = bootstrap_v3._external_roots(run_v3.REPO_ROOT)
+    try:
+        external_roots = bootstrap_v3._external_roots(run_v3.REPO_ROOT)
+    except RuntimeError as exc:
+        if str(exc) != "external dependency root cannot come from the mutable checkout":
+            raise
+        pytest.skip(str(exc))
     if not any((root / "numpy").is_dir() for root in external_roots):
         pytest.skip("NumPy is unavailable outside the mutable checkout")
     corpus_root = tmp_path / "corpus"
