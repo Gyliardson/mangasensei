@@ -10,6 +10,9 @@ from unittest.mock import patch
 
 import pytest
 from scripts.reading_order_post_v2_qualification import spec_v3
+from tests.reading_order_post_v2_qualification._provenance_integration import (
+    build_execution_repository,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_PATH = (
@@ -143,27 +146,14 @@ def test_v3_source_ledger_uses_git_blob_hashes_of_reviewed_files() -> None:
         assert actual == binding["gitBlobSha"]
 
 
-def test_v3_base_resolver_composes_against_real_execution_git_objects() -> None:
-    candidate_commit = spec_v3.CANDIDATE_BINDING["commitSha"]
-    candidate_available = subprocess.run(  # noqa: S603
-        [GIT, "cat-file", "-e", f"{candidate_commit}^{{commit}}"],
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-    )
-    if candidate_available.returncode != 0:
-        pytest.skip("frozen candidate commit is unavailable in the shallow Git checkout")
-    execution_sha = subprocess.run(  # noqa: S603
-        [GIT, "rev-parse", "HEAD"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+def test_v3_base_resolver_composes_against_real_execution_git_objects(
+    tmp_path: Path,
+) -> None:
+    execution = build_execution_repository(tmp_path / "execution-repository")
 
     resolved = spec_v3._validate_base_v2(
-        execution_sha=execution_sha,
-        git_root=REPO_ROOT,
+        execution_sha=execution.execution_sha,
+        git_root=execution.root,
     )
 
     assert resolved["schemaVersion"] == "reading-order-post-v2-experiment-spec-v2"

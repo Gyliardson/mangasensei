@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import shutil
+import os
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -37,6 +37,13 @@ from scripts.reading_order_post_v2_qualification.verdict import (
     ComponentStatus,
     Verdict,
     VerdictResult,
+)
+from tests.reading_order_post_v2_qualification._provenance_integration import (
+    build_execution_repository,
+    build_external_runtime,
+    move_mutable_head,
+    parent_arguments,
+    provenance_subprocess_environment,
 )
 from tests.reading_order_v3_authoring._fixtures import _write
 
@@ -270,79 +277,20 @@ def _execute(tmp_path: Path) -> Path:
 def _authenticated_execution_snapshot(
     tmp_path: Path,
 ) -> Iterator[tuple[Path, Path, str, str, str]]:
-    candidate_commit = spec_v3.CANDIDATE_BINDING["commitSha"]
-    candidate_available = subprocess.run(  # noqa: S603
-        [GIT, "cat-file", "-e", f"{candidate_commit}^{{commit}}"],
-        cwd=run_v3.REPO_ROOT,
-        check=False,
-        capture_output=True,
-    )
-    if candidate_available.returncode != 0:
-        pytest.skip("frozen candidate commit is unavailable in the shallow Git checkout")
-    repository = tmp_path / "execution-repository"
-    subprocess.run(  # noqa: S603
-        [GIT, "clone", "--shared", str(run_v3.REPO_ROOT), str(repository)],
-        check=True,
-        capture_output=True,
-    )
-    spec_path = run_v3.REPO_ROOT / bootstrap_v3.SPEC_REPO_PATH
-    spec = json.loads(spec_path.read_text(encoding="utf-8"))
-    paths = {
-        bootstrap_v3.SPEC_REPO_PATH,
-        *(binding["path"] for binding in spec["reviewedV3SourceClosure"]),
-        spec["baseV2Spec"]["path"],
-        spec["methodology"]["path"],
-        spec["candidateBinding"]["path"],
-    }
-    base_path = run_v3.REPO_ROOT / spec["baseV2Spec"]["path"]
-    base = json.loads(base_path.read_text(encoding="utf-8"))
-    paths.add(base["baseSpec"]["path"])
-    paths.add("assets/reading-order-post-v2/heldout-v1/manifest.json")
-    for relative in paths:
-        source = run_v3.REPO_ROOT / relative
-        destination = repository / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
-    subprocess.run(  # noqa: S603
-        [GIT, "-C", str(repository), "add", "."], check=True, capture_output=True
-    )
-    subprocess.run(  # noqa: S603
-        [
-            GIT,
-            "-C",
-            str(repository),
-            "-c",
-            "user.name=Qualification Test",
-            "-c",
-            "user.email=qualification@example.invalid",
-            "commit",
-            "--allow-empty",
-            "-m",
-            "authenticated execution",
-        ],
-        check=True,
-        capture_output=True,
-    )
-    execution_sha = subprocess.run(  # noqa: S603
-        [GIT, "-C", str(repository), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    execution_tree = subprocess.run(  # noqa: S603
-        [GIT, "-C", str(repository), "rev-parse", "HEAD^{tree}"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    expected_spec_sha256 = run_v3.sha256_bytes(spec_path.read_bytes())
+    execution = build_execution_repository(tmp_path / "execution-repository")
     with bootstrap_v3.authenticated_source_snapshot(
-        git_root=repository,
-        execution_sha=execution_sha,
-        expected_tree_sha=execution_tree,
-        expected_spec_sha256=expected_spec_sha256,
+        git_root=execution.root,
+        execution_sha=execution.execution_sha,
+        expected_tree_sha=execution.tree_sha,
+        expected_spec_sha256=execution.spec_sha256,
     ) as source_root:
-        yield source_root, repository, execution_sha, execution_tree, expected_spec_sha256
+        yield (
+            source_root,
+            execution.root,
+            execution.execution_sha,
+            execution.tree_sha,
+            execution.spec_sha256,
+        )
 
 
 def test_real_standalone_preflight_composes_on_synthetic_corpus(tmp_path: Path) -> None:
@@ -949,20 +897,77 @@ def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
         assert verdict["verdict"].endswith("_INCONCLUSIVE")
 
 
+def test_real_parent_bootstrap_runs_preflight_before_output_validation(
+    tmp_path: Path,
+) -> None:
+    corpus_root = tmp_path / "corpus"
+    _write(corpus_root)
+    execution = build_execution_repository(tmp_path / "execution-repository")
+    runtime_python = build_external_runtime(tmp_path / "external-runtime")
+    manifest_sha256 = run_v3.sha256_bytes((corpus_root / "manifest.json").read_bytes())
+    design_sha256 = run_v3.sha256_bytes(
+        (corpus_root / "corpus-design.json").read_bytes()
+    )
+    methodology_path = execution.root / spec_v3.METHODOLOGY_BINDING["path"]
+    methodology_sha256 = run_v3.sha256_bytes(methodology_path.read_bytes())
+    attacker_root = tmp_path / "attacker-site"
+    attacker_root.mkdir()
+    trap_marker = tmp_path / "parent-startup-trap"
+    (attacker_root / "sitecustomize.py").write_text(
+        f"from pathlib import Path; Path({str(trap_marker)!r}).write_text('ran')\n",
+        encoding="utf-8",
+    )
+    forbidden_output = corpus_root / "forbidden-output"
+    mutable_head_marker = tmp_path / "parent-mutable-head-trap"
+    mutable_head = move_mutable_head(execution.root, mutable_head_marker)
+    assert mutable_head != execution.execution_sha
+
+    with bootstrap_v3.authenticated_source_snapshot(
+        git_root=execution.root,
+        execution_sha=execution.execution_sha,
+        expected_tree_sha=execution.tree_sha,
+        expected_spec_sha256=execution.spec_sha256,
+    ) as source_root:
+        preflight_result = subprocess.run(  # noqa: S603
+            [
+                str(runtime_python),
+                "-I",
+                "-S",
+                str(source_root / bootstrap_v3.BOOTSTRAP_REPO_PATH),
+                *parent_arguments(
+                    execution=execution,
+                    corpus_root=corpus_root,
+                    output_root=forbidden_output,
+                    methodology_sha256=methodology_sha256,
+                    manifest_sha256=manifest_sha256,
+                    design_sha256=design_sha256,
+                    qualification_identity="ropv3q-" + "0" * 64,
+                ),
+            ],
+            cwd=tmp_path,
+            env=provenance_subprocess_environment(
+                {
+                    "PYTHONPATH": str(attacker_root),
+                    "PYTHONSTARTUP": str(attacker_root / "sitecustomize.py"),
+                }
+            ),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    assert preflight_result.returncode != 0
+    assert "v3 qualification identity does not match frozen inputs" in preflight_result.stderr
+    assert "qualification output root must be outside corpus root" not in preflight_result.stderr
+    assert not forbidden_output.exists()
+    assert not trap_marker.exists()
+    assert not mutable_head_marker.exists()
+
+
 def test_real_fresh_process_is_authenticated_and_deterministic_across_repeats(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if Path(sys.executable).resolve().is_relative_to(run_v3.REPO_ROOT):
-        pytest.skip("interpreter is installed inside the mutable checkout")
-    try:
-        external_roots = bootstrap_v3._external_roots(run_v3.REPO_ROOT)
-    except RuntimeError as exc:
-        if str(exc) != "external dependency root cannot come from the mutable checkout":
-            raise
-        pytest.skip(str(exc))
-    if not any((root / "numpy").is_dir() for root in external_roots):
-        pytest.skip("NumPy is unavailable outside the mutable checkout")
     corpus_root = tmp_path / "corpus"
     output_root = tmp_path / "output"
     _write(corpus_root)
@@ -970,7 +975,6 @@ def test_real_fresh_process_is_authenticated_and_deterministic_across_repeats(
     design_sha256 = run_v3.sha256_bytes(
         (corpus_root / "corpus-design.json").read_bytes()
     )
-    arm = ArmId.CONTROL
     attacker_root = tmp_path / "attacker-site"
     attacker_package = attacker_root / "mangasensei"
     attacker_package.mkdir(parents=True)
@@ -981,13 +985,37 @@ def test_real_fresh_process_is_authenticated_and_deterministic_across_repeats(
     (attacker_package / "__init__.py").write_text(
         "raise RuntimeError('attacker package imported')\n", encoding="utf-8"
     )
+    hostile_environment = {
+        "DYLD_INSERT_LIBRARIES": str(attacker_root / "attacker.dylib"),
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(attacker_root / "git-objects"),
+        "LD_AUDIT": str(attacker_root / "attacker-audit.so"),
+        "LD_PRELOAD": str(attacker_root / "attacker-preload.so"),
+    }
+    for key, value in hostile_environment.items():
+        monkeypatch.setenv(key, value)
+    runtime_python = build_external_runtime(tmp_path / "external-runtime")
+    monkeypatch.setattr(sys, "executable", str(runtime_python))
+    safe_environment = provenance_subprocess_environment()
+    assert hostile_environment.keys().isdisjoint(safe_environment)
+    for key in tuple(os.environ):
+        if key not in safe_environment:
+            monkeypatch.delenv(key, raising=False)
+    for key, value in safe_environment.items():
+        monkeypatch.setenv(key, value)
     monkeypatch.setenv("PYTHONPATH", str(attacker_root))
     monkeypatch.setenv("PYTHONSTARTUP", str(attacker_root / "sitecustomize.py"))
     assert run_v3.ARM_RUNNER_MODULE == (
         "scripts.reading_order_post_v2_qualification.run_arm_v3"
     )
     assert run_v3.REPEATS == (1, 2, 3)
-    normalized_artifacts: list[dict[Path, bytes]] = []
+    normalized_artifacts: dict[ArmId, list[dict[Path, bytes]]] = {}
+    diagnostics_by_repeat: dict[int, dict[ArmId, dict[str, dict[str, object]]]] = {
+        repeat: {} for repeat in run_v3.REPEATS
+    }
+    orderings_by_repeat: dict[int, dict[ArmId, dict[str, dict[str, object]]]] = {
+        repeat: {} for repeat in run_v3.REPEATS
+    }
+    mutable_head_marker = tmp_path / "mutable-head-trap"
     with (
         _authenticated_execution_snapshot(tmp_path) as execution,
         run_v3._stage_sealed_corpus(
@@ -997,6 +1025,8 @@ def test_real_fresh_process_is_authenticated_and_deterministic_across_repeats(
         ) as staged_root,
     ):
         source_root, git_root, execution_sha, execution_tree, spec_sha256 = execution
+        mutable_head = move_mutable_head(git_root, mutable_head_marker)
+        assert mutable_head != execution_sha
         design = run_v3.load_design(staged_root / "corpus-design.json")
         annotations, _c3_rejection_page_ids = (
             run_v3.compat.load_clean_room_annotations(staged_root)
@@ -1017,65 +1047,78 @@ def test_real_fresh_process_is_authenticated_and_deterministic_across_repeats(
             assert not candidate_files & forbidden
             assert all(not (candidate_root / relative).exists() for relative in forbidden)
 
-            for repeat in run_v3.REPEATS:
-                child_env = run_v3._child_environment()
-                assert {
-                    key: value
-                    for key, value in child_env.items()
-                    if key.upper().startswith("PYTHON")
-                } == {}
-                error = run_v3._run_fresh_process(
-                    corpus_root=candidate_root,
-                    page_id=page_id,
-                    arm=arm,
-                    execution_sha=execution_sha,
-                    expected_tree_sha=execution_tree,
-                    expected_spec_sha256=spec_sha256,
-                    repeat=repeat,
-                    output_root=output_root,
-                    source_root=source_root,
-                    git_root=git_root,
-                )
-                assert error is None
-
-                repeat_root = output_root / "raw" / arm.value / f"repeat-{repeat}"
-                paths = {
-                    kind: repeat_root / f"{page_id}.{kind}.json"
-                    for kind in ("diagnostic", "ordering")
-                }
-                parsed = {kind: run_v3._load_output(path) for kind, path in paths.items()}
-                diagnostic = parsed["diagnostic"]
-                ordering = parsed["ordering"]
-                for document in parsed.values():
-                    assert document["experimentArm"] == arm.value
-                    assert document["pageId"] == page_id
-                    assert document["executionSha"] == execution_sha
-                assert diagnostic["finalOrder"] == ordering["finalOrder"]
-
-                problems: list[str] = []
-                authenticated_sha = run_v3.exercise_v3._diagnostic(
-                    diagnostic,
-                    arm=arm,
-                    page=annotation,
-                    trusted=trusted,
-                    problems=problems,
-                )
-                assert problems == []
-                assert authenticated_sha == execution_sha
-
-                artifacts: dict[Path, bytes] = {}
-                for path in paths.values():
-                    payload = path.read_bytes()
-                    assert payload == canonical_json_bytes(run_v3._load_output(path))
-                    relative = path.relative_to(output_root)
-                    normalized = Path(
-                        *(
-                            "repeat-N" if part == f"repeat-{repeat}" else part
-                            for part in relative.parts
-                        )
+            for arm in ArmId:
+                arm_artifacts: list[dict[Path, bytes]] = []
+                for repeat in run_v3.REPEATS:
+                    child_env = run_v3._child_environment()
+                    assert {
+                        key: value
+                        for key, value in child_env.items()
+                        if key.upper().startswith("PYTHON")
+                    } == {}
+                    error = run_v3._run_fresh_process(
+                        corpus_root=candidate_root,
+                        page_id=page_id,
+                        arm=arm,
+                        execution_sha=execution_sha,
+                        expected_tree_sha=execution_tree,
+                        expected_spec_sha256=spec_sha256,
+                        repeat=repeat,
+                        output_root=output_root,
+                        source_root=source_root,
+                        git_root=git_root,
                     )
-                    artifacts[normalized] = payload
-                normalized_artifacts.append(artifacts)
+                    assert error is None
 
-    assert normalized_artifacts[0] == normalized_artifacts[1] == normalized_artifacts[2]
+                    repeat_root = output_root / "raw" / arm.value / f"repeat-{repeat}"
+                    paths = {
+                        kind: repeat_root / f"{page_id}.{kind}.json"
+                        for kind in ("diagnostic", "ordering")
+                    }
+                    parsed = {
+                        kind: run_v3._load_output(path) for kind, path in paths.items()
+                    }
+                    diagnostic = parsed["diagnostic"]
+                    ordering = parsed["ordering"]
+                    diagnostics_by_repeat[repeat][arm] = {page_id: diagnostic}
+                    orderings_by_repeat[repeat][arm] = {page_id: ordering}
+                    for document in parsed.values():
+                        assert document["experimentArm"] == arm.value
+                        assert document["pageId"] == page_id
+                        assert document["executionSha"] == execution_sha
+                    assert diagnostic["finalOrder"] == ordering["finalOrder"]
+
+                    artifacts: dict[Path, bytes] = {}
+                    for path in paths.values():
+                        payload = path.read_bytes()
+                        assert payload == canonical_json_bytes(run_v3._load_output(path))
+                        relative = path.relative_to(output_root)
+                        normalized = Path(
+                            *(
+                                "repeat-N" if part == f"repeat-{repeat}" else part
+                                for part in relative.parts
+                            )
+                        )
+                        artifacts[normalized] = payload
+                    arm_artifacts.append(artifacts)
+                normalized_artifacts[arm] = arm_artifacts
+
+        run_v3._authenticate_all_diagnostics(
+            diagnostics_by_repeat=diagnostics_by_repeat,
+            annotations_by_id={page_id: annotation},
+            trusted_page_inputs={page_id: trusted},
+            execution_sha=execution_sha,
+        )
+        assert run_v3._ordering_problems(
+            diagnostics_by_repeat=diagnostics_by_repeat,
+            orderings_by_repeat=orderings_by_repeat,
+            trusted_page_inputs={page_id: trusted},
+            execution_sha=execution_sha,
+        ) == []
+
+    assert all(
+        artifacts[0] == artifacts[1] == artifacts[2]
+        for artifacts in normalized_artifacts.values()
+    )
     assert not trap_marker.exists()
+    assert not mutable_head_marker.exists()
