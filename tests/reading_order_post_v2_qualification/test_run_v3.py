@@ -307,6 +307,7 @@ def _authenticated_execution_snapshot(
             "-c",
             "user.email=qualification@example.invalid",
             "commit",
+            "--allow-empty",
             "-m",
             "authenticated execution",
         ],
