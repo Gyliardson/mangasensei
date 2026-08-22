@@ -17,7 +17,11 @@ from .canonical import canonical_json_bytes, sha256_bytes, write_canonical_json
 from .contracts import ArmId, PageGroundTruth
 from .exercise import ExerciseReport
 from .exercise_v3 import V3DiagnosticValidationError, V3TrustedPageInput
-from .preflight_v3 import _stage_sealed_corpus, validate_preflight_v3
+from .preflight_v3 import (
+    _stage_candidate_corpus,
+    _stage_sealed_corpus,
+    validate_preflight_v3,
+)
 from .scoring import CorpusScore, candidate_only_wrong_pairs, score_corpus, score_page
 from .verdict import ComponentStatus, GateReason, Verdict, VerdictResult
 from .verdict_v3 import evaluate_verdict_v3
@@ -470,6 +474,7 @@ def _execute_staged(
     *,
     context: object,
     corpus_root: Path,
+    candidate_root: Path,
     expected_spec_sha256: str,
     expected_methodology_sha256: str,
     expected_manifest_sha256: str,
@@ -504,7 +509,7 @@ def _execute_staged(
         for repeat in (1, 2, 3):
             for page_id in page_ids:
                 error = _run_fresh_process(
-                    corpus_root=corpus_root,
+                    corpus_root=candidate_root,
                     page_id=page_id,
                     arm=arm,
                     execution_sha=execution_sha,
@@ -658,10 +663,11 @@ def execute(
         corpus_root,
         expected_manifest_sha256=expected_manifest_sha256,
         expected_design_sha256=expected_design_sha256,
-    ) as staged_root:
+    ) as staged_root, _stage_candidate_corpus(staged_root) as candidate_root:
         _execute_staged(
             context=context,
             corpus_root=staged_root,
+            candidate_root=candidate_root,
             expected_spec_sha256=expected_spec_sha256,
             expected_methodology_sha256=expected_methodology_sha256,
             expected_manifest_sha256=expected_manifest_sha256,

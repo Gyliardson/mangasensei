@@ -56,6 +56,41 @@
   },
   "reviewedV3SourceClosure": [
     {
+      "path": "backend/src/mangasensei/__init__.py",
+      "role": "mangasensei-package-initializer",
+      "gitBlobSha": "5382d02d40ab641b2113f8438a8f0d7d13f9a150"
+    },
+    {
+      "path": "backend/src/mangasensei/ocr/__init__.py",
+      "role": "ocr-package-initializer",
+      "gitBlobSha": "52ca2154691c69f3e84879c5ff936af141cf4a97"
+    },
+    {
+      "path": "backend/src/mangasensei/ocr/diagnostics/__init__.py",
+      "role": "diagnostics-package-initializer",
+      "gitBlobSha": "d1d87042590544b0d761f735c9edee9f9f8e2b6a"
+    },
+    {
+      "path": "backend/src/mangasensei/ocr/vendor/__init__.py",
+      "role": "ocr-vendor-package-initializer",
+      "gitBlobSha": "be9a932dd985d0637aa2f5f7eb040c337caf0358"
+    },
+    {
+      "path": "backend/src/mangasensei/ocr/vendor/manga_image_translator/__init__.py",
+      "role": "translator-vendor-package-initializer",
+      "gitBlobSha": "b80a97268315f16beb1d335b98531d46de2b42a2"
+    },
+    {
+      "path": "backend/src/mangasensei/ocr/vendor/manga_image_translator/manga_translator/__init__.py",
+      "role": "translator-package-initializer",
+      "gitBlobSha": "a248e15e8a2d9aaec5be53a046b4ca4ec47447f2"
+    },
+    {
+      "path": "backend/src/mangasensei/ocr/vendor/manga_image_translator/manga_translator/utils/__init__.py",
+      "role": "translator-utils-package-initializer",
+      "gitBlobSha": "1d79116913a460c6109b12da808f6e24ffa6690a"
+    },
+    {
       "path": "backend/src/mangasensei/ocr/reading_order.py",
       "role": "panel-segmentation-dependency",
       "gitBlobSha": "12358a59deee7bd0ec0845963da1b98f031592f1"
@@ -108,12 +143,12 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/spec_v3.py",
       "role": "v3-overlay-validator-and-identity",
-      "gitBlobSha": "06df4751d6a9c3464754517f0f47c392159740b8"
+      "gitBlobSha": "df0a4fe7dd32b1cee9ea710f0b590160275ba3cd"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/preflight_v3.py",
       "role": "v3-fail-closed-preflight",
-      "gitBlobSha": "f22a5b27a5bca9c52c3a9cbda599525125e63f84"
+      "gitBlobSha": "a6b7ec57e10dc9b1e4dae859e77af3169c01817f"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/historical_guard.py",
@@ -138,12 +173,12 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/run_arm_v3.py",
       "role": "v3-clean-room-one-page-arm-runner",
-      "gitBlobSha": "49a1942ca9b3e6ebe80a319160c37fb952a8ade4"
+      "gitBlobSha": "b36c37cb49b96dd5d4755752136ae37afa6d1d64"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/run_v3.py",
       "role": "v3-top-level-qualification-runner",
-      "gitBlobSha": "5608fa11780c4a729bad0100d5e4549d900ba2e1"
+      "gitBlobSha": "3195184cb37b32a44297ed49b0ac460aa420c22a"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/scoring.py",

@@ -234,6 +234,39 @@ def _stage_sealed_corpus(
         yield staged_root
 
 
+@contextmanager
+def _stage_candidate_corpus(staged_root: Path) -> Iterator[Path]:
+    manifest_bytes = _read_sealed_bytes(staged_root, "manifest.json")
+    manifest = json.loads(
+        manifest_bytes.decode("utf-8"), parse_constant=_reject_json_constant
+    )
+    inventory = _manifest_inventory(manifest)
+    if not isinstance(manifest, dict):
+        raise ValueError("sealed manifest object required")
+    design_relative, _design_digest = _manifest_file_record(
+        manifest["design"], where="design"
+    )
+    allowed = {design_relative}
+    for page in manifest["pages"]:
+        if not isinstance(page, dict):
+            raise ValueError("sealed manifest page object required")
+        for role in ("image", "input"):
+            relative, _digest = _manifest_file_record(page[role], where=role)
+            allowed.add(relative)
+
+    payloads = {
+        relative: _read_sealed_bytes(staged_root, relative, inventory[relative])
+        for relative in allowed
+    }
+    with tempfile.TemporaryDirectory(prefix="mangasensei-v3-candidate-") as temporary:
+        candidate_root = Path(temporary)
+        os.chmod(candidate_root, 0o700)
+        for relative, payload in payloads.items():
+            _write_private_file(candidate_root, relative, payload)
+        _write_private_file(candidate_root, "manifest.json", manifest_bytes)
+        yield candidate_root
+
+
 def _git(*args: str) -> str:
     git = which("git")
     if git is None:

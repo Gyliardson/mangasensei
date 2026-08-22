@@ -6,6 +6,7 @@ import json
 import os
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -188,8 +189,7 @@ def _install_candidate(
         calls.append((pixels, regions, page_height, config))
         return factory(regions)
 
-    monkeypatch.setattr(run_arm_v3, "FROZEN_CANDIDATE", candidate)
-    monkeypatch.setattr(run_arm_v3, "_verify_candidate_origin", lambda: None)
+    monkeypatch.setattr(run_arm_v3, "_verify_candidate_origin", lambda: candidate)
     return calls
 
 
@@ -204,7 +204,7 @@ def _execute(root: Path, output: Path) -> tuple[Path, Path]:
     )
 
 
-def test_executes_direct_imported_frozen_candidate_and_preserves_serialization(
+def test_executes_direct_verified_candidate_and_preserves_serialization(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = tmp_path / "corpus"
@@ -221,7 +221,6 @@ def test_executes_direct_imported_frozen_candidate_and_preserves_serialization(
         "repeat",
         "output_root",
     }
-    assert run_arm_v3.BOUND_CANDIDATE is frozen_candidate.run_post_v2_calibration_candidate
     assert len(calls) == 1
     pixels, regions, page_height, config = calls[0]
     assert pixels.dtype == np.uint8
@@ -289,7 +288,7 @@ def test_does_not_read_annotation_or_ground_truth(
     assert root / "canonical/input-alpha.json" in reads
 
 
-def test_candidate_origin_and_module_callable_are_exactly_frozen() -> None:
+def test_candidate_origin_executes_authenticated_head_bytes_in_fresh_namespace() -> None:
     assert run_arm_v3.CANDIDATE_PATH == (
         run_arm_v3.REPO_ROOT
         / "backend"
@@ -300,46 +299,54 @@ def test_candidate_origin_and_module_callable_are_exactly_frozen() -> None:
         / "reading_order_post_v2_calibration.py"
     )
     assert Path(frozen_candidate.__file__).resolve() == run_arm_v3.CANDIDATE_PATH
-    assert run_arm_v3.BOUND_CANDIDATE is frozen_candidate.run_post_v2_calibration_candidate
-    assert run_arm_v3.FROZEN_CANDIDATE is run_arm_v3.BOUND_CANDIDATE
-    run_arm_v3._verify_candidate_origin()
+    authenticated = run_arm_v3._verify_candidate_origin()
+    assert authenticated is not frozen_candidate.run_post_v2_calibration_candidate
+    assert authenticated.__globals__ is not vars(frozen_candidate)
+    assert authenticated.__name__ == "run_post_v2_calibration_candidate"
+    assert authenticated.__module__ != frozen_candidate.__name__
+    assert authenticated.__globals__["__package__"] == frozen_candidate.__package__
+    assert authenticated.__globals__["__file__"] == str(run_arm_v3.CANDIDATE_PATH)
 
 
-@pytest.mark.parametrize("mismatch", ["source", "callable"])
+@pytest.mark.parametrize("mismatch", ["source"])
 def test_rejects_candidate_origin_mismatch(
     mismatch: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     if mismatch == "source":
         monkeypatch.setattr(frozen_candidate, "__file__", str(tmp_path / "impostor.py"))
-    else:
-        monkeypatch.setattr(frozen_candidate, "run_post_v2_calibration_candidate", lambda: None)
     with pytest.raises(RuntimeError, match="frozen candidate"):
         run_arm_v3._verify_candidate_origin()
 
 
-def test_rejects_stale_loaded_candidate_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    real_code = run_arm_v3._loaded_candidate_code()
-    stale_code = compile("STALE = True\n", str(run_arm_v3.CANDIDATE_PATH), "exec")
-    monkeypatch.setattr(run_arm_v3, "_loaded_candidate_code", lambda: stale_code)
-    with pytest.raises(RuntimeError, match="loaded code"):
-        run_arm_v3._verify_candidate_origin()
-    monkeypatch.setattr(run_arm_v3, "_loaded_candidate_code", lambda: real_code)
-
-
-def test_rejects_frozen_candidate_alias_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(run_arm_v3, "FROZEN_CANDIDATE", lambda: None)
-    with pytest.raises(RuntimeError, match="frozen candidate alias"):
-        run_arm_v3._verify_candidate_origin()
-
-
-def test_invokes_only_frozen_candidate_alias(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("tamper", ["function-code", "module-callable", "stale-loader"])
+def test_imported_candidate_and_loader_mutation_cannot_change_authenticated_invocation(
+    tamper: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = tmp_path / "corpus"
     _write_clean_room_page(root)
-    calls = _install_candidate(monkeypatch, _result)
-    _execute(root, tmp_path / "output")
-    assert len(calls) == 1
+
+    def substituted(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("mutable imported candidate was invoked")
+
+    if tamper == "function-code":
+        monkeypatch.setattr(
+            frozen_candidate.run_post_v2_calibration_candidate,
+            "__code__",
+            substituted.__code__,
+        )
+    elif tamper == "module-callable":
+        monkeypatch.setattr(
+            frozen_candidate, "run_post_v2_calibration_candidate", substituted
+        )
+    else:
+        monkeypatch.setattr(
+            frozen_candidate,
+            "__spec__",
+            SimpleNamespace(loader=SimpleNamespace(get_code=lambda _name: substituted.__code__)),
+        )
+
+    _diagnostic, ordering = _execute(root, tmp_path / "output")
+    assert ordering.is_file()
 
 
 @pytest.mark.parametrize("page_id", ["../escape", "nested/page", "bad page", "a" * 129])

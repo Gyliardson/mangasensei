@@ -6,12 +6,12 @@ import json
 import re
 import subprocess
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from shutil import which
-from types import CodeType
-from typing import Any
+from types import ModuleType
+from typing import Any, cast
 
 import numpy as np
 from PIL import Image
@@ -44,8 +44,6 @@ CANDIDATE_PATH = (
     / "reading_order_post_v2_calibration.py"
 ).resolve()
 CANDIDATE_REPO_PATH = CANDIDATE_PATH.relative_to(REPO_ROOT).as_posix()
-BOUND_CANDIDATE = candidate_module.run_post_v2_calibration_candidate
-FROZEN_CANDIDATE = BOUND_CANDIDATE
 _PAGE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -65,18 +63,6 @@ class _PageAssets:
     input_path: Path
 
 
-def _loaded_candidate_code() -> CodeType:
-    spec = getattr(candidate_module, "__spec__", None)
-    loader = getattr(spec, "loader", None)
-    get_code = getattr(loader, "get_code", None)
-    if not callable(get_code):
-        raise RuntimeError("frozen candidate loader cannot provide loaded code")
-    code = get_code(candidate_module.__name__)
-    if not isinstance(code, CodeType):
-        raise RuntimeError("frozen candidate loader did not provide module code")
-    return code
-
-
 def _head_candidate_bytes() -> bytes:
     git = which("git")
     if git is None:
@@ -90,30 +76,38 @@ def _head_candidate_bytes() -> bytes:
     return result.stdout
 
 
-def _verify_candidate_origin() -> None:
+def _verify_candidate_origin() -> Callable[..., Any]:
     module_file = getattr(candidate_module, "__file__", None)
     if not isinstance(module_file, str) or Path(module_file).resolve() != CANDIDATE_PATH:
         raise RuntimeError("frozen candidate module source mismatch")
-    if (
-        not callable(BOUND_CANDIDATE)
-        or candidate_module.run_post_v2_calibration_candidate is not BOUND_CANDIDATE
-    ):
-        raise RuntimeError("frozen candidate module callable mismatch")
-    if FROZEN_CANDIDATE is not BOUND_CANDIDATE:
-        raise RuntimeError("frozen candidate alias does not match bound candidate")
     source_bytes = CANDIDATE_PATH.read_bytes()
     head_bytes = _head_candidate_bytes()
     if source_bytes != head_bytes:
         raise RuntimeError("frozen candidate source does not match authenticated HEAD source")
-    expected_code = compile(
+
+    source_sha256 = hashlib.sha256(head_bytes).hexdigest()
+    module_name = f"{candidate_module.__package__}._authenticated_{source_sha256}"
+    authenticated_module = ModuleType(module_name)
+    authenticated_module.__package__ = candidate_module.__package__
+    authenticated_module.__file__ = str(CANDIDATE_PATH)
+    code = compile(
         head_bytes,
         str(CANDIDATE_PATH),
         "exec",
         dont_inherit=True,
         optimize=sys.flags.optimize,
     )
-    if _loaded_candidate_code() != expected_code:
-        raise RuntimeError("frozen candidate loaded code does not match authenticated HEAD source")
+    if module_name in sys.modules:
+        raise RuntimeError("authenticated candidate namespace collision")
+    sys.modules[module_name] = authenticated_module
+    try:
+        exec(code, authenticated_module.__dict__)  # noqa: S102 - authenticated HEAD source
+    finally:
+        sys.modules.pop(module_name, None)
+    candidate = authenticated_module.__dict__.get("run_post_v2_calibration_candidate")
+    if not callable(candidate):
+        raise RuntimeError("authenticated candidate callable is missing")
+    return cast(Callable[..., Any], candidate)
 
 
 def _reject_symlink_components(path: Path, *, role: str) -> None:
@@ -402,8 +396,8 @@ def execute_page(
     before = _full_snapshot(regions)
 
     pre_segmentation = segment_panel_groups(pixels)
-    _verify_candidate_origin()
-    result = FROZEN_CANDIDATE(
+    authenticated_candidate = _verify_candidate_origin()
+    result = authenticated_candidate(
         pixels,
         regions,
         page_height=page.height,

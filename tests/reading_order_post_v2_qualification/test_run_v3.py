@@ -189,7 +189,13 @@ def _install_harness(
         events.append("stage")
         yield corpus_root
 
+    @contextmanager
+    def candidate_staged(corpus_root: Path) -> Iterator[Path]:
+        events.append("candidate-stage")
+        yield corpus_root / "candidate-view"
+
     monkeypatch.setattr(run_v3, "_stage_sealed_corpus", staged)
+    monkeypatch.setattr(run_v3, "_stage_candidate_corpus", candidate_staged)
     monkeypatch.setattr(run_v3.subprocess, "run", process)
     monkeypatch.setattr(run_v3, "load_design", lambda _path: _Design())
     monkeypatch.setattr(
@@ -257,7 +263,7 @@ def test_preflight_is_first_and_runs_three_fresh_seeded_processes_per_arm(
 
     output = _execute(tmp_path)
 
-    assert events[:2] == ["preflight", "stage"]
+    assert events[:3] == ["preflight", "stage", "candidate-stage"]
     assert len(state["processes"]) == len(ArmId) * 3
     assert {
         (int(_arg(command, "--repeat")), kwargs["env"]["PYTHONHASHSEED"])
@@ -272,6 +278,9 @@ def test_preflight_is_first_and_runs_three_fresh_seeded_processes_per_arm(
         ]
         for command, _kwargs in state["processes"]
     )
+    assert {
+        Path(_arg(command, "--corpus-root")) for command, _kwargs in state["processes"]
+    } == {tmp_path / "corpus" / "candidate-view"}
     repeat_hashes = json.loads(
         (output / "summary/repeat-hashes.json").read_text(encoding="utf-8")
     )
@@ -553,6 +562,92 @@ def test_staged_corpus_is_a_byte_snapshot_when_original_role_is_replaced(
     assert not staged_root.exists()
 
 
+def test_candidate_corpus_view_contains_only_manifest_design_inputs_and_images(
+    tmp_path: Path,
+) -> None:
+    corpus_root = tmp_path / "corpus"
+    _write(corpus_root)
+    manifest = json.loads((corpus_root / "manifest.json").read_text(encoding="utf-8"))
+    allowed = {
+        "manifest.json",
+        manifest["design"]["file"],
+        *(page[role]["file"] for page in manifest["pages"] for role in ("input", "image")),
+    }
+    forbidden = {
+        page[role]["file"]
+        for page in manifest["pages"]
+        for role in ("source", "annotation")
+    }
+
+    with run_v3._stage_sealed_corpus(corpus_root) as staged_root:
+        with run_v3._stage_candidate_corpus(staged_root) as candidate_root:
+            assert {
+                path.relative_to(candidate_root).as_posix()
+                for path in candidate_root.rglob("*")
+                if path.is_file()
+            } == allowed
+            assert (candidate_root / "manifest.json").read_bytes() == (
+                staged_root / "manifest.json"
+            ).read_bytes()
+            assert (candidate_root / "corpus-design.json").read_bytes() == (
+                staged_root / "corpus-design.json"
+            ).read_bytes()
+            assert not set(candidate_root.rglob("*")) & {
+                candidate_root / relative for relative in forbidden
+            }
+            for relative in forbidden:
+                with pytest.raises(FileNotFoundError):
+                    (candidate_root / relative).read_bytes()
+        assert not candidate_root.exists()
+    assert not staged_root.exists()
+
+
+def test_candidate_attempting_to_find_or_read_annotations_cannot_access_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    corpus_root = tmp_path / "corpus"
+    _write(corpus_root)
+
+    class CandidateProbeComplete(Exception):
+        pass
+
+    with (
+        run_v3._stage_sealed_corpus(corpus_root) as staged_root,
+        run_v3._stage_candidate_corpus(staged_root) as candidate_root,
+    ):
+        design = json.loads(
+            (candidate_root / "corpus-design.json").read_text(encoding="utf-8")
+        )
+        page = design["pages"][0]
+
+        def probing_candidate(*_args: object, **_kwargs: object) -> None:
+            assert not [
+                path
+                for path in candidate_root.rglob("*")
+                if "annotation" in path.name.lower()
+            ]
+            with pytest.raises(FileNotFoundError):
+                (candidate_root / page["annotation"]).read_bytes()
+            with pytest.raises(FileNotFoundError):
+                (candidate_root / page["source"]).read_bytes()
+            raise CandidateProbeComplete
+
+        monkeypatch.setattr(
+            run_v3.run_arm_v3,
+            "_verify_candidate_origin",
+            lambda: probing_candidate,
+        )
+        with pytest.raises(CandidateProbeComplete):
+            run_v3.run_arm_v3.execute_page(
+                corpus_root=candidate_root,
+                page_id=page["pageId"],
+                arm_id=ArmId.CONTROL,
+                execution_sha=EXECUTION_SHA,
+                repeat=1,
+                output_root=tmp_path / "output",
+            )
+
+
 def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -575,6 +670,8 @@ def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
         lambda **_kwargs: SimpleNamespace(spec={"experimentId": experiment_id}),
     )
 
+    candidate_roots: set[Path] = set()
+
     def execute_page_in_process(
         *,
         corpus_root: Path,
@@ -584,6 +681,13 @@ def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
         repeat: int,
         output_root: Path,
     ) -> None:
+        candidate_roots.add(corpus_root)
+        design = json.loads((corpus_root / "corpus-design.json").read_text(encoding="utf-8"))
+        assert not any(
+            (corpus_root / page[role]).exists()
+            for page in design["pages"]
+            for role in ("source", "annotation")
+        )
         run_v3.run_arm_v3.execute_page(
             corpus_root=corpus_root,
             page_id=page_id,
@@ -623,6 +727,8 @@ def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
     assert {path.relative_to(raw_root) for path in raw_root.rglob("*.json")} == (
         expected_raw_records
     )
+    assert len(candidate_roots) == 1
+    assert not next(iter(candidate_roots)).exists()
 
     repeat_hashes = json.loads(
         (output_root / "summary/repeat-hashes.json").read_text(encoding="utf-8")

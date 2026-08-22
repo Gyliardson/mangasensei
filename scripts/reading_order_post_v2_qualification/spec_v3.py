@@ -63,6 +63,19 @@ V3_OVERLAY_KEYS = frozenset(
     }
 )
 REVIEWED_V3_SOURCE_ROLES = {
+    "backend/src/mangasensei/__init__.py": "mangasensei-package-initializer",
+    "backend/src/mangasensei/ocr/__init__.py": "ocr-package-initializer",
+    "backend/src/mangasensei/ocr/diagnostics/__init__.py": (
+        "diagnostics-package-initializer"
+    ),
+    "backend/src/mangasensei/ocr/vendor/__init__.py": "ocr-vendor-package-initializer",
+    "backend/src/mangasensei/ocr/vendor/manga_image_translator/__init__.py": (
+        "translator-vendor-package-initializer"
+    ),
+    "backend/src/mangasensei/ocr/vendor/manga_image_translator/"
+    "manga_translator/__init__.py": "translator-package-initializer",
+    "backend/src/mangasensei/ocr/vendor/manga_image_translator/"
+    "manga_translator/utils/__init__.py": "translator-utils-package-initializer",
     "backend/src/mangasensei/ocr/reading_order.py": "panel-segmentation-dependency",
     "backend/src/mangasensei/ocr/diagnostics/reading_order_v2.py": (
         "frozen-local-order-dependency"
