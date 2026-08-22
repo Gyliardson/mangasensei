@@ -189,6 +189,7 @@ def _install_candidate(
         return factory(regions)
 
     monkeypatch.setattr(run_arm_v3, "FROZEN_CANDIDATE", candidate)
+    monkeypatch.setattr(run_arm_v3, "_verify_candidate_origin", lambda: None)
     return calls
 
 
@@ -313,6 +314,21 @@ def test_rejects_candidate_origin_mismatch(
     else:
         monkeypatch.setattr(frozen_candidate, "run_post_v2_calibration_candidate", lambda: None)
     with pytest.raises(RuntimeError, match="frozen candidate"):
+        run_arm_v3._verify_candidate_origin()
+
+
+def test_rejects_stale_loaded_candidate_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_code = run_arm_v3._loaded_candidate_code()
+    stale_code = compile("STALE = True\n", str(run_arm_v3.CANDIDATE_PATH), "exec")
+    monkeypatch.setattr(run_arm_v3, "_loaded_candidate_code", lambda: stale_code)
+    with pytest.raises(RuntimeError, match="loaded code"):
+        run_arm_v3._verify_candidate_origin()
+    monkeypatch.setattr(run_arm_v3, "_loaded_candidate_code", lambda: real_code)
+
+
+def test_rejects_frozen_candidate_alias_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(run_arm_v3, "FROZEN_CANDIDATE", lambda: None)
+    with pytest.raises(RuntimeError, match="frozen candidate alias"):
         run_arm_v3._verify_candidate_origin()
 
 

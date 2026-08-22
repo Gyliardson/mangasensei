@@ -50,7 +50,6 @@ def _run(
     (corpus / "corpus-design.json").write_text("{}", encoding="utf-8")
     spec_path = tmp_path / "experiment-spec-v3.json"
     spec_path.write_text("{}", encoding="utf-8")
-    coverage = object()
     git_values = {
         ("rev-parse", "HEAD"): EXECUTION_SHA,
         ("rev-parse", "HEAD^{tree}"): TREE_SHA,
@@ -77,9 +76,6 @@ def _run(
         patch.object(preflight_v3, "_git", side_effect=lambda *args: git_values[args]),
         patch.object(preflight_v3, "sha256_path", side_effect=lambda path: hashes[path]),
         patch.object(preflight_v3, "validate_spec_v3", return_value=resolved) as validate_spec,
-        patch.object(preflight_v3, "validate_authoring_corpus", return_value=coverage) as authoring,
-        patch.object(preflight_v3, "assert_no_historical_v2_content_reuse") as historical,
-        patch.object(preflight_v3, "assert_no_retired_post_v2_v1_reuse") as retired,
         patch.object(preflight_v3, "_validate_runtime_candidate") as runtime_candidate,
     ):
         context = preflight_v3.validate_preflight_v3(
@@ -94,21 +90,18 @@ def _run(
             execution_sha=EXECUTION_SHA,
             expected_tree_sha=TREE_SHA,
         )
-    return context, validate_spec, authoring, historical, retired, runtime_candidate
+    return context, validate_spec, runtime_candidate
 
 
 def test_preflight_v3_returns_validated_context_and_runs_strict_clean_room_gates(
     tmp_path: Path,
 ) -> None:
-    context, validate_spec, authoring, historical, retired, runtime_candidate = _run(tmp_path)
+    context, validate_spec, runtime_candidate = _run(tmp_path)
     validate_spec.assert_called_once_with(validate_spec.call_args.args[0], expected_sha256=SPEC_SHA)
-    authoring.assert_called_once()
-    historical.assert_called_once_with(authoring.call_args.args[0])
-    retired.assert_called_once_with(authoring.call_args.args[0])
     runtime_candidate.assert_called_once_with(context.spec)
     assert context.experiment_id == spec_v3.V3_EXPERIMENT_ID
     assert context.qualification_identity == _identity()
-    assert context.coverage is authoring.return_value
+    assert context.coverage is None
 
 
 @pytest.mark.parametrize(
@@ -192,79 +185,6 @@ def test_preflight_v3_rejects_non_object_manifest(tmp_path: Path) -> None:
         preflight_v3._load_manifest(manifest)
 
 
-def test_preflight_v3_propagates_clean_room_and_historical_guard_failures(tmp_path: Path) -> None:
-    for target, message in (
-        ("validate_authoring_corpus", "clean-room-invalid"),
-        ("assert_no_historical_v2_content_reuse", "historical-reuse"),
-        ("assert_no_retired_post_v2_v1_reuse", "retired-reuse"),
-    ):
-        with (
-            patch.object(preflight_v3, "validate_authoring_corpus") as authoring,
-            patch.object(preflight_v3, "assert_no_historical_v2_content_reuse") as historical,
-            patch.object(preflight_v3, "assert_no_retired_post_v2_v1_reuse") as retired,
-        ):
-            gates = {
-                "validate_authoring_corpus": authoring,
-                "assert_no_historical_v2_content_reuse": historical,
-                "assert_no_retired_post_v2_v1_reuse": retired,
-            }
-            gates[target].side_effect = RuntimeError(message)
-            with pytest.raises(RuntimeError, match=message):
-                _minimal_preflight_with_real_gate_mocks(tmp_path / target)
-
-
-def _minimal_preflight_with_real_gate_mocks(root: Path) -> None:
-    root.mkdir()
-    corpus = root / "corpus"
-    corpus.mkdir()
-    manifest = corpus / "manifest.json"
-    design = corpus / "corpus-design.json"
-    manifest.write_text(
-        json.dumps({"design": {"file": "corpus-design.json", "sha256": DESIGN_SHA}}),
-        encoding="utf-8",
-    )
-    design.write_text("{}", encoding="utf-8")
-    spec_path = root / "spec.json"
-    spec_path.write_text("{}", encoding="utf-8")
-    hashes = {
-        spec_path: SPEC_SHA,
-        spec_v3.METHODOLOGY_PATH: METHODOLOGY_SHA,
-        manifest: MANIFEST_SHA,
-        design: DESIGN_SHA,
-    }
-    git_values = {
-        ("rev-parse", "HEAD"): EXECUTION_SHA,
-        ("rev-parse", "HEAD^{tree}"): TREE_SHA,
-        ("status", "--porcelain"): "",
-    }
-    with (
-        patch.object(preflight_v3, "_git", side_effect=lambda *args: git_values[args]),
-        patch.object(preflight_v3, "sha256_path", side_effect=lambda path: hashes[path]),
-        patch.object(
-            preflight_v3,
-            "validate_spec_v3",
-            return_value={
-                "experimentId": spec_v3.V3_EXPERIMENT_ID,
-                "methodology": {"sha256": METHODOLOGY_SHA},
-                "candidateBinding": {"path": CANDIDATE_PATH},
-            },
-        ),
-        patch.object(preflight_v3, "_validate_runtime_candidate"),
-    ):
-        preflight_v3.validate_preflight_v3(
-            corpus_root=corpus,
-            spec_path=spec_path,
-            experiment_id=spec_v3.V3_EXPERIMENT_ID,
-            expected_spec_sha256=SPEC_SHA,
-            expected_methodology_sha256=METHODOLOGY_SHA,
-            expected_manifest_sha256=MANIFEST_SHA,
-            expected_design_sha256=DESIGN_SHA,
-            qualification_identity=_identity(),
-            execution_sha=EXECUTION_SHA,
-            expected_tree_sha=TREE_SHA,
-        )
-
-
 def test_preflight_v3_rejects_wrong_canonical_identity(tmp_path: Path) -> None:
     with pytest.raises(spec_v3.SpecV3Error, match="identity"):
         _run(tmp_path, qualification_identity="ropv3q-" + "0" * 64)
@@ -305,6 +225,17 @@ def test_runtime_candidate_rejects_bytes_different_from_head() -> None:
     with (
         patch.object(preflight_v3, "_git_bytes", return_value=b"not-the-candidate"),
         pytest.raises(RuntimeError, match="bytes"),
+    ):
+        preflight_v3._validate_runtime_candidate(_candidate_spec())
+
+
+def test_runtime_candidate_rejects_stale_loader_code() -> None:
+    origin = Path(preflight_v3.runtime_candidate_module.__file__).resolve(strict=True)
+    stale = compile("STALE = True\n", str(origin), "exec")
+    with (
+        patch.object(preflight_v3, "_git_bytes", return_value=origin.read_bytes()),
+        patch.object(preflight_v3, "_loaded_module_code", return_value=stale),
+        pytest.raises(RuntimeError, match="loaded code"),
     ):
         preflight_v3._validate_runtime_candidate(_candidate_spec())
 

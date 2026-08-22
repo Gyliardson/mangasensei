@@ -17,7 +17,7 @@ from .canonical import canonical_json_bytes, sha256_bytes, write_canonical_json
 from .contracts import ArmId, PageGroundTruth
 from .exercise import ExerciseReport
 from .exercise_v3 import V3DiagnosticValidationError, V3TrustedPageInput
-from .preflight_v3 import validate_preflight_v3
+from .preflight_v3 import _stage_sealed_corpus, validate_preflight_v3
 from .scoring import CorpusScore, candidate_only_wrong_pairs, score_corpus, score_page
 from .verdict import ComponentStatus, GateReason, Verdict, VerdictResult
 from .verdict_v3 import evaluate_verdict_v3
@@ -34,6 +34,34 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 EvidenceError = dict[str, object]
 Diagnostics = dict[ArmId, dict[str, dict[str, object]]]
 Orderings = dict[ArmId, dict[str, dict[str, object]]]
+
+
+def _reject_json_constant(value: str) -> object:
+    raise ValueError(f"non-finite JSON constant is forbidden: {value}")
+
+
+def _reject_symlink_components(path: Path, *, message: str) -> None:
+    absolute = path.absolute()
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            raise RuntimeError(message)
+
+
+def _create_output_root(output_root: Path) -> None:
+    parent = output_root.parent
+    _reject_symlink_components(
+        parent,
+        message="qualification output parent has a symlinked component",
+    )
+    if not parent.exists() or not parent.is_dir():
+        raise RuntimeError("qualification output parent must be an existing real directory")
+    try:
+        output_root.mkdir(mode=0o700)
+    except FileExistsError as exc:
+        raise RuntimeError("qualification output root must not already exist") from exc
+    os.chmod(output_root, 0o700)
 
 
 def _error(
@@ -112,7 +140,9 @@ def _run_fresh_process(
 
 
 def _load_output(path: Path) -> dict[str, object]:
-    value = json.loads(path.read_text(encoding="utf-8"))
+    value = json.loads(
+        path.read_text(encoding="utf-8"), parse_constant=_reject_json_constant
+    )
     if not isinstance(value, dict):
         raise ValueError("JSON object required")
     return value
@@ -436,11 +466,10 @@ def _evidence_error_from_exception(exc: Exception) -> EvidenceError:
     )
 
 
-def execute(
+def _execute_staged(
     *,
+    context: object,
     corpus_root: Path,
-    spec_path: Path,
-    experiment_id: str,
     expected_spec_sha256: str,
     expected_methodology_sha256: str,
     expected_manifest_sha256: str,
@@ -450,21 +479,6 @@ def execute(
     expected_tree_sha: str,
     output_root: Path,
 ) -> None:
-    context = validate_preflight_v3(
-        corpus_root=corpus_root,
-        spec_path=spec_path,
-        experiment_id=experiment_id,
-        expected_spec_sha256=expected_spec_sha256,
-        expected_methodology_sha256=expected_methodology_sha256,
-        expected_manifest_sha256=expected_manifest_sha256,
-        expected_design_sha256=expected_design_sha256,
-        qualification_identity=qualification_identity,
-        execution_sha=execution_sha,
-        expected_tree_sha=expected_tree_sha,
-    )
-    if output_root.exists() and any(output_root.iterdir()):
-        raise RuntimeError("qualification output root must start empty")
-
     design = load_design(corpus_root / "corpus-design.json")
     annotations, c3_rejection_page_ids = compat.load_clean_room_annotations(corpus_root)
     page_ids = tuple(record.page_id for record in design.pages)
@@ -611,6 +625,52 @@ def execute(
             "qualificationResultSha256": global_repeats[0]["qualificationResultSha256"],
         },
     )
+
+
+def execute(
+    *,
+    corpus_root: Path,
+    spec_path: Path,
+    experiment_id: str,
+    expected_spec_sha256: str,
+    expected_methodology_sha256: str,
+    expected_manifest_sha256: str,
+    expected_design_sha256: str,
+    qualification_identity: str,
+    execution_sha: str,
+    expected_tree_sha: str,
+    output_root: Path,
+) -> None:
+    context = validate_preflight_v3(
+        corpus_root=corpus_root,
+        spec_path=spec_path,
+        experiment_id=experiment_id,
+        expected_spec_sha256=expected_spec_sha256,
+        expected_methodology_sha256=expected_methodology_sha256,
+        expected_manifest_sha256=expected_manifest_sha256,
+        expected_design_sha256=expected_design_sha256,
+        qualification_identity=qualification_identity,
+        execution_sha=execution_sha,
+        expected_tree_sha=expected_tree_sha,
+    )
+    _create_output_root(output_root)
+    with _stage_sealed_corpus(
+        corpus_root,
+        expected_manifest_sha256=expected_manifest_sha256,
+        expected_design_sha256=expected_design_sha256,
+    ) as staged_root:
+        _execute_staged(
+            context=context,
+            corpus_root=staged_root,
+            expected_spec_sha256=expected_spec_sha256,
+            expected_methodology_sha256=expected_methodology_sha256,
+            expected_manifest_sha256=expected_manifest_sha256,
+            expected_design_sha256=expected_design_sha256,
+            qualification_identity=qualification_identity,
+            execution_sha=execution_sha,
+            expected_tree_sha=expected_tree_sha,
+            output_root=output_root,
+        )
 
 
 def main() -> None:

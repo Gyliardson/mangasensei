@@ -113,7 +113,7 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/preflight_v3.py",
       "role": "v3-fail-closed-preflight",
-      "gitBlobSha": "b2e50f8aca0f2834e35a4b663570913e45e7a8b1"
+      "gitBlobSha": "f22a5b27a5bca9c52c3a9cbda599525125e63f84"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/historical_guard.py",
@@ -138,12 +138,12 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/run_arm_v3.py",
       "role": "v3-clean-room-one-page-arm-runner",
-      "gitBlobSha": "c27096357ed238f47dae805075b5c39b4b8a8c01"
+      "gitBlobSha": "49a1942ca9b3e6ebe80a319160c37fb952a8ade4"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/run_v3.py",
       "role": "v3-top-level-qualification-runner",
-      "gitBlobSha": "b5e59131d3c9e11f397f73ee79f103d7e1461edb"
+      "gitBlobSha": "5608fa11780c4a729bad0100d5e4549d900ba2e1"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/scoring.py",

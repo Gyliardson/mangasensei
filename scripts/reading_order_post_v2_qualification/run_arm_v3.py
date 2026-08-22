@@ -4,9 +4,13 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from shutil import which
+from types import CodeType
 from typing import Any
 
 import numpy as np
@@ -39,6 +43,7 @@ CANDIDATE_PATH = (
     / "diagnostics"
     / "reading_order_post_v2_calibration.py"
 ).resolve()
+CANDIDATE_REPO_PATH = CANDIDATE_PATH.relative_to(REPO_ROOT).as_posix()
 BOUND_CANDIDATE = candidate_module.run_post_v2_calibration_candidate
 FROZEN_CANDIDATE = BOUND_CANDIDATE
 _PAGE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -60,6 +65,31 @@ class _PageAssets:
     input_path: Path
 
 
+def _loaded_candidate_code() -> CodeType:
+    spec = getattr(candidate_module, "__spec__", None)
+    loader = getattr(spec, "loader", None)
+    get_code = getattr(loader, "get_code", None)
+    if not callable(get_code):
+        raise RuntimeError("frozen candidate loader cannot provide loaded code")
+    code = get_code(candidate_module.__name__)
+    if not isinstance(code, CodeType):
+        raise RuntimeError("frozen candidate loader did not provide module code")
+    return code
+
+
+def _head_candidate_bytes() -> bytes:
+    git = which("git")
+    if git is None:
+        raise RuntimeError("git is required to authenticate frozen candidate source")
+    result = subprocess.run(  # noqa: S603
+        [git, "show", f"HEAD:{CANDIDATE_REPO_PATH}"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    )
+    return result.stdout
+
+
 def _verify_candidate_origin() -> None:
     module_file = getattr(candidate_module, "__file__", None)
     if not isinstance(module_file, str) or Path(module_file).resolve() != CANDIDATE_PATH:
@@ -69,6 +99,21 @@ def _verify_candidate_origin() -> None:
         or candidate_module.run_post_v2_calibration_candidate is not BOUND_CANDIDATE
     ):
         raise RuntimeError("frozen candidate module callable mismatch")
+    if FROZEN_CANDIDATE is not BOUND_CANDIDATE:
+        raise RuntimeError("frozen candidate alias does not match bound candidate")
+    source_bytes = CANDIDATE_PATH.read_bytes()
+    head_bytes = _head_candidate_bytes()
+    if source_bytes != head_bytes:
+        raise RuntimeError("frozen candidate source does not match authenticated HEAD source")
+    expected_code = compile(
+        head_bytes,
+        str(CANDIDATE_PATH),
+        "exec",
+        dont_inherit=True,
+        optimize=sys.flags.optimize,
+    )
+    if _loaded_candidate_code() != expected_code:
+        raise RuntimeError("frozen candidate loaded code does not match authenticated HEAD source")
 
 
 def _reject_symlink_components(path: Path, *, role: str) -> None:

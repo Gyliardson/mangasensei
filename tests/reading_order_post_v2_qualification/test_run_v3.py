@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -182,6 +184,12 @@ def _install_harness(
         return _verdict()
 
     monkeypatch.setattr(run_v3, "validate_preflight_v3", preflight)
+    @contextmanager
+    def staged(corpus_root: Path, **_kwargs: object) -> Iterator[Path]:
+        events.append("stage")
+        yield corpus_root
+
+    monkeypatch.setattr(run_v3, "_stage_sealed_corpus", staged)
     monkeypatch.setattr(run_v3.subprocess, "run", process)
     monkeypatch.setattr(run_v3, "load_design", lambda _path: _Design())
     monkeypatch.setattr(
@@ -249,7 +257,7 @@ def test_preflight_is_first_and_runs_three_fresh_seeded_processes_per_arm(
 
     output = _execute(tmp_path)
 
-    assert events[0] == "preflight"
+    assert events[:2] == ["preflight", "stage"]
     assert len(state["processes"]) == len(ArmId) * 3
     assert {
         (int(_arg(command, "--repeat")), kwargs["env"]["PYTHONHASHSEED"])
@@ -460,6 +468,26 @@ def test_post_candidate_evidence_failures_are_canonical_invalid_without_scores(
     assert not list((output / "summary").glob("*/scores.json"))
 
 
+def test_nonfinite_child_json_is_canonical_invalid_without_scores(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = _install_harness(monkeypatch, events=[])
+    real_load = run_v3._load_output
+
+    def nonfinite(path: Path) -> dict[str, object]:
+        if path.name.endswith(".diagnostic.json"):
+            path.write_text('{"value":NaN}', encoding="utf-8")
+        return real_load(path)
+
+    monkeypatch.setattr(run_v3, "_load_output", nonfinite)
+    output = _execute(tmp_path)
+
+    verdict = json.loads((output / "summary/verdict.json").read_text(encoding="utf-8"))
+    assert verdict["verdict"] == "INVALID_EXPERIMENT"
+    assert state["score_calls"] == 0
+    assert not (output / "summary/exercise.json").exists()
+
+
 def test_nonempty_output_is_rejected_after_preflight_without_candidate_execution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -469,10 +497,60 @@ def test_nonempty_output_is_rejected_after_preflight_without_candidate_execution
     output.mkdir()
     (output / "existing.txt").write_text("occupied", encoding="utf-8")
 
-    with pytest.raises(RuntimeError, match="must start empty"):
+    with pytest.raises(RuntimeError, match="must not already exist"):
         _execute(tmp_path)
 
     assert events == ["preflight"]
+
+
+def test_output_root_rejects_symlinked_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    _install_harness(monkeypatch, events=events)
+    real_parent = tmp_path / "real-parent"
+    real_parent.mkdir()
+    linked_parent = tmp_path / "linked-parent"
+    try:
+        linked_parent.symlink_to(real_parent, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink creation unavailable")
+
+    with pytest.raises(RuntimeError, match="symlink"):
+        run_v3.execute(
+            corpus_root=tmp_path / "corpus",
+            spec_path=tmp_path / "spec.json",
+            experiment_id="experiment-v3",
+            expected_spec_sha256="1" * 64,
+            expected_methodology_sha256="2" * 64,
+            expected_manifest_sha256="3" * 64,
+            expected_design_sha256="4" * 64,
+            qualification_identity="identity",
+            execution_sha=EXECUTION_SHA,
+            expected_tree_sha="5" * 40,
+            output_root=linked_parent / "output",
+        )
+    assert events == ["preflight"]
+
+
+@pytest.mark.parametrize("role", ["input", "annotation"])
+def test_staged_corpus_is_a_byte_snapshot_when_original_role_is_replaced(
+    role: str, tmp_path: Path
+) -> None:
+    corpus_root = tmp_path / "corpus"
+    _write(corpus_root)
+    manifest = json.loads((corpus_root / "manifest.json").read_text(encoding="utf-8"))
+    relative = manifest["pages"][0][role]["file"]
+    original = corpus_root / relative
+
+    with run_v3._stage_sealed_corpus(corpus_root) as staged_root:
+        staged = staged_root / relative
+        expected = staged.read_bytes()
+        original.write_bytes(b"replacement")
+        assert staged.read_bytes() == expected
+        assert staged_root != corpus_root
+
+    assert not staged_root.exists()
 
 
 def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
@@ -488,6 +566,8 @@ def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
     expected_tree_sha = "5" * 40
     qualification_identity = "synthetic-v3-qualification"
     _write(corpus_root)
+    expected_manifest_sha256 = run_v3.sha256_bytes((corpus_root / "manifest.json").read_bytes())
+    expected_design_sha256 = run_v3.sha256_bytes((corpus_root / "corpus-design.json").read_bytes())
 
     monkeypatch.setattr(
         run_v3,
