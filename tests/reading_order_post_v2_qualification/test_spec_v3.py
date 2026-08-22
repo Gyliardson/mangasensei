@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import subprocess
 from pathlib import Path
+from shutil import which
 from unittest.mock import patch
 
 import pytest
@@ -17,6 +19,9 @@ SPEC_PATH = (
     / "spec"
     / "experiment-spec-v3.json"
 )
+EXECUTION_SHA = "5" * 40
+GIT = which("git")
+assert GIT is not None
 
 
 def _raw_spec() -> dict[str, object]:
@@ -31,25 +36,31 @@ def _validate(raw: dict[str, object] | None = None, tmp_path: Path | None = None
         path.write_text(json.dumps(raw), encoding="utf-8")
 
     with (
-        patch.object(spec_v3, "validate_spec", return_value={"v2": "validated"}) as base,
+        patch.object(spec_v3, "_validate_base_v2", return_value={"v2": "validated"}) as base,
         patch.object(
             spec_v3,
             "_git",
             side_effect=lambda *args: _git_answer(raw or _raw_spec(), *args),
         ),
     ):
-        result = spec_v3.validate_spec_v3(path)
-    base.assert_called_once_with(spec_v3.BASE_V2_SPEC_PATH)
+        result = spec_v3.validate_spec_v3(path, execution_sha=EXECUTION_SHA)
+    base.assert_called_once_with(
+        execution_sha=EXECUTION_SHA,
+        git_root=spec_v3.REPO_ROOT,
+    )
     return result
 
 
 def _git_answer(raw: dict[str, object], *args: str) -> str:
+    if args[0] == "cat-file":
+        assert args[1] == "-t"
+        return "blob"
     assert args[0] == "rev-parse"
     revision = args[1]
     for key in ("baseV2Spec", "methodology"):
         binding = raw[key]
         assert isinstance(binding, dict)
-        if revision == f'HEAD:{binding["path"]}':
+        if revision == f'{EXECUTION_SHA}:{binding["path"]}':
             return str(binding["gitBlobSha"])
     candidate = raw["candidateBinding"]
     assert isinstance(candidate, dict)
@@ -57,12 +68,14 @@ def _git_answer(raw: dict[str, object], *args: str) -> str:
         return str(candidate["treeSha"])
     if revision in {
         f'{candidate["commitSha"]}:{candidate["path"]}',
-        f'HEAD:{candidate["path"]}',
+        f'{EXECUTION_SHA}:{candidate["path"]}',
     }:
         return str(candidate["gitBlobSha"])
     bindings = raw["reviewedV3SourceClosure"]
     assert isinstance(bindings, list)
-    by_revision = {f'HEAD:{item["path"]}': item["gitBlobSha"] for item in bindings}
+    by_revision = {
+        f'{EXECUTION_SHA}:{item["path"]}': item["gitBlobSha"] for item in bindings
+    }
     return str(by_revision[revision])
 
 
@@ -115,7 +128,40 @@ def test_v3_source_closure_is_exact_and_has_no_spec_self_binding() -> None:
     assert ".github/workflows/reading-order-post-v2-qualification.yml" not in paths
 
 
-def test_v3_candidate_is_frozen_and_validated_against_head() -> None:
+def test_v3_source_ledger_uses_git_blob_hashes_of_reviewed_files() -> None:
+    bindings = _raw_spec()["reviewedV3SourceClosure"]
+    assert isinstance(bindings, list)
+    for binding in bindings:
+        assert isinstance(binding, dict)
+        actual = subprocess.run(  # noqa: S603
+            [GIT, "hash-object", "--", str(binding["path"])],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert actual == binding["gitBlobSha"]
+
+
+def test_v3_base_resolver_composes_against_real_execution_git_objects() -> None:
+    execution_sha = subprocess.run(  # noqa: S603
+        [GIT, "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    resolved = spec_v3._validate_base_v2(
+        execution_sha=execution_sha,
+        git_root=REPO_ROOT,
+    )
+
+    assert resolved["schemaVersion"] == "reading-order-post-v2-experiment-spec-v2"
+    assert resolved["experimentId"] == "reading-order-post-v2-c1-c2-c3-b1-v2"
+
+
+def test_v3_candidate_is_frozen_and_validated_against_execution_sha() -> None:
     resolved = _validate()
     assert resolved["candidateBinding"] == _raw_spec()["candidateBinding"]
     assert resolved["resolvedBaseV2"] == {"v2": "validated"}
@@ -165,7 +211,7 @@ def test_v3_rejects_transitive_generic2_source_drift() -> None:
         "manga_translator/utils/generic2.py"
     )
     by_revision = {
-        f'HEAD:{item["path"]}': item["gitBlobSha"]
+        f'{EXECUTION_SHA}:{item["path"]}': item["gitBlobSha"]
         for item in bindings
         if isinstance(item, dict)
     }
@@ -173,13 +219,20 @@ def test_v3_rejects_transitive_generic2_source_drift() -> None:
         item for item in bindings if isinstance(item, dict) and item["path"] == generic2_path
     )
     generic2["gitBlobSha"] = "0" * 40
-    by_revision[f"HEAD:{generic2_path}"] = "4e3df402f9cd3b4c1fed1b011c7cfb611d4e90b1"
+    by_revision[f"{EXECUTION_SHA}:{generic2_path}"] = (
+        "4e3df402f9cd3b4c1fed1b011c7cfb611d4e90b1"
+    )
+
+    def git_answer(*args: str) -> str:
+        if args[0] == "cat-file":
+            return "blob"
+        return str(by_revision[args[1]])
 
     with (
-        patch.object(spec_v3, "_git", side_effect=lambda *_args: by_revision[_args[1]]),
+        patch.object(spec_v3, "_git", side_effect=git_answer),
         pytest.raises(spec_v3.SpecV3Error, match="generic2.py"),
     ):
-        spec_v3._validate_source_closure(bindings)
+        spec_v3._validate_source_closure(bindings, execution_sha=EXECUTION_SHA)
 
 
 def test_v3_rejects_spec_self_binding(tmp_path: Path) -> None:
@@ -212,7 +265,7 @@ def test_v3_rejects_malformed_duplicate_or_unfinalized_source_closure(
         patch.object(spec_v3, "_git", return_value="0" * 40),
         pytest.raises(spec_v3.SpecV3Error, match="source closure"),
     ):
-        spec_v3._validate_source_closure(bindings)
+        spec_v3._validate_source_closure(bindings, execution_sha=EXECUTION_SHA)
 
 
 @pytest.mark.parametrize(

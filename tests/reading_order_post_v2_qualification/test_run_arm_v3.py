@@ -4,8 +4,10 @@ import hashlib
 import inspect
 import json
 import os
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from shutil import which
 from types import SimpleNamespace
 from typing import Any
 
@@ -32,7 +34,14 @@ from mangasensei.ocr.diagnostics.reading_order_post_v2_calibration import (
 from mangasensei.ocr.reading_order import PanelBox
 
 PAGE_ID = "page.alpha"
-EXECUTION_SHA = "a" * 40
+GIT = which("git")
+assert GIT is not None
+EXECUTION_SHA = subprocess.run(  # noqa: S603
+    [GIT, "rev-parse", "HEAD"],
+    check=True,
+    capture_output=True,
+    text=True,
+).stdout.strip()
 
 
 def _quad(x1: int, y1: int, x2: int, y2: int) -> list[list[int]]:
@@ -189,7 +198,9 @@ def _install_candidate(
         calls.append((pixels, regions, page_height, config))
         return factory(regions)
 
-    monkeypatch.setattr(run_arm_v3, "_verify_candidate_origin", lambda: candidate)
+    monkeypatch.setattr(
+        run_arm_v3, "_verify_candidate_origin", lambda **_kwargs: candidate
+    )
     return calls
 
 
@@ -220,6 +231,8 @@ def test_executes_direct_verified_candidate_and_preserves_serialization(
         "execution_sha",
         "repeat",
         "output_root",
+        "source_root",
+        "git_root",
     }
     assert len(calls) == 1
     pixels, regions, page_height, config = calls[0]
@@ -569,36 +582,28 @@ def test_rejects_ordering_and_diagnostic_disagreement(
         _execute(root, tmp_path / "output")
 
 
-def test_cli_is_equivalent_to_execute_page(
+def test_direct_cli_is_rejected_without_authenticated_bootstrap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = tmp_path / "corpus"
     _write_clean_room_page(root)
     _install_candidate(monkeypatch, _result)
     output = tmp_path / "cli-output"
-    run_arm_v3.main(
-        [
-            "--corpus-root",
-            str(root),
-            "--page-id",
-            PAGE_ID,
-            "--arm",
-            ArmId.C1_C2_C3_B1.value,
-            "--execution-sha",
-            EXECUTION_SHA,
-            "--repeat",
-            "2",
-            "--output-root",
-            str(output),
-        ]
-    )
-    ordering = json.loads(
-        (
-            output
-            / "raw"
-            / ArmId.C1_C2_C3_B1.value
-            / "repeat-2"
-            / f"{PAGE_ID}.ordering.json"
-        ).read_text(encoding="utf-8")
-    )
-    assert ordering["finalOrder"] == ["region-second", "region-first"]
+    with pytest.raises(RuntimeError, match="isolated bootstrap"):
+        run_arm_v3.main(
+            [
+                "--corpus-root",
+                str(root),
+                "--page-id",
+                PAGE_ID,
+                "--arm",
+                ArmId.C1_C2_C3_B1.value,
+                "--execution-sha",
+                EXECUTION_SHA,
+                "--repeat",
+                "2",
+                "--output-root",
+                str(output),
+            ]
+        )
+    assert not output.exists()

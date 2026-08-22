@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from shutil import which
 from types import CodeType, ModuleType
-from typing import Any
+from typing import Any, cast
 
 from scripts.reading_order_v3_authoring.validate import validate_corpus as validate_authoring_corpus
 
@@ -26,14 +26,15 @@ from . import exercise_v3
 from .canonical import sha256_path
 from .historical_guard import assert_no_historical_v2_content_reuse
 from .retired_guard import assert_no_retired_post_v2_v1_reuse
-from .spec import REPO_ROOT
 from .spec_v3 import (
     METHODOLOGY_PATH,
     validate_qualification_identity_v3,
     validate_spec_v3,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,7 +275,7 @@ def _git(*args: str) -> str:
     if git is None:
         raise RuntimeError("git is required for v3 qualification preflight")
     result = subprocess.run(  # noqa: S603
-        [git, *args],
+        [git, "--no-replace-objects", *args],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
@@ -283,17 +284,43 @@ def _git(*args: str) -> str:
     return result.stdout.strip()
 
 
-def _git_bytes(*args: str) -> bytes:
+def _git_at(git_root: Path, *args: str, text: bool = True) -> str | bytes:
     git = which("git")
     if git is None:
         raise RuntimeError("git is required for v3 qualification preflight")
     result = subprocess.run(  # noqa: S603
-        [git, *args],
-        cwd=REPO_ROOT,
+        [git, "--no-replace-objects", *args],
+        cwd=git_root,
         check=True,
         capture_output=True,
+        text=text,
     )
-    return result.stdout
+    return cast(str | bytes, result.stdout.strip() if text else result.stdout)
+
+
+def _git_from(git_root: Path, *args: str) -> str:
+    if git_root == REPO_ROOT:
+        return _git(*args)
+    value = _git_at(git_root, *args)
+    if not isinstance(value, str):
+        raise RuntimeError("git text operation returned bytes")
+    return value
+
+
+def _git_bytes(*args: str) -> bytes:
+    value = _git_at(REPO_ROOT, *args, text=False)
+    if not isinstance(value, bytes):
+        raise RuntimeError("git byte operation returned text")
+    return value
+
+
+def _git_bytes_from(git_root: Path, *args: str) -> bytes:
+    if git_root == REPO_ROOT:
+        return _git_bytes(*args)
+    value = _git_at(git_root, *args, text=False)
+    if not isinstance(value, bytes):
+        raise RuntimeError("git byte operation returned text")
+    return value
 
 
 def _validate_methodology_hash(expected_methodology_sha256: str) -> None:
@@ -319,13 +346,19 @@ def _require_module(value: object) -> ModuleType:
     return value
 
 
-def _validate_runtime_candidate(spec: dict[str, Any]) -> None:
+def _validate_runtime_candidate(
+    spec: dict[str, Any],
+    *,
+    execution_sha: str = "HEAD",
+    source_root: Path = REPO_ROOT,
+    git_root: Path = REPO_ROOT,
+) -> None:
     candidate_module = _require_module(runtime_candidate_module)
     binding = spec.get("candidateBinding")
     if not isinstance(binding, dict) or not isinstance(binding.get("path"), str):
         raise RuntimeError("frozen v3 candidate path binding is missing")
     candidate_repo_path = binding["path"]
-    expected_origin = (REPO_ROOT / candidate_repo_path).resolve(strict=True)
+    expected_origin = (source_root / candidate_repo_path).resolve(strict=True)
     raw_origin = getattr(candidate_module, "__file__", None)
     if not isinstance(raw_origin, (str, Path)):
         raise RuntimeError("runtime candidate module origin is missing")
@@ -339,13 +372,18 @@ def _validate_runtime_candidate(spec: dict[str, Any]) -> None:
         raise RuntimeError("exercise_v3 candidate must be the same module object")
 
     runtime_bytes = runtime_origin.read_bytes()
-    head_bytes = _git_bytes("show", f"HEAD:{candidate_repo_path}")
+    execution_bytes = _git_bytes_from(
+        git_root, "show", f"{execution_sha}:{candidate_repo_path}"
+    )
     runtime_sha256 = hashlib.sha256(runtime_bytes).digest()
-    head_sha256 = hashlib.sha256(head_bytes).digest()
-    if not hmac.compare_digest(runtime_sha256, head_sha256) or runtime_bytes != head_bytes:
-        raise RuntimeError("runtime candidate bytes do not match HEAD-bound candidate bytes")
+    execution_sha256 = hashlib.sha256(execution_bytes).digest()
+    if (
+        not hmac.compare_digest(runtime_sha256, execution_sha256)
+        or runtime_bytes != execution_bytes
+    ):
+        raise RuntimeError("runtime candidate bytes do not match execution-bound candidate bytes")
     expected_code = compile(
-        head_bytes,
+        execution_bytes,
         str(expected_origin),
         "exec",
         dont_inherit=True,
@@ -367,15 +405,33 @@ def validate_preflight_v3(
     qualification_identity: str,
     execution_sha: str,
     expected_tree_sha: str,
+    source_root: Path = REPO_ROOT,
+    git_root: Path = REPO_ROOT,
 ) -> ValidatedV3Context:
-    if _git("rev-parse", "HEAD") != execution_sha:
-        raise ValueError("execution SHA does not match checked-out HEAD")
-    if _git("rev-parse", "HEAD^{tree}") != expected_tree_sha:
+    if (
+        _GIT_SHA_RE.fullmatch(execution_sha) is None
+        or _GIT_SHA_RE.fullmatch(expected_tree_sha) is None
+    ):
+        raise ValueError("execution Git identities must be lowercase 40-character SHAs")
+    if _git_from(git_root, "rev-parse", f"{execution_sha}^{{commit}}") != execution_sha:
+        raise ValueError("execution SHA does not resolve to the requested commit")
+    if _git_from(git_root, "rev-parse", f"{execution_sha}^{{tree}}") != expected_tree_sha:
         raise ValueError("execution tree SHA mismatch")
-    if _git("status", "--porcelain"):
-        raise RuntimeError("v3 preflight requires a clean repository")
 
-    spec = validate_spec_v3(spec_path, expected_sha256=expected_spec_sha256)
+    expected_spec_path = (
+        source_root
+        / "scripts/reading_order_post_v2_qualification/spec/experiment-spec-v3.json"
+    )
+    if source_root != REPO_ROOT and spec_path.resolve(strict=True) != expected_spec_path.resolve(
+        strict=True
+    ):
+        raise ValueError("v3 experiment spec must come from the authenticated source snapshot")
+    spec = validate_spec_v3(
+        spec_path,
+        expected_sha256=expected_spec_sha256,
+        execution_sha=execution_sha,
+        git_root=git_root,
+    )
     if spec["experimentId"] != experiment_id:
         raise ValueError("dispatch experiment identity does not match frozen v3 spec")
     _validate_methodology_hash(expected_methodology_sha256)
@@ -385,7 +441,12 @@ def validate_preflight_v3(
         or methodology.get("sha256") != expected_methodology_sha256
     ):
         raise ValueError("dispatch methodology hash does not match frozen v3 spec")
-    _validate_runtime_candidate(spec)
+    _validate_runtime_candidate(
+        spec,
+        execution_sha=execution_sha,
+        source_root=source_root,
+        git_root=git_root,
+    )
 
     with _stage_sealed_corpus(
         corpus_root,

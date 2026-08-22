@@ -6,15 +6,18 @@ import hmac
 import json
 import re
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from shutil import which
-from typing import Any
+from types import ModuleType
+from typing import Any, cast
 
 from scripts.reading_order_v3_authoring.contracts import AUTHORING_SLICES
 
 from .canonical import sha256_path
 from .exercise_v3 import EXERCISE_MINIMA_V3
-from .spec import REPO_ROOT, validate_spec
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 V3_SPEC_SCHEMA_VERSION = "reading-order-post-v2-experiment-spec-v3"
 V3_EXPERIMENT_ID = "reading-order-post-v2-c1-c2-c3-b1-v3"
@@ -93,6 +96,9 @@ REVIEWED_V3_SOURCE_ROLES = {
         "qualification-schema-identities"
     ),
     "scripts/reading_order_post_v2_qualification/canonical.py": "canonical-serialization",
+    "scripts/reading_order_post_v2_qualification/bootstrap_v3.py": (
+        "stdlib-only-authenticated-source-bootstrap"
+    ),
     "scripts/reading_order_post_v2_qualification/contracts.py": (
         "inherited-scientific-contracts"
     ),
@@ -165,13 +171,65 @@ def _git(*args: str) -> str:
     if git is None:
         raise RuntimeError("git is required for frozen v3 source validation")
     result = subprocess.run(  # noqa: S603
-        [git, *args],
+        [git, "--no-replace-objects", *args],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
         text=True,
     )
     return result.stdout.strip()
+
+
+def _git_at(git_root: Path, *args: str) -> str:
+    if git_root == REPO_ROOT:
+        return _git(*args)
+    git = which("git")
+    if git is None:
+        raise RuntimeError("git is required for frozen v3 source validation")
+    result = subprocess.run(  # noqa: S603
+        [git, "--no-replace-objects", *args],
+        cwd=git_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def _matches_blob(git_root: Path, revision: str, expected_blob: str) -> bool:
+    actual = _git_at(git_root, "rev-parse", revision)
+    return actual == expected_blob and _git_at(git_root, "cat-file", "-t", actual) == "blob"
+
+
+def _validate_base_v2(
+    *, execution_sha: str, git_root: Path
+) -> dict[str, Any]:
+    validator_path = REPO_ROOT / "scripts/reading_order_post_v2_qualification/spec.py"
+    source = validator_path.read_bytes()
+    module_name = f"{__package__}._authenticated_v2_spec_{hashlib.sha256(source).hexdigest()}"
+    module = ModuleType(module_name)
+    module.__package__ = __package__
+    module.__file__ = str(validator_path)
+    code = compile(
+        source,
+        str(validator_path),
+        "exec",
+        dont_inherit=True,
+    )
+    exec(code, module.__dict__)  # noqa: S102 - reviewed authenticated snapshot source
+
+    def explicit_git(*args: str) -> str:
+        revisions = tuple(
+            execution_sha + value[4:] if value == "HEAD" or value.startswith("HEAD:") else value
+            for value in args
+        )
+        return _git_at(git_root, *revisions)
+
+    module.__dict__["_git"] = explicit_git
+    validator = cast(
+        Callable[[Path], dict[str, Any]], module.__dict__["validate_spec"]
+    )
+    return validator(BASE_V2_SPEC_PATH)
 
 
 def _load_object(path: Path) -> dict[str, Any]:
@@ -181,10 +239,19 @@ def _load_object(path: Path) -> dict[str, Any]:
     return value
 
 
-def _validate_frozen_file(binding: dict[str, str], path: Path, label: str) -> None:
+def _validate_frozen_file(
+    binding: dict[str, str],
+    path: Path,
+    label: str,
+    *,
+    execution_sha: str = "HEAD",
+    git_root: Path = REPO_ROOT,
+) -> None:
     if sha256_path(path) != binding["sha256"]:
         raise SpecV3Error(f"{label} SHA-256 changed")
-    if _git("rev-parse", f'HEAD:{binding["path"]}') != binding["gitBlobSha"]:
+    if not _matches_blob(
+        git_root, f'{execution_sha}:{binding["path"]}', binding["gitBlobSha"]
+    ):
         raise SpecV3Error(f"{label} Git blob changed")
 
 
@@ -211,22 +278,32 @@ def _validate_methodology() -> None:
         raise SpecV3Error("methodology candidate binding changed")
 
 
-def _validate_candidate(candidate: object) -> None:
+def _validate_candidate(
+    candidate: object,
+    *,
+    execution_sha: str = "HEAD",
+    git_root: Path = REPO_ROOT,
+) -> None:
     if candidate != CANDIDATE_BINDING:
         raise SpecV3Error("v3 candidate binding changed")
     commit = CANDIDATE_BINDING["commitSha"]
     tree = CANDIDATE_BINDING["treeSha"]
     path = CANDIDATE_BINDING["path"]
     blob = CANDIDATE_BINDING["gitBlobSha"]
-    if _git("rev-parse", f"{commit}^{{tree}}") != tree:
+    if _git_at(git_root, "rev-parse", f"{commit}^{{tree}}") != tree:
         raise SpecV3Error("v3 candidate commit/tree binding mismatch")
-    if _git("rev-parse", f"{commit}:{path}") != blob:
+    if not _matches_blob(git_root, f"{commit}:{path}", blob):
         raise SpecV3Error("v3 candidate commit/source binding mismatch")
-    if _git("rev-parse", f"HEAD:{path}") != blob:
+    if not _matches_blob(git_root, f"{execution_sha}:{path}", blob):
         raise SpecV3Error("v3 candidate source changed in execution tree")
 
 
-def _validate_source_closure(value: object) -> None:
+def _validate_source_closure(
+    value: object,
+    *,
+    execution_sha: str = "HEAD",
+    git_root: Path = REPO_ROOT,
+) -> None:
     if not isinstance(value, list) or len(value) != len(REVIEWED_V3_SOURCE_ROLES):
         raise SpecV3Error("reviewed v3 source closure path set changed")
     actual: list[tuple[str, str]] = []
@@ -241,14 +318,21 @@ def _validate_source_closure(value: object) -> None:
             raise SpecV3Error("reviewed v3 source closure contains duplicate or self binding")
         seen.add(path)
         actual.append((path, role))
-        if _HEX40_RE.fullmatch(blob) is None or _git("rev-parse", f"HEAD:{path}") != blob:
+        if (
+            _HEX40_RE.fullmatch(blob) is None
+            or not _matches_blob(git_root, f"{execution_sha}:{path}", blob)
+        ):
             raise SpecV3Error(f"reviewed v3 source closure binding changed: {path}")
     if actual != list(REVIEWED_V3_SOURCE_ROLES.items()):
         raise SpecV3Error("reviewed v3 source closure path or role changed")
 
 
 def validate_spec_v3(
-    path: Path = V3_SPEC_PATH, *, expected_sha256: str | None = None
+    path: Path = V3_SPEC_PATH,
+    *,
+    expected_sha256: str | None = None,
+    execution_sha: str = "HEAD",
+    git_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     if expected_sha256 is not None and sha256_path(path) != expected_sha256:
         raise SpecV3Error("v3 experiment spec SHA-256 mismatch")
@@ -274,12 +358,35 @@ def validate_spec_v3(
     if overlay["exerciseMinima"] != EXERCISE_MINIMA_V3:
         raise SpecV3Error("frozen v3 exercise minima changed")
 
-    _validate_frozen_file(BASE_V2_BINDING, BASE_V2_SPEC_PATH, "base v2 spec")
-    resolved_v2 = validate_spec(BASE_V2_SPEC_PATH)
-    _validate_frozen_file(METHODOLOGY_BINDING, METHODOLOGY_PATH, "methodology")
+    _validate_frozen_file(
+        BASE_V2_BINDING,
+        BASE_V2_SPEC_PATH,
+        "base v2 spec",
+        execution_sha=execution_sha,
+        git_root=git_root,
+    )
+    resolved_v2 = _validate_base_v2(
+        execution_sha=execution_sha,
+        git_root=git_root,
+    )
+    _validate_frozen_file(
+        METHODOLOGY_BINDING,
+        METHODOLOGY_PATH,
+        "methodology",
+        execution_sha=execution_sha,
+        git_root=git_root,
+    )
     _validate_methodology()
-    _validate_candidate(overlay["candidateBinding"])
-    _validate_source_closure(overlay["reviewedV3SourceClosure"])
+    _validate_candidate(
+        overlay["candidateBinding"],
+        execution_sha=execution_sha,
+        git_root=git_root,
+    )
+    _validate_source_closure(
+        overlay["reviewedV3SourceClosure"],
+        execution_sha=execution_sha,
+        git_root=git_root,
+    )
     return {**copy.deepcopy(overlay), "resolvedBaseV2": resolved_v2}
 
 

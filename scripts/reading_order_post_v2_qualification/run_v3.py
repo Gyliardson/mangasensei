@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -26,9 +27,10 @@ from .scoring import CorpusScore, candidate_only_wrong_pairs, score_corpus, scor
 from .verdict import ComponentStatus, GateReason, Verdict, VerdictResult
 from .verdict_v3 import evaluate_verdict_v3
 
-HASH_SEEDS = (101, 202, 303)
+REPEATS = (1, 2, 3)
 RUNNER_MODULE = "scripts.reading_order_post_v2_qualification.run_v3"
 ARM_RUNNER_MODULE = "scripts.reading_order_post_v2_qualification.run_arm_v3"
+BOOTSTRAP_REPO_PATH = "scripts/reading_order_post_v2_qualification/bootstrap_v3.py"
 ORDERING_SCHEMA_VERSION = "reading-order-post-v2-ordering-v1"
 ORDERING_FIELDS = frozenset(
     {"schemaVersion", "experimentArm", "executionSha", "pageId", "finalOrder"}
@@ -68,6 +70,13 @@ def _create_output_root(output_root: Path) -> None:
     os.chmod(output_root, 0o700)
 
 
+def _validate_output_location(corpus_root: Path, output_root: Path) -> None:
+    corpus = corpus_root.absolute().resolve(strict=False)
+    output = output_root.absolute().resolve(strict=False)
+    if output == corpus or output.is_relative_to(corpus):
+        raise RuntimeError("qualification output root must be outside corpus root")
+
+
 def _error(
     code: str,
     location: str,
@@ -83,19 +92,12 @@ def _error(
     return record
 
 
-def _child_environment(seed: int) -> dict[str, str]:
+def _child_environment() -> dict[str, str]:
     env = {
         key: value
         for key, value in os.environ.items()
         if not key.upper().startswith("PYTHON")
     }
-    env.update(
-        {
-            "PYTHONPATH": os.pathsep.join((str(REPO_ROOT), str(REPO_ROOT / "backend" / "src"))),
-            "PYTHONNOUSERSITE": "1",
-            "PYTHONHASHSEED": str(seed),
-        }
-    )
     return env
 
 
@@ -105,32 +107,53 @@ def _run_fresh_process(
     page_id: str,
     arm: ArmId,
     execution_sha: str,
+    expected_tree_sha: str,
+    expected_spec_sha256: str,
     repeat: int,
     output_root: Path,
+    source_root: Path = REPO_ROOT,
+    git_root: Path = REPO_ROOT,
 ) -> EvidenceError | None:
     command = [
         sys.executable,
-        "-m",
-        ARM_RUNNER_MODULE,
-        "--corpus-root",
-        str(corpus_root),
-        "--page-id",
-        page_id,
-        "--arm",
-        arm.value,
+        "-I",
+        "-S",
+        str(source_root / BOOTSTRAP_REPO_PATH),
+        "arm",
+        "--source-root",
+        str(source_root),
+        "--git-root",
+        str(git_root),
         "--execution-sha",
         execution_sha,
-        "--repeat",
-        str(repeat),
-        "--output-root",
-        str(output_root),
+        "--expected-tree-sha",
+        expected_tree_sha,
+        "--expected-spec-sha256",
+        expected_spec_sha256,
     ]
+    command.extend(
+        [
+            "--",
+            "--corpus-root",
+            str(corpus_root),
+            "--page-id",
+            page_id,
+            "--arm",
+            arm.value,
+            "--execution-sha",
+            execution_sha,
+            "--repeat",
+            str(repeat),
+            "--output-root",
+            str(output_root),
+        ]
+    )
     location = f"{arm.value}/repeat-{repeat}/{page_id}"
     try:
         subprocess.run(  # noqa: S603
             command,
-            cwd=REPO_ROOT,
-            env=_child_environment(HASH_SEEDS[repeat - 1]),
+            cwd=source_root,
+            env=_child_environment(),
             check=True,
         )
     except Exception as exc:  # noqa: BLE001 - child execution evidence boundary
@@ -263,7 +286,7 @@ def _raw_repeat_metadata(
 ) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
     expected_pages = set(page_ids)
-    for repeat, seed in enumerate(HASH_SEEDS, start=1):
+    for repeat in REPEATS:
         arms: dict[str, object] = {}
         for arm in ArmId:
             diagnostics = diagnostics_by_repeat[repeat][arm]
@@ -278,7 +301,7 @@ def _raw_repeat_metadata(
                     sha256_bytes(canonical_json_bytes(orderings)) if orderings else None
                 ),
             }
-        records.append({"repeat": repeat, "pythonHashSeed": seed, "arms": arms})
+        records.append({"repeat": repeat, "arms": arms})
     return records
 
 
@@ -355,14 +378,13 @@ def _deterministic_hashes(
         if len(records) != 3 or len({record["resultSha256"] for record in records}) != 1:
             raise ValueError(f"{arm.value}: scoring-inclusive repeats are nondeterministic")
     global_records: list[dict[str, object]] = []
-    for repeat, seed in enumerate(HASH_SEEDS, start=1):
+    for repeat in REPEATS:
         arms = {
             arm.value: repeat_hashes[arm][repeat - 1]["resultSha256"] for arm in ArmId
         }
         global_records.append(
             {
                 "repeat": repeat,
-                "pythonHashSeed": seed,
                 "armResultSha256": arms,
                 "qualificationResultSha256": sha256_bytes(canonical_json_bytes(arms)),
             }
@@ -441,7 +463,7 @@ def _metadata(
         "designSha256": expected_design_sha256,
         "runnerModule": RUNNER_MODULE,
         "armRunnerModule": ARM_RUNNER_MODULE,
-        "repeatHashSeeds": list(HASH_SEEDS),
+        "freshProcessRepeats": list(REPEATS),
         "armOrder": [arm.value for arm in ArmId],
         "pageOrder": list(page_ids),
     }
@@ -483,6 +505,8 @@ def _execute_staged(
     execution_sha: str,
     expected_tree_sha: str,
     output_root: Path,
+    source_root: Path,
+    git_root: Path,
 ) -> None:
     design = load_design(corpus_root / "corpus-design.json")
     annotations, c3_rejection_page_ids = compat.load_clean_room_annotations(corpus_root)
@@ -513,8 +537,12 @@ def _execute_staged(
                     page_id=page_id,
                     arm=arm,
                     execution_sha=execution_sha,
+                    expected_tree_sha=expected_tree_sha,
+                    expected_spec_sha256=expected_spec_sha256,
                     repeat=repeat,
                     output_root=output_root,
+                    source_root=source_root,
+                    git_root=git_root,
                 )
                 if error is not None:
                     errors.append(error)
@@ -645,6 +673,8 @@ def execute(
     execution_sha: str,
     expected_tree_sha: str,
     output_root: Path,
+    source_root: Path = REPO_ROOT,
+    git_root: Path = REPO_ROOT,
 ) -> None:
     context = validate_preflight_v3(
         corpus_root=corpus_root,
@@ -657,7 +687,10 @@ def execute(
         qualification_identity=qualification_identity,
         execution_sha=execution_sha,
         expected_tree_sha=expected_tree_sha,
+        source_root=source_root,
+        git_root=git_root,
     )
+    _validate_output_location(corpus_root, output_root)
     _create_output_root(output_root)
     with _stage_sealed_corpus(
         corpus_root,
@@ -676,10 +709,12 @@ def execute(
             execution_sha=execution_sha,
             expected_tree_sha=expected_tree_sha,
             output_root=output_root,
+            source_root=source_root,
+            git_root=git_root,
         )
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Execute the frozen clean-room v3 qualification")
     parser.add_argument("--corpus-root", type=Path, required=True)
     parser.add_argument("--experiment-spec", type=Path, required=True)
@@ -692,7 +727,16 @@ def main() -> None:
     parser.add_argument("--execution-sha", required=True)
     parser.add_argument("--expected-tree-sha", required=True)
     parser.add_argument("--output-root", type=Path, required=True)
-    args = parser.parse_args()
+    parser.add_argument("--source-root", type=Path, default=REPO_ROOT)
+    parser.add_argument("--git-root", type=Path, default=REPO_ROOT)
+    args = parser.parse_args(argv)
+    if not sys.flags.isolated or not sys.flags.no_site:
+        raise RuntimeError("v3 qualification runner requires the isolated bootstrap")
+    if (
+        (args.source_root / ".git").exists()
+        or args.source_root.resolve() == args.git_root.resolve()
+    ):
+        raise RuntimeError("v3 qualification runner requires an authenticated source snapshot")
     execute(
         corpus_root=args.corpus_root,
         spec_path=args.experiment_spec,
@@ -705,6 +749,8 @@ def main() -> None:
         execution_sha=args.execution_sha,
         expected_tree_sha=args.expected_tree_sha,
         output_root=args.output_root,
+        source_root=args.source_root,
+        git_root=args.git_root,
     )
 
 

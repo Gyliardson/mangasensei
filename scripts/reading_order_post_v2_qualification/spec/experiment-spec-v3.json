@@ -126,6 +126,11 @@
       "gitBlobSha": "286409e086b63f0239b7617e0a90b2ac0fb9bf91"
     },
     {
+      "path": "scripts/reading_order_post_v2_qualification/bootstrap_v3.py",
+      "role": "stdlib-only-authenticated-source-bootstrap",
+      "gitBlobSha": "fa8ef0e3368abc4585315a28021dca74c2accc58"
+    },
+    {
       "path": "scripts/reading_order_post_v2_qualification/contracts.py",
       "role": "inherited-scientific-contracts",
       "gitBlobSha": "81ddf32f2ac3938fc144bcb751da823d0c71c1bc"
@@ -148,12 +153,12 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/spec_v3.py",
       "role": "v3-overlay-validator-and-identity",
-      "gitBlobSha": "18eb67e99ba9c5355a599ed01f88556c04e80f0f"
+      "gitBlobSha": "7a117fe6f20abd6390ab9eddc52359e0d5d1eb83"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/preflight_v3.py",
       "role": "v3-fail-closed-preflight",
-      "gitBlobSha": "f5f82f1727a6ddf11e5b8430ae137ef036580ea8"
+      "gitBlobSha": "539180246efee87d48df2c44390b1a3f71764279"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/historical_guard.py",
@@ -173,12 +178,12 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/run_arm_v3.py",
       "role": "v3-clean-room-one-page-arm-runner",
-      "gitBlobSha": "b36c37cb49b96dd5d4755752136ae37afa6d1d64"
+      "gitBlobSha": "34d25f43dbcbeea3696f3fa26dcc9a8105e485a9"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/run_v3.py",
       "role": "v3-top-level-qualification-runner",
-      "gitBlobSha": "3195184cb37b32a44297ed49b0ac460aa420c22a"
+      "gitBlobSha": "728b5e11c74bc3efa92f16d46cae915b9062cf35"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/scoring.py",

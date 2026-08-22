@@ -24,13 +24,12 @@ from scripts.reading_order_v3_authoring import (
 from mangasensei.ocr.diagnostics import (
     reading_order_post_v2_calibration as candidate_module,
 )
-from mangasensei.ocr.reading_order import segment_panel_groups
+from mangasensei.ocr.reading_order import PanelBox, segment_panel_groups
 
 from . import DIAGNOSTIC_SCHEMA_VERSION
 from .canonical import write_canonical_json
 from .contracts import ArmId
 from .fixtures import build_textblock_regions
-from .run_arm import _box, _config
 from .v3_clean_room_compat import load_arm_input
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -48,6 +47,19 @@ _PAGE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
+def _box(box: PanelBox) -> dict[str, int]:
+    return {"x1": box.x1, "y1": box.y1, "x2": box.x2, "y2": box.y2}
+
+
+def _config(arm: ArmId) -> Any:
+    return candidate_module.CalibrationConfig(
+        c1_boundary_guard=arm.c1,
+        c2_uncertain_relations=arm.c2,
+        c3_merged_frame_recovery=arm.c3,
+        b1_local_order=arm.b1,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class _PageAssets:
     corpus_root: Path
@@ -63,36 +75,49 @@ class _PageAssets:
     input_path: Path
 
 
-def _head_candidate_bytes() -> bytes:
+def _execution_candidate_bytes(*, execution_sha: str, git_root: Path) -> bytes:
     git = which("git")
     if git is None:
         raise RuntimeError("git is required to authenticate frozen candidate source")
     result = subprocess.run(  # noqa: S603
-        [git, "show", f"HEAD:{CANDIDATE_REPO_PATH}"],
-        cwd=REPO_ROOT,
+        [
+            git,
+            "--no-replace-objects",
+            "show",
+            f"{execution_sha}:{CANDIDATE_REPO_PATH}",
+        ],
+        cwd=git_root,
         check=True,
         capture_output=True,
     )
     return result.stdout
 
 
-def _verify_candidate_origin() -> Callable[..., Any]:
+def _verify_candidate_origin(
+    *,
+    execution_sha: str = "HEAD",
+    source_root: Path = REPO_ROOT,
+    git_root: Path = REPO_ROOT,
+) -> Callable[..., Any]:
+    candidate_path = (source_root / CANDIDATE_REPO_PATH).resolve()
     module_file = getattr(candidate_module, "__file__", None)
-    if not isinstance(module_file, str) or Path(module_file).resolve() != CANDIDATE_PATH:
+    if not isinstance(module_file, str) or Path(module_file).resolve() != candidate_path:
         raise RuntimeError("frozen candidate module source mismatch")
-    source_bytes = CANDIDATE_PATH.read_bytes()
-    head_bytes = _head_candidate_bytes()
-    if source_bytes != head_bytes:
-        raise RuntimeError("frozen candidate source does not match authenticated HEAD source")
+    source_bytes = candidate_path.read_bytes()
+    execution_bytes = _execution_candidate_bytes(
+        execution_sha=execution_sha, git_root=git_root
+    )
+    if source_bytes != execution_bytes:
+        raise RuntimeError("frozen candidate source does not match authenticated execution source")
 
-    source_sha256 = hashlib.sha256(head_bytes).hexdigest()
+    source_sha256 = hashlib.sha256(execution_bytes).hexdigest()
     module_name = f"{candidate_module.__package__}._authenticated_{source_sha256}"
     authenticated_module = ModuleType(module_name)
     authenticated_module.__package__ = candidate_module.__package__
-    authenticated_module.__file__ = str(CANDIDATE_PATH)
+    authenticated_module.__file__ = str(candidate_path)
     code = compile(
-        head_bytes,
-        str(CANDIDATE_PATH),
+        execution_bytes,
+        str(candidate_path),
         "exec",
         dont_inherit=True,
         optimize=sys.flags.optimize,
@@ -373,6 +398,8 @@ def execute_page(
     execution_sha: str,
     repeat: int,
     output_root: Path,
+    source_root: Path = REPO_ROOT,
+    git_root: Path = REPO_ROOT,
 ) -> tuple[Path, Path]:
     if _PAGE_ID_RE.fullmatch(page_id) is None:
         raise ValueError("page-id must be a safe page ID")
@@ -396,7 +423,11 @@ def execute_page(
     before = _full_snapshot(regions)
 
     pre_segmentation = segment_panel_groups(pixels)
-    authenticated_candidate = _verify_candidate_origin()
+    authenticated_candidate = _verify_candidate_origin(
+        execution_sha=execution_sha,
+        source_root=source_root,
+        git_root=git_root,
+    )
     result = authenticated_candidate(
         pixels,
         regions,
@@ -487,7 +518,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--execution-sha", required=True)
     parser.add_argument("--repeat", type=int, choices=(1, 2, 3), required=True)
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--source-root", type=Path, default=REPO_ROOT)
+    parser.add_argument("--git-root", type=Path, default=REPO_ROOT)
     args = parser.parse_args(argv)
+    if not sys.flags.isolated or not sys.flags.no_site:
+        raise RuntimeError("v3 arm runner requires the isolated bootstrap")
+    if (
+        (args.source_root / ".git").exists()
+        or args.source_root.resolve() == args.git_root.resolve()
+    ):
+        raise RuntimeError("v3 arm runner requires an authenticated source snapshot")
     execute_page(
         corpus_root=args.corpus_root,
         page_id=args.page_id,
@@ -495,6 +535,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         execution_sha=args.execution_sha,
         repeat=args.repeat,
         output_root=args.output_root,
+        source_root=args.source_root,
+        git_root=args.git_root,
     )
 
 

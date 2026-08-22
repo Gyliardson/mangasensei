@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import json
-import os
+import shutil
 import subprocess
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from shutil import which
 from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 import pytest
-from scripts.reading_order_post_v2_qualification import run_v3
+from scripts.reading_order_post_v2_qualification import (
+    bootstrap_v3,
+    preflight_v3,
+    run_v3,
+    spec_v3,
+)
 from scripts.reading_order_post_v2_qualification.canonical import canonical_json_bytes
 from scripts.reading_order_post_v2_qualification.contracts import (
     ArmId,
@@ -35,6 +42,8 @@ from tests.reading_order_v3_authoring._fixtures import _write
 
 EXECUTION_SHA = "a" * 40
 PAGE_ID = "page.synthetic"
+GIT = which("git")
+assert GIT is not None
 
 
 @dataclass(frozen=True)
@@ -251,11 +260,120 @@ def _execute(tmp_path: Path) -> Path:
         execution_sha=EXECUTION_SHA,
         expected_tree_sha="5" * 40,
         output_root=output,
+        source_root=tmp_path / "authenticated-source",
+        git_root=tmp_path / "git-root",
     )
     return output
 
 
-def test_preflight_is_first_and_runs_three_fresh_seeded_processes_per_arm(
+@contextmanager
+def _authenticated_execution_snapshot(
+    tmp_path: Path,
+) -> Iterator[tuple[Path, Path, str, str, str]]:
+    repository = tmp_path / "execution-repository"
+    subprocess.run(  # noqa: S603
+        [GIT, "clone", "--shared", str(run_v3.REPO_ROOT), str(repository)],
+        check=True,
+        capture_output=True,
+    )
+    spec_path = run_v3.REPO_ROOT / bootstrap_v3.SPEC_REPO_PATH
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    paths = {
+        bootstrap_v3.SPEC_REPO_PATH,
+        *(binding["path"] for binding in spec["reviewedV3SourceClosure"]),
+        spec["baseV2Spec"]["path"],
+        spec["methodology"]["path"],
+        spec["candidateBinding"]["path"],
+    }
+    base_path = run_v3.REPO_ROOT / spec["baseV2Spec"]["path"]
+    base = json.loads(base_path.read_text(encoding="utf-8"))
+    paths.add(base["baseSpec"]["path"])
+    paths.add("assets/reading-order-post-v2/heldout-v1/manifest.json")
+    for relative in paths:
+        source = run_v3.REPO_ROOT / relative
+        destination = repository / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+    subprocess.run(  # noqa: S603
+        [GIT, "-C", str(repository), "add", "."], check=True, capture_output=True
+    )
+    subprocess.run(  # noqa: S603
+        [
+            GIT,
+            "-C",
+            str(repository),
+            "-c",
+            "user.name=Qualification Test",
+            "-c",
+            "user.email=qualification@example.invalid",
+            "commit",
+            "-m",
+            "authenticated execution",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    execution_sha = subprocess.run(  # noqa: S603
+        [GIT, "-C", str(repository), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    execution_tree = subprocess.run(  # noqa: S603
+        [GIT, "-C", str(repository), "rev-parse", "HEAD^{tree}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    expected_spec_sha256 = run_v3.sha256_bytes(spec_path.read_bytes())
+    with bootstrap_v3.authenticated_source_snapshot(
+        git_root=repository,
+        execution_sha=execution_sha,
+        expected_tree_sha=execution_tree,
+        expected_spec_sha256=expected_spec_sha256,
+    ) as source_root:
+        yield source_root, repository, execution_sha, execution_tree, expected_spec_sha256
+
+
+def test_real_standalone_preflight_composes_on_synthetic_corpus(tmp_path: Path) -> None:
+    corpus_root = tmp_path / "corpus"
+    _write(corpus_root)
+    manifest_sha256 = run_v3.sha256_bytes((corpus_root / "manifest.json").read_bytes())
+    design_sha256 = run_v3.sha256_bytes((corpus_root / "corpus-design.json").read_bytes())
+    methodology_sha256 = run_v3.sha256_bytes(spec_v3.METHODOLOGY_PATH.read_bytes())
+
+    with _authenticated_execution_snapshot(tmp_path) as execution:
+        _source_root, git_root, execution_sha, execution_tree, spec_sha256 = execution
+        identity = spec_v3.canonical_qualification_identity_v3(
+            experiment_id=spec_v3.V3_EXPERIMENT_ID,
+            spec_sha256=spec_sha256,
+            methodology_sha256=methodology_sha256,
+            manifest_sha256=manifest_sha256,
+            design_sha256=design_sha256,
+            execution_sha=execution_sha,
+            execution_tree_sha=execution_tree,
+        )
+
+        context = preflight_v3.validate_preflight_v3(
+            corpus_root=corpus_root,
+            spec_path=spec_v3.V3_SPEC_PATH,
+            experiment_id=spec_v3.V3_EXPERIMENT_ID,
+            expected_spec_sha256=spec_sha256,
+            expected_methodology_sha256=methodology_sha256,
+            expected_manifest_sha256=manifest_sha256,
+            expected_design_sha256=design_sha256,
+            qualification_identity=identity,
+            execution_sha=execution_sha,
+            expected_tree_sha=execution_tree,
+            source_root=run_v3.REPO_ROOT,
+            git_root=git_root,
+        )
+
+    assert context.execution_sha == execution_sha
+    assert context.execution_tree_sha == execution_tree
+
+
+def test_preflight_is_first_and_runs_three_fresh_isolated_processes_per_arm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     events: list[str] = []
@@ -265,18 +383,32 @@ def test_preflight_is_first_and_runs_three_fresh_seeded_processes_per_arm(
 
     assert events[:3] == ["preflight", "stage", "candidate-stage"]
     assert len(state["processes"]) == len(ArmId) * 3
-    assert {
-        (int(_arg(command, "--repeat")), kwargs["env"]["PYTHONHASHSEED"])
-        for command, kwargs in state["processes"]
-    } == {(1, "101"), (2, "202"), (3, "303")}
+    assert {int(_arg(command, "--repeat")) for command, _kwargs in state["processes"]} == {
+        1,
+        2,
+        3,
+    }
     assert all(
-        command[1:4]
+        command[:4]
         == [
-            "-m",
-            "scripts.reading_order_post_v2_qualification.run_arm_v3",
-            "--corpus-root",
+            sys.executable,
+            "-I",
+            "-S",
+            str(
+                tmp_path
+                / "authenticated-source"
+                / "scripts"
+                / "reading_order_post_v2_qualification"
+                / "bootstrap_v3.py"
+            ),
         ]
         for command, _kwargs in state["processes"]
+    )
+    assert all(command[4] == "arm" for command, _kwargs in state["processes"])
+    assert all("--external-root" not in command for command, _kwargs in state["processes"])
+    assert all(
+        kwargs["cwd"] == tmp_path / "authenticated-source"
+        for _command, kwargs in state["processes"]
     )
     assert {
         Path(_arg(command, "--corpus-root")) for command, _kwargs in state["processes"]
@@ -288,7 +420,7 @@ def test_preflight_is_first_and_runs_three_fresh_seeded_processes_per_arm(
     assert state["verdict_calls"] == 1
 
 
-def test_child_environment_removes_python_injection_and_pins_import_roots(
+def test_child_environment_removes_all_python_injection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("PYTHONHOME", "attacker-home")
@@ -299,32 +431,13 @@ def test_child_environment_removes_python_injection_and_pins_import_roots(
 
     _execute(tmp_path)
 
-    expected_path = os.pathsep.join(
-        (str(run_v3.REPO_ROOT), str(run_v3.REPO_ROOT / "backend" / "src"))
-    )
     for _command, kwargs in state["processes"]:
         python_env = {
             key: value
             for key, value in kwargs["env"].items()
             if key.upper().startswith("PYTHON")
         }
-        assert python_env in (
-            {
-                "PYTHONPATH": expected_path,
-                "PYTHONNOUSERSITE": "1",
-                "PYTHONHASHSEED": "101",
-            },
-            {
-                "PYTHONPATH": expected_path,
-                "PYTHONNOUSERSITE": "1",
-                "PYTHONHASHSEED": "202",
-            },
-            {
-                "PYTHONPATH": expected_path,
-                "PYTHONNOUSERSITE": "1",
-                "PYTHONHASHSEED": "303",
-            },
-        )
+        assert python_env == {}
 
 
 def test_trusted_inputs_are_internal_copies_and_read_only(
@@ -542,6 +655,36 @@ def test_output_root_rejects_symlinked_parent(
     assert events == ["preflight"]
 
 
+@pytest.mark.parametrize("placement", ["equal", "child"])
+def test_output_root_must_be_outside_corpus_before_candidate_execution(
+    placement: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    state = _install_harness(monkeypatch, events=events)
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    output = corpus if placement == "equal" else corpus / "qualification-output"
+
+    with pytest.raises(RuntimeError, match="output root must be outside corpus root"):
+        run_v3.execute(
+            corpus_root=corpus,
+            spec_path=tmp_path / "spec.json",
+            experiment_id="experiment-v3",
+            expected_spec_sha256="1" * 64,
+            expected_methodology_sha256="2" * 64,
+            expected_manifest_sha256="3" * 64,
+            expected_design_sha256="4" * 64,
+            qualification_identity="identity",
+            execution_sha=EXECUTION_SHA,
+            expected_tree_sha="5" * 40,
+            output_root=output,
+        )
+
+    assert state["processes"] == []
+    assert "candidate" not in events
+    assert list(corpus.iterdir()) == []
+
+
 @pytest.mark.parametrize("role", ["input", "annotation"])
 def test_staged_corpus_is_a_byte_snapshot_when_original_role_is_replaced(
     role: str, tmp_path: Path
@@ -635,7 +778,7 @@ def test_candidate_attempting_to_find_or_read_annotations_cannot_access_them(
         monkeypatch.setattr(
             run_v3.run_arm_v3,
             "_verify_candidate_origin",
-            lambda: probing_candidate,
+            lambda **_kwargs: probing_candidate,
         )
         with pytest.raises(CandidateProbeComplete):
             run_v3.run_arm_v3.execute_page(
@@ -660,6 +803,13 @@ def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
     expected_design_sha256 = "4" * 64
     expected_tree_sha = "5" * 40
     qualification_identity = "synthetic-v3-qualification"
+    execution_sha = subprocess.run(  # noqa: S603
+        [GIT, "rev-parse", "HEAD"],
+        cwd=run_v3.REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     _write(corpus_root)
     expected_manifest_sha256 = run_v3.sha256_bytes((corpus_root / "manifest.json").read_bytes())
     expected_design_sha256 = run_v3.sha256_bytes((corpus_root / "corpus-design.json").read_bytes())
@@ -680,6 +830,7 @@ def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
         execution_sha: str,
         repeat: int,
         output_root: Path,
+        **_kwargs: object,
     ) -> None:
         candidate_roots.add(corpus_root)
         design = json.loads((corpus_root / "corpus-design.json").read_text(encoding="utf-8"))
@@ -708,7 +859,7 @@ def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
         expected_manifest_sha256=expected_manifest_sha256,
         expected_design_sha256=expected_design_sha256,
         qualification_identity=qualification_identity,
-        execution_sha=EXECUTION_SHA,
+        execution_sha=execution_sha,
         expected_tree_sha=expected_tree_sha,
         output_root=output_root,
     )
@@ -752,7 +903,7 @@ def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
         **metadata,
         "experimentId": experiment_id,
         "qualificationIdentity": qualification_identity,
-        "executionSha": EXECUTION_SHA,
+        "executionSha": execution_sha,
         "executionTreeSha": expected_tree_sha,
         "specSha256": expected_spec_sha256,
         "methodologySha256": expected_methodology_sha256,
@@ -760,7 +911,7 @@ def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
         "designSha256": expected_design_sha256,
         "runnerModule": run_v3.RUNNER_MODULE,
         "armRunnerModule": run_v3.ARM_RUNNER_MODULE,
-        "repeatHashSeeds": list(run_v3.HASH_SEEDS),
+        "freshProcessRepeats": list(run_v3.REPEATS),
         "armOrder": [arm.value for arm in ArmId],
         "pageOrder": list(page_ids),
         "evidenceStatus": "VALID",
@@ -788,8 +939,9 @@ def test_synthetic_clean_room_corpus_runs_the_real_v3_flow_in_process(
         assert verdict["verdict"].endswith("_INCONCLUSIVE")
 
 
-def test_real_fresh_process_is_authenticated_and_deterministic_across_hash_seeds(
+def test_real_fresh_process_is_authenticated_and_deterministic_across_repeats(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     corpus_root = tmp_path / "corpus"
     output_root = tmp_path / "output"
@@ -799,20 +951,32 @@ def test_real_fresh_process_is_authenticated_and_deterministic_across_hash_seeds
         (corpus_root / "corpus-design.json").read_bytes()
     )
     arm = ArmId.CONTROL
+    attacker_root = tmp_path / "attacker-site"
+    attacker_package = attacker_root / "mangasensei"
+    attacker_package.mkdir(parents=True)
+    trap_marker = tmp_path / "startup-trap"
+    trap = f"from pathlib import Path; Path({str(trap_marker)!r}).write_text('ran')\n"
+    (attacker_root / "sitecustomize.py").write_text(trap, encoding="utf-8")
+    (attacker_root / "attacker.pth").write_text("import sitecustomize\n", encoding="utf-8")
+    (attacker_package / "__init__.py").write_text(
+        "raise RuntimeError('attacker package imported')\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("PYTHONPATH", str(attacker_root))
+    monkeypatch.setenv("PYTHONSTARTUP", str(attacker_root / "sitecustomize.py"))
     assert run_v3.ARM_RUNNER_MODULE == (
         "scripts.reading_order_post_v2_qualification.run_arm_v3"
     )
-    assert run_v3.HASH_SEEDS == (101, 202, 303)
-    expected_python_path = os.pathsep.join(
-        (str(run_v3.REPO_ROOT), str(run_v3.REPO_ROOT / "backend" / "src"))
-    )
-
+    assert run_v3.REPEATS == (1, 2, 3)
     normalized_artifacts: list[dict[Path, bytes]] = []
-    with run_v3._stage_sealed_corpus(
-        corpus_root,
-        expected_manifest_sha256=manifest_sha256,
-        expected_design_sha256=design_sha256,
-    ) as staged_root:
+    with (
+        _authenticated_execution_snapshot(tmp_path) as execution,
+        run_v3._stage_sealed_corpus(
+            corpus_root,
+            expected_manifest_sha256=manifest_sha256,
+            expected_design_sha256=design_sha256,
+        ) as staged_root,
+    ):
+        source_root, git_root, execution_sha, execution_tree, spec_sha256 = execution
         design = run_v3.load_design(staged_root / "corpus-design.json")
         annotations, _c3_rejection_page_ids = (
             run_v3.compat.load_clean_room_annotations(staged_root)
@@ -833,24 +997,24 @@ def test_real_fresh_process_is_authenticated_and_deterministic_across_hash_seeds
             assert not candidate_files & forbidden
             assert all(not (candidate_root / relative).exists() for relative in forbidden)
 
-            for repeat, seed in enumerate(run_v3.HASH_SEEDS, start=1):
-                child_env = run_v3._child_environment(seed)
+            for repeat in run_v3.REPEATS:
+                child_env = run_v3._child_environment()
                 assert {
                     key: value
                     for key, value in child_env.items()
                     if key.upper().startswith("PYTHON")
-                } == {
-                    "PYTHONPATH": expected_python_path,
-                    "PYTHONNOUSERSITE": "1",
-                    "PYTHONHASHSEED": str(seed),
-                }
+                } == {}
                 error = run_v3._run_fresh_process(
                     corpus_root=candidate_root,
                     page_id=page_id,
                     arm=arm,
-                    execution_sha=EXECUTION_SHA,
+                    execution_sha=execution_sha,
+                    expected_tree_sha=execution_tree,
+                    expected_spec_sha256=spec_sha256,
                     repeat=repeat,
                     output_root=output_root,
+                    source_root=source_root,
+                    git_root=git_root,
                 )
                 assert error is None
 
@@ -865,7 +1029,7 @@ def test_real_fresh_process_is_authenticated_and_deterministic_across_hash_seeds
                 for document in parsed.values():
                     assert document["experimentArm"] == arm.value
                     assert document["pageId"] == page_id
-                    assert document["executionSha"] == EXECUTION_SHA
+                    assert document["executionSha"] == execution_sha
                 assert diagnostic["finalOrder"] == ordering["finalOrder"]
 
                 problems: list[str] = []
@@ -877,7 +1041,7 @@ def test_real_fresh_process_is_authenticated_and_deterministic_across_hash_seeds
                     problems=problems,
                 )
                 assert problems == []
-                assert authenticated_sha == EXECUTION_SHA
+                assert authenticated_sha == execution_sha
 
                 artifacts: dict[Path, bytes] = {}
                 for path in paths.values():
@@ -894,3 +1058,4 @@ def test_real_fresh_process_is_authenticated_and_deterministic_across_hash_seeds
                 normalized_artifacts.append(artifacts)
 
     assert normalized_artifacts[0] == normalized_artifacts[1] == normalized_artifacts[2]
+    assert not trap_marker.exists()

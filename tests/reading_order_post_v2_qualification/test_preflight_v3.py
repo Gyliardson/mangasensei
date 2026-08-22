@@ -38,7 +38,6 @@ def _run(
     tmp_path: Path,
     *,
     corpus: Path | None = None,
-    git_status: str = "",
     manifest_design_sha: str | None = None,
     qualification_identity: str | None = None,
     resolved_experiment_id: str = spec_v3.V3_EXPERIMENT_ID,
@@ -62,9 +61,8 @@ def _run(
     )
     expected_design_sha = "0" * 64 if (hash_overrides or {}).get("design") else design_sha
     git_values = {
-        ("rev-parse", "HEAD"): EXECUTION_SHA,
-        ("rev-parse", "HEAD^{tree}"): TREE_SHA,
-        ("status", "--porcelain"): git_status,
+        ("rev-parse", f"{EXECUTION_SHA}^{{commit}}"): EXECUTION_SHA,
+        ("rev-parse", f"{EXECUTION_SHA}^{{tree}}"): TREE_SHA,
     }
     resolved = {
         "experimentId": resolved_experiment_id,
@@ -106,8 +104,18 @@ def test_preflight_v3_returns_validated_context_and_runs_strict_clean_room_gates
     tmp_path: Path,
 ) -> None:
     context, validate_spec, runtime_candidate, _corpus = _run(tmp_path)
-    validate_spec.assert_called_once_with(validate_spec.call_args.args[0], expected_sha256=SPEC_SHA)
-    runtime_candidate.assert_called_once_with(context.spec)
+    validate_spec.assert_called_once_with(
+        validate_spec.call_args.args[0],
+        expected_sha256=SPEC_SHA,
+        execution_sha=EXECUTION_SHA,
+        git_root=preflight_v3.REPO_ROOT,
+    )
+    runtime_candidate.assert_called_once_with(
+        context.spec,
+        execution_sha=EXECUTION_SHA,
+        source_root=preflight_v3.REPO_ROOT,
+        git_root=preflight_v3.REPO_ROOT,
+    )
     assert context.experiment_id == spec_v3.V3_EXPERIMENT_ID
     assert context.qualification_identity.startswith("ropv3q-")
     assert context.coverage is None
@@ -116,19 +124,17 @@ def test_preflight_v3_returns_validated_context_and_runs_strict_clean_room_gates
 @pytest.mark.parametrize(
     ("command", "actual", "message"),
     [
-        (("rev-parse", "HEAD"), "7" * 40, "HEAD"),
-        (("rev-parse", "HEAD^{tree}"), "8" * 40, "tree"),
-        (("status", "--porcelain"), " M unrelated", "clean"),
+        (("rev-parse", f"{EXECUTION_SHA}^{{commit}}"), "7" * 40, "commit"),
+        (("rev-parse", f"{EXECUTION_SHA}^{{tree}}"), "8" * 40, "tree"),
     ],
 )
-def test_preflight_v3_rejects_wrong_head_tree_or_dirty_checkout(
+def test_preflight_v3_rejects_wrong_execution_commit_or_tree(
     tmp_path: Path, command: tuple[str, str], actual: str, message: str
 ) -> None:
     corpus = tmp_path / "corpus"
     values = {
-        ("rev-parse", "HEAD"): EXECUTION_SHA,
-        ("rev-parse", "HEAD^{tree}"): TREE_SHA,
-        ("status", "--porcelain"): "",
+        ("rev-parse", f"{EXECUTION_SHA}^{{commit}}"): EXECUTION_SHA,
+        ("rev-parse", f"{EXECUTION_SHA}^{{tree}}"): TREE_SHA,
     }
     values[command] = actual
     with (
