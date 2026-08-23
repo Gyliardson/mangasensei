@@ -275,9 +275,38 @@ def _clean_environment() -> dict[str, str]:
     }
 
 
-def _require_isolated_interpreter() -> None:
-    if not sys.flags.isolated or not sys.flags.no_site:
-        raise RuntimeError("v3 bootstrap requires Python -I -S")
+def _validate_arm_environment(arguments: Sequence[str]) -> None:
+    try:
+        repeat_index = arguments.index("--repeat")
+        repeat = int(arguments[repeat_index + 1])
+    except (ValueError, IndexError) as exc:
+        raise RuntimeError("arm worker arguments missing --repeat") from exc
+
+    expected_seeds = {1: "101", 2: "202", 3: "303"}
+    if repeat not in expected_seeds:
+        raise RuntimeError(f"unsupported repeat: {repeat}")
+
+    expected_seed = expected_seeds[repeat]
+    if os.environ.get("PYTHONHASHSEED") != expected_seed:
+        raise RuntimeError(f"arm worker requires PYTHONHASHSEED={expected_seed} for repeat {repeat}")
+
+    for key in os.environ:
+        if key.upper().startswith("PYTHON") and key != "PYTHONHASHSEED":
+            raise RuntimeError(f"arm worker environment contains unapproved variable: {key}")
+
+
+def _require_isolated_interpreter(mode: str, arguments: Sequence[str]) -> None:
+    if mode == "arm":
+        if sys.flags.isolated or sys.flags.ignore_environment:
+            raise RuntimeError("arm worker must not ignore environment variables")
+        if not sys.flags.no_site or not sys.flags.no_user_site:
+            raise RuntimeError("arm worker requires Python -S -s")
+        if not getattr(sys.flags, "safe_path", False):
+            raise RuntimeError("arm worker requires Python -P (safe_path)")
+        _validate_arm_environment(arguments)
+    else:
+        if not sys.flags.isolated or not sys.flags.no_site:
+            raise RuntimeError("v3 bootstrap requires Python -I -S")
 
 
 def _replace_argument(arguments: list[str], name: str, value: str) -> None:
@@ -568,11 +597,11 @@ def _run_worker(mode: str, arguments: Sequence[str]) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    _require_isolated_interpreter()
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
         raise ValueError("v3 bootstrap mode is required")
     mode, remaining = arguments[0], arguments[1:]
+    _require_isolated_interpreter(mode, remaining)
     if mode == "parent":
         _run_parent(remaining)
     elif mode in {"worker-parent", "arm"}:

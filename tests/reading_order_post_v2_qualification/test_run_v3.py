@@ -347,12 +347,13 @@ def test_preflight_is_first_and_runs_three_fresh_isolated_processes_per_arm(
         3,
     }
     assert all(
-        command[:4]
-        == [
-            sys.executable,
-            "-I",
-            "-S",
-            str(
+        command[:5]
+            == [
+                sys.executable,
+                "-S",
+                "-s",
+                "-P",
+                str(
                 tmp_path
                 / "authenticated-source"
                 / "scripts"
@@ -362,7 +363,7 @@ def test_preflight_is_first_and_runs_three_fresh_isolated_processes_per_arm(
         ]
         for command, _kwargs in state["processes"]
     )
-    assert all(command[4] == "arm" for command, _kwargs in state["processes"])
+    assert all(command[5] == "arm" for command, _kwargs in state["processes"])
     assert all("--external-root" not in command for command, _kwargs in state["processes"])
     assert all(
         kwargs["cwd"] == tmp_path / "authenticated-source"
@@ -393,9 +394,10 @@ def test_child_environment_removes_all_python_injection(
         python_env = {
             key: value
             for key, value in kwargs["env"].items()
-            if key.upper().startswith("PYTHON")
+            if key.upper().startswith("PYTHON") and key != "PYTHONHASHSEED"
         }
         assert python_env == {}
+        assert kwargs["env"]["PYTHONHASHSEED"] in {"101", "202", "303"}
 
 
 def test_trusted_inputs_are_internal_copies_and_read_only(

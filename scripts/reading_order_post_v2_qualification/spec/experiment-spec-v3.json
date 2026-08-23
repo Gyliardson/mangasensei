@@ -128,7 +128,7 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/bootstrap_v3.py",
       "role": "stdlib-only-authenticated-source-bootstrap",
-      "gitBlobSha": "fa8ef0e3368abc4585315a28021dca74c2accc58"
+      "gitBlobSha": "b5ff9977ba836143b13a414569157dbab9785221"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/contracts.py",
@@ -178,12 +178,12 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/run_arm_v3.py",
       "role": "v3-clean-room-one-page-arm-runner",
-      "gitBlobSha": "34d25f43dbcbeea3696f3fa26dcc9a8105e485a9"
+      "gitBlobSha": "ce08a1235f6deddc60e28f96d3283b80a0545579"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/run_v3.py",
       "role": "v3-top-level-qualification-runner",
-      "gitBlobSha": "728b5e11c74bc3efa92f16d46cae915b9062cf35"
+      "gitBlobSha": "d0995000d2f286e058630485ca2bcbd850bb087a"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/scoring.py",

@@ -589,7 +589,7 @@ def test_direct_cli_is_rejected_without_authenticated_bootstrap(
     _write_clean_room_page(root)
     _install_candidate(monkeypatch, _result)
     output = tmp_path / "cli-output"
-    with pytest.raises(RuntimeError, match="isolated bootstrap"):
+    with pytest.raises(RuntimeError, match="strict authenticated bootstrap"):
         run_arm_v3.main(
             [
                 "--corpus-root",

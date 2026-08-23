@@ -521,8 +521,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--source-root", type=Path, default=REPO_ROOT)
     parser.add_argument("--git-root", type=Path, default=REPO_ROOT)
     args = parser.parse_args(argv)
-    if not sys.flags.isolated or not sys.flags.no_site:
-        raise RuntimeError("v3 arm runner requires the isolated bootstrap")
+    if not getattr(sys.flags, "safe_path", False) or not sys.flags.no_site or not sys.flags.no_user_site:
+        raise RuntimeError("v3 arm runner requires the strict authenticated bootstrap (-S -s -P)")
     if (
         (args.source_root / ".git").exists()
         or args.source_root.resolve() == args.git_root.resolve()

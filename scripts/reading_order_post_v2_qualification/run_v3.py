@@ -116,8 +116,9 @@ def _run_fresh_process(
 ) -> EvidenceError | None:
     command = [
         sys.executable,
-        "-I",
         "-S",
+        "-s",
+        "-P",
         str(source_root / BOOTSTRAP_REPO_PATH),
         "arm",
         "--source-root",
@@ -149,11 +150,13 @@ def _run_fresh_process(
         ]
     )
     location = f"{arm.value}/repeat-{repeat}/{page_id}"
+    env = _child_environment()
+    env["PYTHONHASHSEED"] = {1: "101", 2: "202", 3: "303"}[repeat]
     try:
         subprocess.run(  # noqa: S603
             command,
             cwd=source_root,
-            env=_child_environment(),
+            env=env,
             check=True,
         )
     except Exception as exc:  # noqa: BLE001 - child execution evidence boundary
@@ -464,6 +467,7 @@ def _metadata(
         "runnerModule": RUNNER_MODULE,
         "armRunnerModule": ARM_RUNNER_MODULE,
         "freshProcessRepeats": list(REPEATS),
+        "pythonHashSeeds": [101, 202, 303],
         "armOrder": [arm.value for arm in ArmId],
         "pageOrder": list(page_ids),
     }
