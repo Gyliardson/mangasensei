@@ -16,6 +16,7 @@ from scripts.reading_order_v3_authoring.contracts import AUTHORING_SLICES
 
 from .canonical import sha256_path
 from .exercise_v3 import EXERCISE_MINIMA_V3
+from .bootstrap_v3 import FROZEN_SEED_SCHEDULE
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -327,6 +328,19 @@ def _validate_source_closure(
         raise SpecV3Error("reviewed v3 source closure path or role changed")
 
 
+def _validate_determinism_protocol(
+    resolved_v2: dict[str, Any],
+) -> None:
+    metadata = resolved_v2.get("metadata", {})
+    expected_repeat_list = metadata.get("freshProcessRepeats")
+    expected_repeats = len(expected_repeat_list) if expected_repeat_list else None
+    expected_seeds = metadata.get("pythonHashSeeds")
+    if expected_repeats != len(FROZEN_SEED_SCHEDULE):
+        raise SpecV3Error("v3 executable determinism schedule repeats length mismatch")
+    if expected_seeds != list(FROZEN_SEED_SCHEDULE.values()):
+        raise SpecV3Error("v3 executable determinism schedule pythonHashSeeds mismatch")
+
+
 def validate_spec_v3(
     path: Path = V3_SPEC_PATH,
     *,
@@ -377,6 +391,7 @@ def validate_spec_v3(
         git_root=git_root,
     )
     _validate_methodology()
+    _validate_determinism_protocol(resolved_v2)
     _validate_candidate(
         overlay["candidateBinding"],
         execution_sha=execution_sha,

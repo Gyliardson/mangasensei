@@ -39,7 +39,17 @@ def _validate(raw: dict[str, object] | None = None, tmp_path: Path | None = None
         path.write_text(json.dumps(raw), encoding="utf-8")
 
     with (
-        patch.object(spec_v3, "_validate_base_v2", return_value={"v2": "validated"}) as base,
+        patch.object(
+            spec_v3,
+            "_validate_base_v2",
+            return_value={
+                "v2": "validated",
+                "metadata": {
+                    "freshProcessRepeats": [1, 2, 3],
+                    "pythonHashSeeds": [101, 202, 303],
+                },
+            },
+        ) as base,
         patch.object(
             spec_v3,
             "_git",
@@ -163,7 +173,13 @@ def test_v3_base_resolver_composes_against_real_execution_git_objects(
 def test_v3_candidate_is_frozen_and_validated_against_execution_sha() -> None:
     resolved = _validate()
     assert resolved["candidateBinding"] == _raw_spec()["candidateBinding"]
-    assert resolved["resolvedBaseV2"] == {"v2": "validated"}
+    assert resolved["resolvedBaseV2"] == {
+        "v2": "validated",
+        "metadata": {
+            "freshProcessRepeats": [1, 2, 3],
+            "pythonHashSeeds": [101, 202, 303],
+        },
+    }
 
 
 @pytest.mark.parametrize(

@@ -128,7 +128,7 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/bootstrap_v3.py",
       "role": "stdlib-only-authenticated-source-bootstrap",
-      "gitBlobSha": "b5ff9977ba836143b13a414569157dbab9785221"
+      "gitBlobSha": "cb100e3eb4870ebdf6c309d91f2509132c2af37c"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/contracts.py",
@@ -153,7 +153,7 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/spec_v3.py",
       "role": "v3-overlay-validator-and-identity",
-      "gitBlobSha": "7a117fe6f20abd6390ab9eddc52359e0d5d1eb83"
+      "gitBlobSha": "0b7e4da2aca125b76d501e59d3c06c4620fdfbd8"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/preflight_v3.py",
@@ -183,7 +183,7 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/run_v3.py",
       "role": "v3-top-level-qualification-runner",
-      "gitBlobSha": "d0995000d2f286e058630485ca2bcbd850bb087a"
+      "gitBlobSha": "de5dcaded76e0bacdb0caa401df6b044afaffa3d"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/scoring.py",

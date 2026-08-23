@@ -19,6 +19,7 @@ from typing import cast
 
 SPEC_REPO_PATH = "scripts/reading_order_post_v2_qualification/spec/experiment-spec-v3.json"
 BOOTSTRAP_REPO_PATH = "scripts/reading_order_post_v2_qualification/bootstrap_v3.py"
+FROZEN_SEED_SCHEDULE = {1: 101, 2: 202, 3: 303}
 _HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -282,7 +283,7 @@ def _validate_arm_environment(arguments: Sequence[str]) -> None:
     except (ValueError, IndexError) as exc:
         raise RuntimeError("arm worker arguments missing --repeat") from exc
 
-    expected_seeds = {1: "101", 2: "202", 3: "303"}
+    expected_seeds = {k: str(v) for k, v in FROZEN_SEED_SCHEDULE.items()}
     if repeat not in expected_seeds:
         raise RuntimeError(f"unsupported repeat: {repeat}")
 

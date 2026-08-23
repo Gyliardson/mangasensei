@@ -26,8 +26,9 @@ from .preflight_v3 import (
 from .scoring import CorpusScore, candidate_only_wrong_pairs, score_corpus, score_page
 from .verdict import ComponentStatus, GateReason, Verdict, VerdictResult
 from .verdict_v3 import evaluate_verdict_v3
+from .bootstrap_v3 import FROZEN_SEED_SCHEDULE
 
-REPEATS = (1, 2, 3)
+REPEATS = tuple(FROZEN_SEED_SCHEDULE.keys())
 RUNNER_MODULE = "scripts.reading_order_post_v2_qualification.run_v3"
 ARM_RUNNER_MODULE = "scripts.reading_order_post_v2_qualification.run_arm_v3"
 BOOTSTRAP_REPO_PATH = "scripts/reading_order_post_v2_qualification/bootstrap_v3.py"
@@ -151,7 +152,7 @@ def _run_fresh_process(
     )
     location = f"{arm.value}/repeat-{repeat}/{page_id}"
     env = _child_environment()
-    env["PYTHONHASHSEED"] = {1: "101", 2: "202", 3: "303"}[repeat]
+    env["PYTHONHASHSEED"] = str(FROZEN_SEED_SCHEDULE[repeat])
     try:
         subprocess.run(  # noqa: S603
             command,
@@ -467,7 +468,7 @@ def _metadata(
         "runnerModule": RUNNER_MODULE,
         "armRunnerModule": ARM_RUNNER_MODULE,
         "freshProcessRepeats": list(REPEATS),
-        "pythonHashSeeds": [101, 202, 303],
+        "pythonHashSeeds": list(FROZEN_SEED_SCHEDULE.values()),
         "armOrder": [arm.value for arm in ArmId],
         "pageOrder": list(page_ids),
     }
