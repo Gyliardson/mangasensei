@@ -153,7 +153,7 @@
     {
       "path": "scripts/reading_order_post_v2_qualification/spec_v3.py",
       "role": "v3-overlay-validator-and-identity",
-      "gitBlobSha": "0b7e4da2aca125b76d501e59d3c06c4620fdfbd8"
+      "gitBlobSha": "2f45a794abb79438c92a9423674cf03f9c7228be"
     },
     {
       "path": "scripts/reading_order_post_v2_qualification/preflight_v3.py",
