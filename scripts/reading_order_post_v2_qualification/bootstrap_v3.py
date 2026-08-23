@@ -289,7 +289,9 @@ def _validate_arm_environment(arguments: Sequence[str]) -> None:
 
     expected_seed = expected_seeds[repeat]
     if os.environ.get("PYTHONHASHSEED") != expected_seed:
-        raise RuntimeError(f"arm worker requires PYTHONHASHSEED={expected_seed} for repeat {repeat}")
+        raise RuntimeError(
+            f"arm worker requires PYTHONHASHSEED={expected_seed} for repeat {repeat}"
+        )
 
     for key in os.environ:
         if key.upper().startswith("PYTHON") and key != "PYTHONHASHSEED":

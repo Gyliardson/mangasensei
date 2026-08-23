@@ -14,9 +14,9 @@ from typing import Any, cast
 
 from scripts.reading_order_v3_authoring.contracts import AUTHORING_SLICES
 
+from .bootstrap_v3 import FROZEN_SEED_SCHEDULE
 from .canonical import sha256_path
 from .exercise_v3 import EXERCISE_MINIMA_V3
-from .bootstrap_v3 import FROZEN_SEED_SCHEDULE
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

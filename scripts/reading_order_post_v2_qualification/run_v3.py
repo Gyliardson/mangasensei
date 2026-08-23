@@ -14,6 +14,7 @@ from scripts.reading_order_v3_authoring.contracts import CorpusDesign, load_desi
 
 from . import exercise_v3, run_arm_v3
 from . import v3_clean_room_compat as compat
+from .bootstrap_v3 import FROZEN_SEED_SCHEDULE
 from .canonical import canonical_json_bytes, sha256_bytes, write_canonical_json
 from .contracts import ArmId, PageGroundTruth
 from .exercise import ExerciseReport
@@ -26,7 +27,6 @@ from .preflight_v3 import (
 from .scoring import CorpusScore, candidate_only_wrong_pairs, score_corpus, score_page
 from .verdict import ComponentStatus, GateReason, Verdict, VerdictResult
 from .verdict_v3 import evaluate_verdict_v3
-from .bootstrap_v3 import FROZEN_SEED_SCHEDULE
 
 REPEATS = tuple(FROZEN_SEED_SCHEDULE.keys())
 RUNNER_MODULE = "scripts.reading_order_post_v2_qualification.run_v3"
